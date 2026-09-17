@@ -119,7 +119,8 @@ function renderOrgsTable(orgs) {
         <td style="padding:12px">${statusBadge}</td>
         <td style="padding:12px;text-align:center">
           <div style="display:flex;gap:6px;justify-content:center">
-            <button class="btn btn-outline btn-sm" onclick="toggleOrgStatus('${org.id}', '${org.status}')" style="font-size:11.5px;padding:4px 8px" title="تفعيل / تجميد">
+            <button class="btn btn-secondary btn-sm" onclick="showOrgQrModal('${org.orgCode}', '${esc(org.orgName)}')" style="font-size:11.5px;padding:4px 8px" title="عرض وطباعة باركود وQR الجهة">📱 باركود</button>
+   <button class="btn btn-outline btn-sm" onclick="toggleOrgStatus('${org.id}', '${org.status}')" style="font-size:11.5px;padding:4px 8px" title="تفعيل / تجميد">
               ${isActive ? '⛔ تجميد' : '🟢 تفعيل'}
             </button>
             <button class="btn btn-danger btn-sm" onclick="deleteOrg('${org.id}', '${org.orgName}')" style="font-size:11.5px;padding:4px 8px" title="حذف الجهة">
@@ -133,10 +134,10 @@ function renderOrgsTable(orgs) {
 }
 
 function openAddOrgModal() {
-  document.getElementById('addOrgModal').style.display = 'flex';
+  document.getElementById('addOrgModal').classList.add('show');
 }
 function closeAddOrgModal() {
-  document.getElementById('addOrgModal').style.display = 'none';
+  document.getElementById('addOrgModal').classList.remove('show');
 }
 
 async function toggleOrgStatus(orgId, currentStatus) {
@@ -164,4 +165,100 @@ async function deleteOrg(orgId, orgName) {
   } catch(e) {
     alert(e.message);
   }
+}
+
+let currentQrData = null;
+
+function showOrgQrModal(orgCode, orgName) {
+  currentQrData = { orgCode, orgName };
+  document.getElementById('qrOrgBadge').textContent = orgName;
+  document.getElementById('qrOrgCodeText').textContent = orgCode;
+  const container = document.getElementById('qrCanvasContainer');
+  container.innerHTML = '';
+  
+  const baseUrl = getServerBaseUrl() || location.origin;
+  const directUrl = baseUrl + '/login.html?org=' + encodeURIComponent(orgCode);
+  
+  if (typeof QRCode !== 'undefined') {
+    new QRCode(container, {
+      text: directUrl,
+      width: 190,
+      height: 190
+    });
+  }
+  document.getElementById('orgQrModal').classList.add('show');
+}
+
+function closeOrgQrModal() {
+  document.getElementById('orgQrModal').classList.remove('show');
+}
+
+function printOrgCard() {
+  if (!currentQrData) return;
+  const { orgCode, orgName } = currentQrData;
+  const baseUrl = getServerBaseUrl() || location.origin;
+  const directUrl = baseUrl + '/login.html?org=' + encodeURIComponent(orgCode);
+  
+  const canvas = document.querySelector('#qrCanvasContainer canvas');
+  const qrDataUrl = canvas ? canvas.toDataURL() : '';
+
+  const w = window.open('', '_blank', 'width=650,height=750');
+  w.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>بطاقة ربط المنظومة — ${orgName}</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+  .card { background: #fff; border: 2px solid #0f172a; border-radius: 20px; padding: 32px 28px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+  .header { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 14px; }
+  .header img { width: 42px; height: 42px; border-radius: 10px; }
+  .header h2 { margin: 0; font-size: 16px; color: #0f172a; }
+  .org-title { font-size: 18px; font-weight: 900; color: #1e3a8a; margin: 10px 0 16px; }
+  .qr-box { background: #f8fafc; border: 2px dashed #94a3b8; border-radius: 16px; padding: 16px; display: inline-block; margin-bottom: 14px; }
+  .qr-box img { width: 200px; height: 200px; display: block; }
+  .code-badge { background: #0f172a; color: #38bdf8; font-family: monospace; font-size: 24px; font-weight: 900; padding: 8px 24px; border-radius: 10px; display: inline-block; letter-spacing: 2px; margin-bottom: 14px; }
+  .steps { text-align: right; background: #f8fafc; border-radius: 12px; padding: 14px 18px; font-size: 13px; color: #334155; line-height: 1.8; margin-top: 10px; }
+  .footer { margin-top: 18px; font-size: 11.5px; color: #64748b; font-weight: 700; }
+  @media print { body { background: #fff; padding: 0; } .card { box-shadow: none; border: 2px solid #000; } .no-print { display: none; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <img src="Image/codex_logo.jpg" alt="Codex" />
+    <div>
+      <h2>منظومة كودكس السحابية لإدارة التقارير</h2>
+      <small style="color:#64748b">بطاقة ربط واعتماد الهواتف الميدانية</small>
+    </div>
+  </div>
+  
+  <div class="org-title">${orgName}</div>
+  
+  <div class="qr-box">
+    <img src="${qrDataUrl}" alt="QR Code" />
+  </div>
+  
+  <div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:4px;font-weight:700">رمز الجهة الرسمي:</div>
+    <div class="code-badge">${orgCode}</div>
+  </div>
+
+  <div class="steps">
+    <b>طريقة ربط الهاتف بالمنظومة:</b><br/>
+    1. افتح تطبيق المنظومة أو كاميرا الهاتف وامسح رمز الـ QR أعلاه.<br/>
+    2. أو افتح التطبيق واكتب رمز الجهة: <b>${orgCode}</b><br/>
+    3. أدخل اسم المستخدم وكلمة المرور الخاصة بك.
+  </div>
+
+  <div class="footer">
+    تطوير ودعم: شركة كودكس للبرمجيات • هاتف: 783745550
+  </div>
+</div>
+<script>
+  window.onload = function() { window.print(); };
+</script>
+</body>
+</html>`);
+  w.document.close();
 }

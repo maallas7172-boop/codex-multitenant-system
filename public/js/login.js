@@ -3,6 +3,31 @@
    ========================================================= */
 (async function () {
   const msg = document.getElementById('loginMessage');
+  
+  // فحص إذا كان الرابط يحتوي على رمز جهة عبر QR Code (مثل ?org=AMANA)
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramOrg = urlParams.get('org') || urlParams.get('orgCode');
+  if (paramOrg && orgCodeInput) {
+    orgCodeInput.value = paramOrg.trim().toUpperCase();
+    setTimeout(() => checkOrgCode(), 200);
+  }
+
+  const btnScanQr = document.getElementById('btnScanQr');
+  if (btnScanQr) {
+    btnScanQr.onclick = () => {
+      const scanned = prompt('📷 اكتب رمز المؤسسة أو الصق الرابط الممسوح من الباركود:');
+      if (scanned) {
+        let code = scanned.trim().toUpperCase();
+        if (code.includes('org=')) {
+          const match = code.match(/org=([^&]+)/i);
+          if (match && match[1]) code = decodeURIComponent(match[1]).trim().toUpperCase();
+        }
+        orgCodeInput.value = code;
+        checkOrgCode();
+      }
+    };
+  }
+
   const orgCodeInput = document.getElementById('orgCode');
   const orgStatusText = document.getElementById('orgStatusText');
   const btnCheckOrg = document.getElementById('btnCheckOrg');
