@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 /* =========================================================
-   منظومة كودكس السحابية — خادم المنظومات والجهات المتعددة (Multi-Tenant)
-   - شركة كودكس للبرمجيات (Codex Software)
+   منظومة كودكس السحابية والمحلية — خادم المنظومات والجهات المتعددة (Multi-Tenant)
+   - شركة كودكس للبرمجيات (Codex Software) — هاتف: 783745550
    - عزل صارم ومحكم لبيانات كل جهة ومؤسسة بنسبة 100%
+   - دعم طابور الترحيل السحابي المؤقت والتخزين الدائم على القرص الصلب (Hybrid Relay Queue)
    - دعم لوحة Super Admin لإدارة كافة الجهات والاشتراكات
    - دعم الجلسات الرقمية الموقعة مشفرة (30 يوماً)
    ========================================================= */
 const http = require('node:http');
+const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -140,6 +142,16 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT,
   PRIMARY KEY (orgId, key)
 );
+
+-- طابور الترحيل السحابي المؤقت (Cloud Relay Buffer Queue)
+CREATE TABLE IF NOT EXISTS cloud_relay_queue (
+  id TEXT PRIMARY KEY,
+  orgId TEXT NOT NULL,
+  itemType TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  createdAt TEXT NOT NULL,
+  status TEXT DEFAULT 'pending'
+);
 `);
 
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
@@ -149,55 +161,61 @@ function uid() { return crypto.randomUUID(); }
 function nowIso() { return new Date().toISOString(); }
 function hashHex(str) { return crypto.createHash('sha256').update(SALT + str).digest('hex'); }
 
-/* تهيئة الحسابات الافتراضية والجهة الأولى */
-function initDefaultData() {
-  // حساب Super Admin لكودكس
-  const existingSuper = db.prepare("SELECT * FROM users WHERE role='SuperAdmin'").get();
-  if (!existingSuper) {
-    db.prepare(`INSERT INTO users(
-      id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
-      canDash, canUsers, canSettings, createdAt
-    ) VALUES(?, NULL, ?, ?, ?, ?, 'SuperAdmin', 1, 1, 1, 1, ?)`)
-      .run(uid(), 'superadmin', 'شركة كودكس للبرمجيات (Super Admin)', hashHex('CodexSuper@2026'), 'CodexSuper@2026', nowIso());
+function getSetting(orgId, key, fallback = '') {
+  if (!orgId) return fallback;
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE orgId=? AND key=?').get(orgId, key);
+    return row ? row.value : fallback;
+  } catch(e) { return fallback; }
+}
+
+function setSetting(orgId, key, value) {
+  if (!orgId) return;
+  db.prepare('INSERT OR REPLACE INTO settings(orgId, key, value) VALUES(?,?,?)').run(orgId, key, String(value));
+}
+
+/* ------------------------- التهيئة التلقائية ------------------------- */
+(function seedDefaultData() {
+  const superCount = db.prepare("SELECT COUNT(*) c FROM users WHERE role='SuperAdmin'").get().c;
+  if (superCount === 0) {
+    const sId = uid();
+    db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+      canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, createdAt)
+      VALUES(?, NULL, 'superadmin', 'إدارة كودكس العليا', ?, 'CodexSuper@2026', 'SuperAdmin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ?)`)
+      .run(sId, hashHex('CodexSuper@2026'), nowIso());
     console.log('✓ Created SuperAdmin: superadmin / CodexSuper@2026');
   }
 
-  // إنشاء جهة تجريبية افتراضية إذا كانت قاعدة البيانات فارغة
-  const orgCount = db.prepare('SELECT COUNT(*) c FROM organizations').get().c;
-  if (orgCount === 0) {
-    const demoOrgId = 'org-demo-001';
+  const demoOrg = db.prepare("SELECT * FROM organizations WHERE orgCode='DEMO'").get();
+  let demoOrgId;
+  if (!demoOrg) {
+    demoOrgId = uid();
     db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, createdAt)
       VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/codex_logo.jpg', '783745550', 'active', 50, ?)`)
       .run(demoOrgId, nowIso());
-
-    // مدير الجهة
-    db.prepare(`INSERT INTO users(
-      id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
-      canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, createdAt
-    ) VALUES(?, ?, 'admin', 'مدير الجهة النموذجية', ?, 'Admin@123', 'Admin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ?)`)
-      .run(uid(), demoOrgId, hashHex('Admin@123'), nowIso());
-
-    // موظف إدخال
-    db.prepare(`INSERT INTO users(
-      id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
-      canEntry, canReports, canEvents, createdAt
-    ) VALUES(?, ?, 'ahmed', 'أحمد محمد (موظف ميداني)', ?, '123456', 'EntryUser', 1, 1, 1, 1, ?)`)
-      .run(uid(), demoOrgId, hashHex('123456'), nowIso());
-
-    console.log('✓ Created Demo Organization: DEMO (Admin: admin/Admin@123 | User: ahmed/123456)');
+    console.log('✓ Created Demo Organization: DEMO');
+  } else {
+    demoOrgId = demoOrg.id;
   }
-}
-initDefaultData();
 
-/* ------------------------- مساعدة الصلاحيات والمستخدمين ------------------------- */
-function getSetting(orgId, k, def) {
-  const r = db.prepare('SELECT value FROM settings WHERE orgId=? AND key=?').get(orgId || 'global', k);
-  return r ? r.value : def;
-}
-function setSetting(orgId, k, v) {
-  db.prepare('INSERT INTO settings(orgId, key, value) VALUES(?,?,?) ON CONFLICT(orgId, key) DO UPDATE SET value=excluded.value')
-    .run(orgId || 'global', k, String(v));
-}
+  const demoAdmin = db.prepare("SELECT * FROM users WHERE orgId=? AND userName='admin'").get(demoOrgId);
+  if (!demoAdmin) {
+    const aId = uid();
+    db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+      canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, createdAt)
+      VALUES(?, ?, 'admin', 'مدير الجهة النموذجية', ?, 'Admin@123', 'Admin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ?)`)
+      .run(aId, demoOrgId, hashHex('Admin@123'), nowIso());
+  }
+
+  const demoUser = db.prepare("SELECT * FROM users WHERE orgId=? AND userName='ahmed'").get(demoOrgId);
+  if (!demoUser) {
+    const uId = uid();
+    db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+      canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, createdAt)
+      VALUES(?, ?, 'ahmed', 'أحمد محمد (موظف ميداني)', ?, '123456', 'EntryUser', 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, ?)`)
+      .run(uId, demoOrgId, hashHex('123456'), nowIso());
+  }
+})();
 
 function publicUser(u) {
   const isAdminUser = u.role === 'Admin' || u.role === 'SuperAdmin';
@@ -233,7 +251,7 @@ function parseReportRow(r) {
   return { ...r, images, imageCount: images.length };
 }
 
-/* ------------------------- الجلسات المشفرة المتعددة ------------------------- */
+/* ------------------------- الجلسات المشفرة ------------------------- */
 function createSession(userId, orgId) {
   const expires = Date.now() + SESSION_TTL;
   const sig = crypto.createHmac('sha256', SERVER_AUTH_SECRET).update(`${userId}.${orgId || 'none'}.${expires}`).digest('hex');
@@ -250,7 +268,6 @@ function auth(req) {
   const tok = h.startsWith('Bearer ') ? h.slice(7).trim() : null;
   if (!tok) return null;
 
-  // 1. فحص في جدول الجلسات
   try {
     const row = db.prepare('SELECT userId, orgId, expires FROM sessions WHERE token=?').get(tok);
     if (row) {
@@ -263,7 +280,6 @@ function auth(req) {
     }
   } catch(e) {}
 
-  // 2. فحص التوقيع الرقمي المشفر (تخطي إعادة تشغيل السيرفر)
   try {
     const parts = tok.split('.');
     if (parts.length === 4) {
@@ -293,7 +309,6 @@ function isSuperAdmin(u) { return u && u.role === 'SuperAdmin'; }
 function isOrgAdmin(u) { return u && (u.role === 'Admin' || u.role === 'SuperAdmin'); }
 function can(u, p) { return isSuperAdmin(u) || isOrgAdmin(u) || (u && !!u[p]); }
 
-/* ------------------------- فحص واعتماد الأجهزة لكل جهة ------------------------- */
 function checkDeviceAuth(user, org, req) {
   if (!user || user.role === 'Admin' || user.role === 'SuperAdmin') return { ok: true };
   const enforce = getSetting(user.orgId, 'enforceDeviceAuth', '1') === '1';
@@ -334,7 +349,6 @@ function checkDeviceAuth(user, org, req) {
   return { ok: true, device: dev };
 }
 
-/* ------------------------- بناء الاستجابات ------------------------- */
 function buildMe(user) {
   let org = null;
   if (user.orgId) {
@@ -382,10 +396,16 @@ function buildStats(orgId) {
     eventsCompleted = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status='completed' AND isArchived=0").get(orgId).c;
   } catch(e){}
 
+  let queuePending = 0;
+  try {
+    queuePending = db.prepare("SELECT COUNT(*) c FROM cloud_relay_queue WHERE orgId=? AND status='pending'").get(orgId).c;
+  } catch(e){}
+
   return {
     usersTotal, usersActive, reportsTotal, reportsToday,
     devicesPending, devicesApproved, devicesTotal,
-    eventsTotal, eventsPending, eventsReceived, eventsCompleted
+    eventsTotal, eventsPending, eventsReceived, eventsCompleted,
+    queuePending
   };
 }
 
@@ -459,7 +479,7 @@ function serveStatic(req, res, pathname) {
   }
 }
 
-/* ------------------------- الخادم الرئيسي ------------------------- */
+/* ------------------------- خادم المعالجة الرئيسي ------------------------- */
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -482,23 +502,16 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    /* ------------------------- المسارات العامة (Public Routes) ------------------------- */
-    // 1. فحص معلومات الجهة برمزها (Org Info by Code)
+    /* ------------------------- المسارات العامة ------------------------- */
     if (method === 'GET' && p === '/api/public/org-info') {
       const code = (u.searchParams.get('orgCode') || '').trim().toUpperCase();
-      if (!code) {
-        send(res, 200, { found: false, error: 'رمز الجهة مطلوب' });
-        return;
-      }
+      if (!code) { send(res, 200, { found: false, error: 'رمز الجهة مطلوب' }); return; }
       if (code === 'CODEX' || code === 'SUPER') {
         send(res, 200, { found: true, isSuper: true, org: { orgCode: 'CODEX', orgName: 'شركة كودكس للبرمجيات (Super Admin)' } });
         return;
       }
       const org = db.prepare('SELECT id, orgCode, orgName, logoUrl, status FROM organizations WHERE orgCode=?').get(code);
-      if (!org) {
-        send(res, 200, { found: false, error: 'رمز الجهة غير صحيح أو غير مسجل' });
-        return;
-      }
+      if (!org) { send(res, 200, { found: false, error: 'رمز الجهة غير صحيح أو غير مسجل' }); return; }
       if (org.status === 'suspended') {
         send(res, 200, { found: true, suspended: true, org, error: 'حساب هذه الجهة موقف حالياً. يرجى مراجعة إدارة كودكس.' });
         return;
@@ -507,7 +520,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // 2. قائمة المستخدمين لجهة محددة
     if (method === 'GET' && p === '/api/public/users') {
       const code = (u.searchParams.get('orgCode') || '').trim().toUpperCase();
       let orgId = null;
@@ -515,21 +527,16 @@ const server = http.createServer(async (req, res) => {
         const org = db.prepare('SELECT id FROM organizations WHERE orgCode=?').get(code);
         if (org) orgId = org.id;
       }
-      if (!orgId) {
-        send(res, 200, { users: [] });
-        return;
-      }
+      if (!orgId) { send(res, 200, { users: [] }); return; }
       const list = db.prepare('SELECT id, userName, fullName, role FROM users WHERE orgId=? AND isActive=1 ORDER BY role DESC, fullName ASC').all(orgId);
       send(res, 200, { users: list });
       return;
     }
 
-    // 3. فحص حالة اعتماد الجهاز
     if (method === 'GET' && p === '/api/public/device-status') {
       const devId = (req.headers['x-device-id'] || u.searchParams.get('deviceId') || '').trim();
       const orgCode = (u.searchParams.get('orgCode') || '').trim().toUpperCase();
       if (!devId) { send(res, 200, { registered: false, status: 'none' }); return; }
-      
       let orgId = null;
       if (orgCode) {
         const org = db.prepare('SELECT id FROM organizations WHERE orgCode=?').get(orgCode);
@@ -540,7 +547,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // 4. تسجيل الدخول المتعدد (Multi-Tenant Login)
     if (method === 'POST' && p === '/api/login') {
       const b = await readBody(req);
       const userName = String(b.userName || '').trim();
@@ -548,7 +554,6 @@ const server = http.createServer(async (req, res) => {
       let hashToCompare = b.passwordHash;
       if (!hashToCompare && b.password) hashToCompare = hashHex(b.password);
 
-      // أ) التحقق من SuperAdmin
       if (userName === 'superadmin' || orgCode === 'CODEX' || orgCode === 'SUPER') {
         const superUser = db.prepare("SELECT * FROM users WHERE userName=? AND role='SuperAdmin'").get(userName);
         if (superUser && superUser.isActive && superUser.passwordHash === hashToCompare) {
@@ -558,17 +563,9 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // ب) التحقق من مستخدمي الجهات
-      if (!orgCode) {
-        sendError(res, 400, 'يرجى إدخال رمز الجهة (Organization Code)');
-        return;
-      }
-
+      if (!orgCode) { sendError(res, 400, 'يرجى إدخال رمز الجهة (Organization Code)'); return; }
       const org = db.prepare('SELECT * FROM organizations WHERE orgCode=?').get(orgCode);
-      if (!org) {
-        sendError(res, 404, 'رمز الجهة غير صحيح أو غير مسجل في النظام');
-        return;
-      }
+      if (!org) { sendError(res, 404, 'رمز الجهة غير صحيح أو غير مسجل في النظام'); return; }
       if (org.status === 'suspended') {
         sendError(res, 403, '⛔ تم تجميد اشتراك هذه الجهة. يرجى التواصل مع إدارة شركة كودكس للبرمجيات.');
         return;
@@ -601,7 +598,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    /* ------------------------- التحقق من هوية المستخدم المسجل ------------------------- */
+    /* ------------------------- التحقق من المستخدم ------------------------- */
     const me = auth(req);
     if (!me) {
       sendError(res, 401, 'انتهت الجلسة، يرجى تسجيل الدخول');
@@ -613,16 +610,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    /* =========================================================================
-       مسارات الإدارة العليا (Super Admin Routes) — شركة كودكس للبرمجيات
-       ========================================================================= */
+    /* ------------------------- Super Admin ------------------------- */
     if (p.startsWith('/api/super/')) {
-      if (!isSuperAdmin(me)) {
-        sendError(res, 403, 'غير مصرح: هذه الصفحة مخصصة فقط للإدارة العليا لشركة كودكس.');
-        return;
-      }
+      if (!isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح: مخصص للإدارة العليا لكودكس.'); return; }
 
-      // 1. لوحة تحكم Super Admin والإحصائيات الشاملة لكافة الجهات
       if (method === 'GET' && p === '/api/super/dashboard') {
         const orgs = db.prepare('SELECT * FROM organizations ORDER BY createdAt DESC').all();
         const orgsList = orgs.map(org => {
@@ -630,6 +621,7 @@ const server = http.createServer(async (req, res) => {
           const rCount = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=?').get(org.id).c;
           const eCount = db.prepare('SELECT COUNT(*) c FROM events WHERE orgId=?').get(org.id).c;
           const dCount = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved'").get(org.id).c;
+          const qCount = db.prepare("SELECT COUNT(*) c FROM cloud_relay_queue WHERE orgId=? AND status='pending'").get(org.id).c;
           const adminUser = db.prepare("SELECT userName, fullName, plainPassword FROM users WHERE orgId=? AND role='Admin'").get(org.id);
           return {
             ...org,
@@ -637,23 +629,21 @@ const server = http.createServer(async (req, res) => {
             reportsCount: rCount,
             eventsCount: eCount,
             devicesCount: dCount,
+            queueCount: qCount,
             adminUser: adminUser || null
           };
         });
 
-        const totalOrgs = orgs.length;
-        const totalUsers = db.prepare("SELECT COUNT(*) c FROM users WHERE role<>'SuperAdmin'").get().c;
-        const totalReports = db.prepare('SELECT COUNT(*) c FROM reports').get().c;
-        const totalEvents = db.prepare('SELECT COUNT(*) c FROM events').get().c;
-
         send(res, 200, {
-          totalOrgs, totalUsers, totalReports, totalEvents,
+          totalOrgs: orgs.length,
+          totalUsers: db.prepare("SELECT COUNT(*) c FROM users WHERE role<>'SuperAdmin'").get().c,
+          totalReports: db.prepare('SELECT COUNT(*) c FROM reports').get().c,
+          totalEvents: db.prepare('SELECT COUNT(*) c FROM events').get().c,
           organizations: orgsList
         });
         return;
       }
 
-      // 2. إنشاء جهة جديدة وتوليد حساب مديرها فوراً
       if (method === 'POST' && p === '/api/super/organizations') {
         const b = await readBody(req);
         const orgCode = String(b.orgCode || '').trim().toUpperCase();
@@ -662,23 +652,15 @@ const server = http.createServer(async (req, res) => {
         const adminPassword = String(b.adminPassword || 'Admin@123').trim();
         const adminFullName = String(b.adminFullName || ('مدير ' + orgName)).trim();
 
-        if (!orgCode || !orgName) {
-          sendError(res, 400, 'رمز الجهة واسم الجهة مطلوبان');
-          return;
-        }
-
+        if (!orgCode || !orgName) { sendError(res, 400, 'رمز الجهة واسم الجهة مطلوبان'); return; }
         const exists = db.prepare('SELECT id FROM organizations WHERE orgCode=?').get(orgCode);
-        if (exists) {
-          sendError(res, 409, 'رمز الجهة موجود مسبقاً، يرجى اختيار رمز آخر');
-          return;
-        }
+        if (exists) { sendError(res, 409, 'رمز الجهة موجود مسبقاً، يرجى اختيار رمز آخر'); return; }
 
         const orgId = uid();
         db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, createdAt)
           VALUES(?, ?, ?, ?, ?, 'active', ?, ?)`)
           .run(orgId, orgCode, orgName, b.logoUrl || 'Image/codex_logo.jpg', b.phone || '', b.maxUsers || 50, nowIso());
 
-        // إنشاء حساب مدير الجهة
         const adminId = uid();
         db.prepare(`INSERT INTO users(
           id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
@@ -694,7 +676,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // 3. تعديل حالة أو بيانات الجهة (تفعيل / تجميد)
       const orgMatch = p.match(/^\/api\/super\/organizations\/([^/]+)$/);
       if (orgMatch) {
         const targetOrgId = orgMatch[1];
@@ -703,26 +684,19 @@ const server = http.createServer(async (req, res) => {
 
         if (method === 'PUT') {
           const b = await readBody(req);
-          db.prepare(`UPDATE organizations SET
-            orgName=?, status=?, phone=?, maxUsers=? WHERE id=?`)
-            .run(
-              String(b.orgName || org.orgName),
-              String(b.status || org.status),
-              String(b.phone ?? org.phone),
-              b.maxUsers || org.maxUsers,
-              targetOrgId
-            );
+          db.prepare(`UPDATE organizations SET orgName=?, status=?, phone=?, maxUsers=? WHERE id=?`)
+            .run(String(b.orgName || org.orgName), String(b.status || org.status), String(b.phone ?? org.phone), b.maxUsers || org.maxUsers, targetOrgId);
           send(res, 200, { ok: true, message: 'تم تحديث بيانات الجهة بنجاح' });
           return;
         }
 
         if (method === 'DELETE') {
-          // حذف الجهة وكافة بياناتها التابعة
           db.prepare('DELETE FROM reports WHERE orgId=?').run(targetOrgId);
           db.prepare('DELETE FROM events WHERE orgId=?').run(targetOrgId);
           db.prepare('DELETE FROM devices WHERE orgId=?').run(targetOrgId);
           db.prepare('DELETE FROM users WHERE orgId=?').run(targetOrgId);
           db.prepare('DELETE FROM settings WHERE orgId=?').run(targetOrgId);
+          db.prepare('DELETE FROM cloud_relay_queue WHERE orgId=?').run(targetOrgId);
           db.prepare('DELETE FROM organizations WHERE id=?').run(targetOrgId);
           send(res, 200, { ok: true, message: 'تم حذف الجهة وبياناتها بالكامل' });
           return;
@@ -730,12 +704,63 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    /* =========================================================================
-       مسارات مدراء وموظفي الجهات (مفلترة تلقائياً بـ me.orgId بنسبة 100%)
-       ========================================================================= */
     const orgId = me.orgId;
-    if (!orgId && !isSuperAdmin(me)) {
-      sendError(res, 403, 'غير مصرح');
+    if (!orgId && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+
+    /* =========================================================================
+       مسارات طابور الترحيل السحابي والمزامنة الذكية (Cloud Relay Queue API)
+       ========================================================================= */
+    // 1. سحب التقارير المعلقة في طابور السحابة إلى كمبيوتر المدير (Pull Queue)
+    if (method === 'GET' && p === '/api/relay/pull') {
+      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح بسحب الطابور'); return; }
+      const rows = db.prepare("SELECT * FROM cloud_relay_queue WHERE orgId=? AND status='pending' ORDER BY createdAt ASC").all(orgId);
+      const items = rows.map(r => {
+        let payload = {};
+        try { payload = JSON.parse(r.payload); } catch(e){}
+        return { id: r.id, orgId: r.orgId, itemType: r.itemType, payload, createdAt: r.createdAt };
+      });
+      send(res, 200, { ok: true, count: items.length, items });
+      return;
+    }
+
+    // 2. تأكيد استلام وحفظ التقارير على القرص الصلب وتفريغها من السحابة (Acknowledge & Clear)
+    if (method === 'POST' && p === '/api/relay/ack') {
+      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const b = await readBody(req);
+      const itemIds = Array.isArray(b.itemIds) ? b.itemIds : [];
+      let deletedCount = 0;
+      for (const id of itemIds) {
+        try {
+          db.prepare('DELETE FROM cloud_relay_queue WHERE orgId=? AND id=?').run(orgId, id);
+          deletedCount++;
+        } catch(e){}
+      }
+      send(res, 200, { ok: true, clearedCount: deletedCount, message: 'تم تأكيد الحفظ وتفريغ الطابور السحابي بنجاح ✔' });
+      return;
+    }
+
+    // 3. دفع وتحديث المهام من كمبيوتر المدير إلى السحابة لهواتف الموظفين (Push Events to Cloud)
+    if (method === 'POST' && p === '/api/relay/push-events') {
+      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const b = await readBody(req);
+      const events = Array.isArray(b.events) ? b.events : [];
+      let upsertedCount = 0;
+      for (const ev of events) {
+        if (!ev.id) continue;
+        db.prepare(`INSERT OR REPLACE INTO events(
+          id, orgId, title, eventType, notes, eventDate, eventTime, location,
+          assignedUserId, assignedUserName, createdBy, createdById, createdDate, status, receivedAt, completedAt, feedbackNotes, isArchived
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(
+            ev.id, orgId, String(ev.title || ''), String(ev.eventType || 'مهمة'), String(ev.notes || ''),
+            String(ev.eventDate || ''), String(ev.eventTime || ''), String(ev.location || ''),
+            ev.assignedUserId || null, String(ev.assignedUserName || ''), String(ev.createdBy || ''),
+            String(ev.createdById || ''), String(ev.createdDate || nowIso()), String(ev.status || 'pending'),
+            ev.receivedAt || null, ev.completedAt || null, String(ev.feedbackNotes || ''), ev.isArchived ? 1 : 0
+          );
+        upsertedCount++;
+      }
+      send(res, 200, { ok: true, syncedEvents: upsertedCount });
       return;
     }
 
@@ -839,20 +864,37 @@ const server = http.createServer(async (req, res) => {
       if (method === 'POST') {
         if (!can(me, 'canEntry')) { sendError(res, 403, 'غير مصرح بإدخال التقارير'); return; }
         const b = await readBody(req);
-        const id = uid();
+        const repData = b.report || b;
+        const id = repData.id || uid();
         const t = nowIso();
-        const repNum = String(b.reportNumber || Date.now().toString().slice(-6));
-        db.prepare(`INSERT INTO reports(
+        const repNum = String(repData.reportNumber || Date.now().toString().slice(-6));
+        
+        db.prepare(`INSERT OR REPLACE INTO reports(
           id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
           enteredBy, enteredByUserId, rating, logoId, createdAt, updatedAt
         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
-            id, orgId, repNum, String(b.subject || ''), String(b.target || ''),
-            String(b.reportDate || t.slice(0, 10)), String(b.reportTime || t.slice(11, 16)),
-            String(b.location || ''), String(b.details || ''), JSON.stringify(b.images || []),
-            me.fullName, me.id, String(b.rating || 'عادي'), String(b.logoId || 'logo1'), t, t
+            id, orgId, repNum, String(repData.subject || ''), String(repData.target || ''),
+            String(repData.reportDate || t.slice(0, 10)), String(repData.reportTime || t.slice(11, 16)),
+            String(repData.location || ''), String(repData.details || ''), JSON.stringify(repData.images || []),
+            me.fullName, me.id, String(repData.rating || 'عادي'), String(repData.logoId || 'logo1'), t, t
           );
-        send(res, 200, { report: parseReportRow(db.prepare('SELECT * FROM reports WHERE id=?').get(id)) });
+
+        // إدراج التقرير تلقائياً في طابور الترحيل السحابي المؤقت لينتقل لكمبيوتر المدير
+        const queueId = uid();
+        const fullReport = parseReportRow(db.prepare('SELECT * FROM reports WHERE id=?').get(id));
+        try {
+          db.prepare(`INSERT INTO cloud_relay_queue(id, orgId, itemType, payload, createdAt, status) VALUES(?,?,?,?,?,?)`)
+            .run(queueId, orgId, 'report', JSON.stringify(fullReport), t, 'pending');
+        } catch(e){}
+
+        send(res, 200, {
+          ok: true,
+          report: fullReport,
+          reportNumber: repNum,
+          queueId: queueId,
+          message: 'تم استلام التقرير في طابور الانتظار بنجاح ✔'
+        });
         return;
       }
     }
@@ -942,6 +984,19 @@ const server = http.createServer(async (req, res) => {
             String(b.feedbackNotes ?? event.feedbackNotes ?? ''),
             event.id
           );
+
+        // إدراج التغذية الراجعة في طابور السحب لكمبيوتر المدير
+        try {
+          db.prepare(`INSERT INTO cloud_relay_queue(id, orgId, itemType, payload, createdAt, status) VALUES(?,?,?,?,?,?)`)
+            .run(uid(), orgId, 'event_feedback', JSON.stringify({
+              eventId: event.id,
+              status: b.status || event.status,
+              receivedAt: b.receivedAt ?? event.receivedAt,
+              completedAt: b.completedAt ?? event.completedAt,
+              feedbackNotes: b.feedbackNotes ?? event.feedbackNotes
+            }), nowIso(), 'pending');
+        } catch(e){}
+
         send(res, 200, { event: db.prepare('SELECT * FROM events WHERE id=?').get(event.id) });
         return;
       }
@@ -990,7 +1045,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log('========================================================');
-  console.log('  منظومة كودكس السحابية — إصدار المنظومات المتعددة (Multi-Tenant)');
+  console.log('  منظومة كودكس السحابية والمحلية — (Multi-Tenant Hybrid Relay)');
   console.log('  شركة كودكس للبرمجيات (Codex Software)');
   console.log(`  الخادم يعمل بنجاح على: http://localhost:${PORT}/`);
   console.log('  حساب Super Admin: superadmin / CodexSuper@2026');
