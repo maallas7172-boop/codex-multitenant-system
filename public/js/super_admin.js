@@ -59,6 +59,8 @@ let allOrgs = [];
 
         toast('تم إنشاء الجهة (' + orgName + ') وتجهيز حساب المدير بنجاح ✔');
         closeAddOrgModal();
+        showOrgQrModal(orgCode, orgName);
+        closeAddOrgModal();
         addForm.reset();
         await loadDashboard();
       } catch (err) {
@@ -133,8 +135,63 @@ function renderOrgsTable(orgs) {
   }).join('');
 }
 
+
+function generateRandomOrgCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let randPrefix = '';
+  for (let i = 0; i < 3; i++) {
+    randPrefix += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  const randNum = Math.floor(1000 + Math.random() * 9000);
+  const code = randPrefix + '-' + randNum;
+  
+  const input = document.getElementById('newOrgCode');
+  if (input) {
+    input.value = code;
+    updateNewOrgQrPreview();
+  }
+  return code;
+}
+
+function updateNewOrgQrPreview() {
+  const input = document.getElementById('newOrgCode');
+  const previewBox = document.getElementById('newOrgQrPreview');
+  const displayBadge = document.getElementById('newOrgCodeDisplay');
+  if (!input || !previewBox) return;
+
+  const code = (input.value || '').trim().toUpperCase();
+  if (displayBadge) displayBadge.textContent = code || '—';
+
+  if (!code) {
+    previewBox.innerHTML = '<span style="color:#94a3b8;font-size:12px">اكتب أو ولّد رمزاً لعرض الباركود</span>';
+    return;
+  }
+
+  previewBox.innerHTML = '';
+  const baseUrl = getServerBaseUrl() || location.origin;
+  const directUrl = baseUrl + '/login.html?org=' + encodeURIComponent(code);
+
+  if (typeof QRCode !== 'undefined') {
+    new QRCode(previewBox, {
+      text: directUrl,
+      width: 130,
+      height: 130
+    });
+  }
+}
+
 function openAddOrgModal() {
   document.getElementById('addOrgModal').classList.add('show');
+  const orgCodeInput = document.getElementById('newOrgCode');
+  if (orgCodeInput && !orgCodeInput.value.trim()) {
+    generateRandomOrgCode();
+  } else {
+    updateNewOrgQrPreview();
+  }
+  if (orgCodeInput && !orgCodeInput._boundPreview) {
+    orgCodeInput._boundPreview = true;
+    orgCodeInput.addEventListener('input', updateNewOrgQrPreview);
+  }
 }
 function closeAddOrgModal() {
   document.getElementById('addOrgModal').classList.remove('show');
