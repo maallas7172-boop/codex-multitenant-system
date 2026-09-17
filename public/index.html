@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#1f6feb" />
+<title>منظومة كودكس — نظام التقارير الموحد</title>
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+<script>
+  (async function () {
+    const token = getToken();
+    const cached = getCachedMe();
+    
+    if (!token && (!cached || !cached.user)) {
+      location.replace('login.html');
+      return;
+    }
+    
+    try {
+      const me = await currentMe();
+      const u = me.user;
+      if (u.role === 'SuperAdmin') {
+        location.replace('super_admin.html');
+        return;
+      }
+      const hasAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings;
+      location.replace(hasAdmin ? 'admin.html' : 'entry.html');
+    } catch (e) {
+      location.replace('login.html');
+    }
+  })();
+</script>
+</head>
+<body></body>
+</html>

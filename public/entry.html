@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#1f6feb" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="manifest.json" />
+<title>إدخال البيانات — إدارة الحسابات</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">🧮</div>
+      <div class="t"><span id="orgBrandTitle">إدخال البيانات</span><small id="orgBrandSubtitle">منظومة التقارير الميدانية</small></div>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn active" id="eNavEntry" type="button"><span class="ic">📝</span> إدخال تقرير</button>
+      <button class="nav-btn" id="eNavMyTasks" type="button"><span class="ic">📋</span> مهامي وتكليفاتي <span class="badge warn" id="myTasksBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
+      <div id="adminNav" style="display:none">
+        <button class="nav-btn" id="eNavDash" type="button" onclick="location.href='admin.html'"><span class="ic">📊</span> لوحة التحكم</button>
+        <button class="nav-btn" id="eNavReports" type="button" onclick="location.href='admin.html#reports'"><span class="ic">📄</span> التقارير</button>
+        <button class="nav-btn" id="eNavEvents" type="button" onclick="location.href='admin.html#events'"><span class="ic">📋</span> إدارة المهام</button>
+        <button class="nav-btn" id="eNavUsers" type="button" onclick="location.href='admin.html#users'"><span class="ic">👥</span> المستخدمون والصلاحيات</button>
+        <button class="nav-btn" id="eNavSettings" type="button" onclick="location.href='admin.html#settings'"><span class="ic">⚙️</span> الإعدادات</button>
+      </div>
+    </nav>
+    <div class="side-foot">
+      <div class="user-box">
+        <div class="av" id="userAv">📝</div>
+        <div class="nm"><span id="userNameTop">مستخدم</span><small id="orgBadgeText" style="color:#60a5fa;font-weight:700;display:block;margin-top:2px"></small></div>
+      </div>
+      <div style="margin-top:8px">
+        <button class="btn btn-outline btn-sm" onclick="logout()" style="width:100%;font-size:12px;padding:7px">🚪 تسجيل الخروج</button>
+      </div>
+      <div class="sidebar-company-footer" style="display:flex;align-items:center;gap:9px;padding:8px 10px;text-align:right">
+        <img src="Image/codex_logo.jpg" alt="Codex" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.2)" />
+        <div style="flex:1;min-width:0">
+          <div style="color:#f1f5f9;font-weight:800;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">شركة كودكس للبرمجيات</div>
+          <div style="direction:ltr;text-align:right"><a href="tel:783745550" style="color:#60a5fa;text-decoration:none;font-weight:700;font-size:11px">📞 783745550</a></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="entryRoot" style="display:none">
+    <!-- شريط حالة الاتصال بالخادم والمزامنة التلقائية -->
+    <div id="syncStatusBanner" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-radius:var(--r-md);margin-bottom:12px;font-size:13px;font-weight:700;background:var(--surface-soft);border:1px solid var(--line-strong);flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="syncDotStatus" style="font-size:16px">⏳</span>
+        <span id="syncStatusText">جارٍ فحص الاتصال بالخادم المركزي...</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary btn-sm" id="btnSyncAllNow" type="button" style="display:none;font-size:12px;padding:6px 14px">⚡ مزامنة كل المعلقات (<span id="pendingBadgeCount">0</span>)</button>
+      </div>
+    </div>
+
+    <!-- شريط المهام والتكليفات الموجهة للموظف -->
+    <div id="myTasksAlertBanner" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-radius:var(--r-md);margin-bottom:16px;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px">📋</span>
+        <div>
+          <div style="font-weight:900;color:#1e3a8a;font-size:14px">
+            المهام والتكليفات الموجهة لك من قِبل المدير
+            <span class="badge warn" id="myTasksAlertCount" style="margin-right:6px">0 جديدة</span>
+          </div>
+          <div style="font-size:12px;color:#3b82f6;margin-top:2px">تظهر هنا فقط التكليفات والفعاليات المسندة لحسابك. يرجى تأكيد استلامها.</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnToggleTasksView" type="button" style="font-size:12.5px;padding:7px 16px">📋 عرض مهامي والتغذية الراجعة</button>
+    </div>
+
+    <!-- قسم مهام وتكليفات الموظف -->
+    <section class="card" id="myTasksBox" style="display:none;margin-bottom:18px">
+      <div class="page-head" style="margin-bottom:14px">
+        <div>
+          <h3>📋 مهامك وتكليفاتك المسندة إليك</h3>
+          <p style="margin:0;font-size:13px;color:var(--muted)">تظهر هذه المهام لك حصرياً على هاتفك، مع إمكانية تأكيد الاستلام الفوري، تقديم التغذية الراجعة، أو حذف المهمة من تطبيقك.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-outline btn-sm" id="btnRefreshMyTasks" type="button">🔄 تحديث المهام</button>
+          <button class="btn btn-secondary btn-sm" id="btnBackToReportsFromTasks" type="button">📝 إدخال التقارير</button>
+        </div>
+      </div>
+      <div id="myTasksList" style="display:flex;flex-direction:column;gap:14px"></div>
+    </section>
+
+    <div class="page-head" id="entryReportsHead">
+      <div>
+        <h2>إدخال تقرير ميداني</h2>
+        <p>املأ بيانات التقرير — يمكنك الحفظ كمسودة على هذا الجهاز ثم الترحيل إلى قاعدة بيانات المدير عند الجاهزية.</p>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnNewReportTop">➕ تقرير جديد</button>
+      </div>
+    </div>
+
+    <!-- قائمة المسودات المحلية -->
+    <section class="card" id="draftBox" style="display:none">
+      <h3 style="margin-bottom:14px">🗂️ مسوداتك المحفوظة على هذا الجهاز</h3>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 16px">
+        المسودات محفوظة محلياً ولا يراها المدير إلا بعد «حفظ وترحيل / مزامنة». عند المزامنة يتم إعطاء التقرير رقماً رسمياً متسلسلاً ويُحذف من هذا الجهاز.
+      </p>
+      <div class="field" style="margin-bottom:14px">
+        <input type="text" id="draftSearch" placeholder="🔍 ابحث في المسودات برقم التقرير أو الموضوع أو الجهة..." />
+      </div>
+      <div class="draft-list" id="draftList"></div>
+    </section>
+
+    <!-- نموذج التقرير -->
+    <section class="card entry-card" id="formCard" style="display:none">
+      <div class="page-head" style="margin-bottom:8px">
+        <h3 id="pageTitle">تقرير جديد</h3>
+        <div class="btn-row no-print">
+          <button class="btn btn-outline btn-sm" id="backToListBtn">↩️ العودة للمسودات</button>
+        </div>
+      </div>
+      <div id="saveMsg" style="color:var(--warn);font-weight:700;font-size:13px;margin-bottom:14px"></div>
+
+      <div class="form-grid">
+        <div class="field">
+          <span>رقم التقرير (مؤقت — يُولَّد تسلسلياً تلقائياً عند المزامنة)</span>
+          <input type="text" id="fReportNumber" placeholder="مسودة مؤقتة (تلقائي عند المزامنة)" title="يتم حجز الرقم المتسلسل الرسمي تلقائياً من السيرفر عند المزامنة لمنع تضارب الأرقام" />
+        </div>
+        <div class="field">
+          <span>موضوع التقرير *</span>
+          <input type="text" id="fSubject" placeholder="عنوان مختصر للتقرير" />
+        </div>
+        <div class="field full">
+          <span>الجهة أو الشخص الذي عليه التقرير</span>
+          <input type="text" id="fTarget" placeholder="الجهة / الجهة المعنية / الشخص" />
+        </div>
+        <div class="field">
+          <span>المكان</span>
+          <input type="text" id="fLocation" placeholder="موقع التقرير" />
+        </div>
+        <div class="field">
+          <span>التاريخ</span>
+          <input type="date" id="fDate" />
+        </div>
+        <div class="field">
+          <span>الوقت</span>
+          <input type="time" id="fTime" />
+        </div>
+        <div class="field full">
+          <span>التقرير التفصيلي</span>
+          <textarea id="fDetails" style="min-height:170px" placeholder="اكتب هنا التقرير التفصيلي الكامل..."></textarea>
+        </div>
+        <div class="field full">
+          <span>📎 المرفقات والوسائط (اختياري — صور، فيديوهات، مستندات PDF/Word، تسجيلات صوتية...)</span>
+          <div class="photo-grid" id="photoGrid"></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px" id="photoSize"></div>
+          <input type="file" id="photoInput" multiple style="display:none" />
+        </div>
+        <div class="field full">
+          <span>اسم مُدخل التقرير (يُملأ تلقائياً من النظام)</span>
+          <input type="text" id="fEnteredBy" readonly />
+        </div>
+      </div>
+
+      <div class="pager">
+        <div style="font-size:12.5px;color:var(--muted)" id="saveMsgSide"></div>
+        <div class="btn-row">
+          <button class="btn btn-warn" id="saveDraftBtn">💾 حفظ كمسودة</button>
+          <button class="btn btn-primary" id="syncBtn">🚀 حفظ وترحيل / مزامنة</button>
+        </div>
+      </div>
+      <div id="syncMsg" style="color:var(--success);font-weight:800;font-size:14px;text-align:center;margin-top:16px"></div>
+    </section>
+  </main>
+</div>
+
+<!-- شاشة قفل الصلاحية -->
+<div class="login-wrap" id="lockOut" style="display:none">
+  <div class="login-card" style="text-align:center">
+    <div style="font-size:46px;margin-bottom:10px">🔒</div>
+    <h2 id="lockTitle">لا توجد صلاحية إدخال</h2>
+    <p class="sub" id="lockDesc" style="margin-bottom:20px"></p>
+    <button class="btn btn-outline" onclick="logout()">تسجيل الخروج</button>
+  </div>
+</div>
+
+<!-- نافذة التغذية الراجعة وإنجاز المهمة للموظف -->
+<div class="modal-back" id="taskFeedbackModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <h3 id="tfModalTitle">💬 التغذية الراجعة للمدير</h3>
+      <button class="x-btn" id="tfCloseBtn">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px">
+      <div id="tfTaskSummary" style="background:#f8fafc;padding:12px;border-radius:8px;border:1px solid var(--border);margin-bottom:14px;font-size:13px"></div>
+      <div class="field full">
+        <span>ملاحظات التغذية الراجعة أو تقرير التنفيذ للمدير</span>
+        <textarea id="tfNotes" style="min-height:110px" placeholder="اكتب هنا أي تفاصيل أو تقرير عن سير التنفيذ أو أسباب التأخير أو النتيجة للمدير..."></textarea>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700">
+          <input type="checkbox" id="tfMarkCompleted" checked style="width:18px;height:18px" />
+          <span>✅ تم إنجاز المهمة بالكامل (إغلاق المهمة كمكتملة)</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot" style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-outline" id="tfCancelBtn">إلغاء</button>
+      <button class="btn btn-primary" id="tfSubmitBtn">🚀 إرسال التغذية الراجعة للمدير</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js?v=20260901-8"></script>
+<script src="js/app.js?v=20260901-8"></script>
+<script src="js/report-header.js?v=20260901-8"></script>
+<script src="js/entry.js?v=20260901-8"></script>
+</body>
+</html>

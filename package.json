@@ -1,0 +1,22 @@
+{
+  "name": "codex-multitenant-system",
+  "version": "3.0.0",
+  "description": "منظومة كودكس السحابية لإدارة الحسابات والتقارير والمهام الميدانية المتعددة الجهات",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "codex",
+    "multi-tenant",
+    "reports",
+    "tasks",
+    "accounts",
+    "sqlite"
+  ],
+  "author": "Codex Software Company (شركة كودكس للبرمجيات)",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#1e3a8a" />
+<title>تسجيل الدخول — منظومة كودكس السحابية</title>
+<link rel="stylesheet" href="css/styles.css" />
+<style>
+  .login-msg { min-height:20px; margin-top:14px; font-size:13.5px; font-weight:700; text-align:center; }
+  .login-msg.err { color:var(--danger); }
+  .login-msg.ok { color:var(--success); }
+  .org-code-box { display:flex; gap:6px; }
+</style>
+</head>
+<body>
+<main class="login-wrap">
+  <div class="login-card">
+    <div style="text-align:center;margin-bottom:14px">
+      <img src="Image/codex_logo.jpg" alt="شركة كودكس للبرمجيات" style="width:80px;height:80px;object-fit:cover;border-radius:20px;box-shadow:0 10px 24px rgba(37,99,235,0.25);border:2px solid #ffffff" />
+    </div>
+    <h1 id="loginMainTitle">منظومة كودكس السحابية</h1>
+    <p class="sub" id="loginSubTitle">إدارة الحسابات والتقارير والمهام الميدانية للجهات والمؤسسات</p>
+
+    <form id="loginForm" class="form-grid">
+      <div class="field full">
+        <span>رمز الجهة / المنظمة (Organization Code)</span>
+        <div class="org-code-box">
+          <input type="text" id="orgCode" placeholder="مثال: DEMO أو AMAL..." style="text-transform:uppercase;font-weight:800;letter-spacing:1px" autocomplete="off" />
+          <button type="button" class="btn btn-outline" id="btnCheckOrg" style="padding:0 14px;font-size:13px;font-weight:700;white-space:nowrap" title="التحقق من الجهة">فحص 🔍</button>
+        </div>
+        <div id="orgStatusText" style="font-size:12px;font-weight:700;color:var(--primary);margin-top:2px;display:none"></div>
+      </div>
+
+      <div class="field full">
+        <span>اسم المستخدم</span>
+        <input type="text" id="userName" required autocomplete="username" placeholder="أدخل اسم المستخدم..." />
+      </div>
+
+      <div class="field full">
+        <span>كلمة المرور</span>
+        <div style="display:flex;gap:6px;position:relative">
+          <input type="password" id="password" required autocomplete="current-password" placeholder="أدخل كلمة المرور..." style="flex:1" />
+          <button type="button" class="btn btn-outline" id="toggleLoginPasswordBtn" style="padding:0 12px;font-size:16px" title="إظهار / إخفاء كلمة المرور">👁️</button>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary full" id="loginBtn" style="margin-top:8px;font-size:15px;padding:12px">تسجيل الدخول</button>
+    </form>
+
+    <div id="loginMessage" class="login-msg"></div>
+
+    <div class="login-company-footer">
+      <div>💻 تطوير وإنتاج: <strong>شركة كودكس للبرمجيات (Codex Software)</strong></div>
+      <div style="margin-top:4px">
+        <span>خدمة العملاء والدعم الفني: </span>
+        <a href="tel:783745550" class="dev-phone">📞 783745550</a>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">منظومة الحسابات والجهات المتعددة — الإصدار 3.0</div>
+    </div>
+  </div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+<script src="js/login.js"></script>
+</body>
+</html>
