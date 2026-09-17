@@ -1,5 +1,6 @@
 /* =========================================================
    app.js — أدوات منظومة كودكس للمنظومات المتعددة (Multi-Tenant)
+   - شركة كودكس للبرمجيات (Codex Software)
    ========================================================= */
 const TOKEN_KEY = 'codex_mt_session_token';
 const ORG_CODE_KEY = 'codex_mt_org_code';
@@ -65,12 +66,34 @@ function getCachedMe() {
   } catch (e) { return null; }
 }
 
+function getOfflineAuth() {
+  try {
+    const raw = localStorage.getItem(OFFLINE_AUTH_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
 function setMe(m, passwordHash = null) {
   __me = m;
   if (m) {
     try {
       localStorage.setItem(CACHED_USER_KEY, JSON.stringify(m));
       sessionStorage.setItem(CACHED_USER_KEY, JSON.stringify(m));
+      if (m.user && m.user.userName) {
+        const existing = getOfflineAuth();
+        const toSave = {
+          userName: m.user.userName,
+          fullName: m.user.fullName,
+          role: m.user.role,
+          orgCode: getOrgCode(),
+          passwordHash: passwordHash || (existing && existing.userName && existing.userName.toLowerCase() === m.user.userName.toLowerCase() ? existing.passwordHash : null),
+          user: m.user,
+          organization: m.organization,
+          token: m.token || getToken() || 'offline-token',
+          savedAt: new Date().toISOString()
+        };
+        localStorage.setItem(OFFLINE_AUTH_KEY, JSON.stringify(toSave));
+      }
     } catch (e) {}
   }
 }
@@ -169,6 +192,43 @@ function getServerBaseUrl() {
   return '';
 }
 
+function setCustomServerUrl(url) {
+  const clean = formatServerUrl(url);
+  if (!clean) {
+    localStorage.removeItem(SERVER_URL_KEY);
+  } else {
+    localStorage.setItem(SERVER_URL_KEY, clean);
+  }
+}
+
+async function testServerConnection(url) {
+  const base = formatServerUrl(url);
+  const orgCode = getOrgCode();
+  const target = (base ? base : '') + '/api/public/org-info?orgCode=' + encodeURIComponent(orgCode || 'DEMO');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(target, {
+      method: 'GET',
+      mode: 'cors',
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'X-Org-Code': orgCode,
+        'X-Device-Id': getDeviceId(),
+        'X-Device-Name': encodeURIComponent(getDeviceName())
+      }
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error('الخادم استجاب بكود ' + res.status);
+    const data = await res.json();
+    return { ok: true, org: data.org };
+  } catch (err) {
+    clearTimeout(timer);
+    throw new Error(err.name === 'AbortError' ? 'انتهت مهلة الاتصال بالخادم' : err.message);
+  }
+}
+
 /* ---------- الشبكة والاتصال بالسيرفر ---------- */
 async function api(pathname, opts = {}) {
   const token = getToken() || '';
@@ -209,7 +269,7 @@ async function api(pathname, opts = {}) {
     if (!location.pathname.endsWith('login.html')) {
       location.replace('login.html');
     }
-    throw new Error('انتهت الجلسة');
+    throw new Error('انتهت الجلسة، يرجى إعادة تسجيل الدخول');
   }
 
   if (!res.ok) throw new Error((data && data.error) || 'حدث خطأ (' + res.status + ')');
@@ -279,18 +339,236 @@ async function sha256Hex(plain) {
   return jsSha256(SALT_CONST + plain);
 }
 
-/* إشعار عائم Toast */
+/* ---------- مكونات مشتركة ودوال مساعدة ---------- */
 function toast(msg, type = 'ok') {
-  let t = document.getElementById('globalToast');
-  if (!t) {
-    t = document.createElement('div');
-    t.id = 'globalToast';
-    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:12px;font-size:14px;font-weight:800;z-index:99999;box-shadow:0 10px 25px rgba(0,0,0,0.25);transition:all .3s ease;display:none;';
-    document.body.appendChild(t);
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    document.body.appendChild(el);
   }
-  t.textContent = msg;
-  t.style.background = type === 'err' ? '#ef4444' : '#10b981';
-  t.style.color = '#ffffff';
-  t.style.display = 'block';
-  setTimeout(() => { t.style.display = 'none'; }, 4000);
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { el.className = 'toast'; }, 3800);
+}
+
+function el(html) {
+  const t = document.createElement('template');
+  t.innerHTML = html.trim();
+  return t.content.firstElementChild;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' }); }
+  catch (e) { return iso; }
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleString('ar-EG', { hour12: false }); }
+  catch (e) { return iso; }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const b = Number(bytes);
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function getAttachmentIcon(type, name) {
+  const t = (type || '').toLowerCase();
+  const n = (name || '').toLowerCase();
+  if (t.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(n)) return '🖼️';
+  if (t.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|3gp)$/i.test(n)) return '🎬';
+  if (t.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|amr)$/i.test(n)) return '🎵';
+  if (t.includes('pdf') || n.endsWith('.pdf')) return '📕';
+  if (t.includes('word') || t.includes('officedocument.wordprocessingml') || /\.(doc|docx)$/i.test(n)) return '📝';
+  if (t.includes('excel') || t.includes('spreadsheetml') || /\.(xls|xlsx|csv)$/i.test(n)) return '📊';
+  if (t.includes('powerpoint') || t.includes('presentation') || /\.(ppt|pptx)$/i.test(n)) return '📽️';
+  if (t.includes('zip') || t.includes('rar') || t.includes('7z') || t.includes('tar') || t.includes('compressed') || /\.(zip|rar|7z|tar|gz)$/i.test(n)) return '📦';
+  if (t.includes('text') || /\.(txt|rtf|log|json|xml)$/i.test(n)) return '📄';
+  return '📎';
+}
+
+function normalizeAttachment(att, idx = 0) {
+  if (!att) return { id: 'att_' + idx, name: 'ملف ' + (idx + 1), type: 'application/octet-stream', size: 0, data: '' };
+  if (typeof att === 'string') {
+    let mime = 'image/jpeg';
+    const m = att.match(/^data:([^;]+);base64,/);
+    if (m && m[1]) mime = m[1];
+    const isImg = mime.startsWith('image/');
+    const isVid = mime.startsWith('video/');
+    const isAud = mime.startsWith('audio/');
+    let ext = mime.split('/')[1] || 'bin';
+    if (ext === 'jpeg') ext = 'jpg';
+    let defaultName = isImg ? `صورة_${idx + 1}.${ext}` : (isVid ? `فيديو_${idx + 1}.${ext}` : (isAud ? `تسجيل_صوتي_${idx + 1}.${ext}` : `مرفق_${idx + 1}.${ext}`));
+    return {
+      id: 'att_' + idx + '_' + Date.now().toString(36),
+      name: defaultName,
+      type: mime,
+      size: Math.round(att.length * 0.75),
+      data: att
+    };
+  }
+  return {
+    id: att.id || ('att_' + idx + '_' + Date.now().toString(36)),
+    name: att.name || ('ملف ' + (idx + 1)),
+    type: att.type || 'application/octet-stream',
+    size: att.size || (att.data ? Math.round(att.data.length * 0.75) : 0),
+    data: att.data || ''
+  };
+}
+
+function combo(id, options, value, ph) {
+  const listId = id + '_list';
+  const opts = options.map(o => `<option value="${esc(o)}"></option>`).join('');
+  return (
+    `<div class="combo-wrap">
+       <input type="text" id="${id}" list="${listId}" value="${esc(value || '')}" placeholder="${esc(ph || 'اختر أو اكتب...')}" autocomplete="off" />
+       <datalist id="${listId}">${opts}</datalist>
+     </div>`
+  );
+}
+
+function badgeStatus(status) {
+  const map = {
+    'نشط': 'green', 'متقطع': 'warn', 'غير نشط': 'red',
+    'عالية': 'green', 'متوسط': 'warn', 'منخفض': 'red',
+    'مهم جدا': 'red', 'مهم': 'blue', 'متوسط': 'gold', 'عادي': 'gray', 'غير مهم': 'gray'
+  };
+  const c = map[status] || 'gray';
+  return `<span class="badge ${c}">${esc(status || '—')}</span>`;
+}
+
+function permBadges(u) {
+  if (!u) return '';
+  if (u.role === 'Admin') return `<span class="badge blue">👑 مدير النظام (كافة الصلاحيات)</span>`;
+  const p = [
+    ['canDash', 'لوحة التحكم'], ['canEntry', 'الإدخال'], ['canAdd', 'إضافة تقارير'],
+    ['canReports', 'التقارير'], ['canEdit', 'تعديل'], ['canDelete', 'حذف'], ['canPrint', 'طباعة'],
+    ['canEvents', 'المهام والأحداث'], ['canUsers', 'المستخدمين'], ['canSettings', 'الإعدادات']
+  ];
+  return p.filter(([k]) => u[k]).map(([k, label]) => `<span class="badge green">${label}</span>`).join(' ') || '<span class="badge gray">بدون صلاحيات</span>';
+}
+
+async function triggerInstantBackup() {
+  try {
+    const res = await api('/backup/now', { method: 'POST' });
+    toast(res.message || 'تم تحديث النسخة الاحتياطية بنجاح ✔', 'ok');
+  } catch (err) {
+    toast('تعذر عمل النسخة الاحتياطية: ' + err.message, 'err');
+  }
+}
+
+function openServerConfigModal() {
+  let m = document.getElementById('serverConfigModalBack');
+  if (!m) {
+    const div = document.createElement('div');
+    div.id = 'serverConfigModalBack';
+    div.className = 'modal-back';
+    div.innerHTML = `
+      <div class="modal" style="max-width:480px">
+        <div class="modal-h">
+          <h3>🌐 ضبط عنوان الخادم المركزي (Server Connection)</h3>
+          <button class="modal-x" type="button" onclick="document.getElementById('serverConfigModalBack').classList.remove('show')">✕</button>
+        </div>
+        <div style="padding:16px 20px 24px">
+          <p style="font-size:13px;color:var(--muted);line-height:1.8;margin-bottom:14px">
+            إذا كنت تستخدم التطبيق من هاتف أندرويد أو كمبيوتر آخر، أدخل عنوان IP أو رابط السيرفر السحابي.
+          </p>
+          <div class="field" style="margin-bottom:12px">
+            <span style="font-weight:700;font-size:13px">عنوان الخادم (URL / IP):</span>
+            <input type="text" id="cfgServerUrlInput" placeholder="مثال: https://codex-multitenant-system.onrender.com" style="direction:ltr;text-align:left;font-family:monospace;font-size:14px" />
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button class="btn btn-secondary btn-sm" style="flex:1;font-size:12px" type="button" onclick="document.getElementById('cfgServerUrlInput').value='http://' + (location.hostname || 'localhost') + (location.port ? ':' + location.port : '')">📍 العنوان الحالي</button>
+            <button class="btn btn-outline btn-sm" style="flex:1;font-size:12px" type="button" onclick="document.getElementById('cfgServerUrlInput').value=''">🔄 افتراضي</button>
+          </div>
+          <div id="cfgServerTestStatus" style="font-size:13px;font-weight:700;min-height:24px;margin-bottom:14px;padding:8px 12px;border-radius:6px;display:none;line-height:1.6"></div>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-secondary" style="flex:1" type="button" id="cfgTestServerBtn">🔍 فحص الاتصال</button>
+            <button class="btn btn-primary" style="flex:1" type="button" id="cfgSaveServerBtn">💾 حفظ وتطبيق</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(div);
+    m = div;
+
+    document.getElementById('cfgTestServerBtn').onclick = async () => {
+      const url = document.getElementById('cfgServerUrlInput').value.trim();
+      const statusDiv = document.getElementById('cfgServerTestStatus');
+      statusDiv.style.display = 'block';
+      statusDiv.style.background = 'var(--surface-soft)';
+      statusDiv.style.color = 'var(--text)';
+      statusDiv.textContent = '⏳ جارٍ اختبار الاتصال بالخادم...';
+      try {
+        const res = await testServerConnection(url);
+        statusDiv.style.background = '#dcfce7';
+        statusDiv.style.color = '#15803d';
+        statusDiv.textContent = '🟢 تم الاتصال بالخادم المركزي بنجاح!';
+      } catch (err) {
+        statusDiv.style.background = '#fee2e2';
+        statusDiv.style.color = '#b91c1c';
+        statusDiv.textContent = '🔴 تعذر الاتصال: ' + err.message;
+      }
+    };
+
+    document.getElementById('cfgSaveServerBtn').onclick = () => {
+      const url = document.getElementById('cfgServerUrlInput').value.trim();
+      setCustomServerUrl(url);
+      toast('تم حفظ إعدادات الخادم المركزي بنجاح ✔', 'ok');
+      m.classList.remove('show');
+      setTimeout(() => location.reload(), 600);
+    };
+  }
+
+  const defaultUrl = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) ? APP_CONFIG.defaultServerUrl : '';
+  const current = getServerBaseUrl() || defaultUrl;
+  const inputEl = document.getElementById('cfgServerUrlInput');
+  if (inputEl) inputEl.value = current;
+  const statusDiv = document.getElementById('cfgServerTestStatus');
+  if (statusDiv) statusDiv.style.display = 'none';
+  m.classList.add('show');
+}
+
+let _logoClicks = 0, _logoTimer = null;
+function initSecretAdminConfigTrigger() {
+  const logos = document.querySelectorAll('.login-logo, .brand .logo, #userAv');
+  logos.forEach(el => {
+    el.addEventListener('click', () => {
+      _logoClicks++;
+      clearTimeout(_logoTimer);
+      _logoTimer = setTimeout(() => { _logoClicks = 0; }, 1800);
+      if (_logoClicks >= 5) {
+        _logoClicks = 0;
+        openServerConfigModal();
+      }
+    });
+  });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initSecretAdminConfigTrigger);
+} else {
+  initSecretAdminConfigTrigger();
+}
+
+if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+  });
 }
