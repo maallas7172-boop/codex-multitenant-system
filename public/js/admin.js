@@ -176,9 +176,9 @@
         </div>`).join('') : '<div class="empty">لا توجد بيانات</div>';
     }
 
-    // أحدث التقارير مع تطبيق فلتر البحث
+    // أحدث التقارير مع فك التشفير وتطبيق فلتر البحث
     const searchVal = $('dashSearch') ? $('dashSearch').value.trim().toLowerCase() : '';
-    let recReports = s.recentReports || [];
+    let recReports = (s.recentReports || []).map(r => (typeof decryptReportData === 'function' ? decryptReportData(r) : r));
     if (searchVal) {
       recReports = recReports.filter(r =>
         (r.reportNumber || '').toLowerCase().includes(searchVal) ||
@@ -188,14 +188,17 @@
       );
     }
     if ($('latestReports')) {
-      $('latestReports').innerHTML = recReports.length ? recReports.map(r => `
+      $('latestReports').innerHTML = recReports.length ? recReports.map(r => {
+        const encBadge = r._wasEncrypted || r.isEncrypted ? ' <span style="color:#10b981;font-size:12px" title="مشفر E2EE">🔒</span>' : '';
+        return `
         <tr>
-          <td><b>${esc(r.reportNumber)}</b></td>
+          <td><b>${esc(r.reportNumber)}</b>${encBadge}</td>
           <td class="det">${esc(r.subject)}</td>
           <td>${esc(r.enteredBy || '—')}</td>
           <td>${esc(r.reportDate)}</td>
           <td>${badgeStatus(r.rating || 'بدون تصنيف')}</td>
-        </tr>`).join('') : '<tr><td colspan="5" class="empty">لا توجد تقارير مطابقة</td></tr>';
+        </tr>`;
+      }).join('') : '<tr><td colspan="5" class="empty">لا توجد تقارير مطابقة</td></tr>';
     }
   }
   if ($('dashSearch')) $('dashSearch').oninput = () => updateDashUI(dashStatsData);
@@ -253,7 +256,7 @@
 
     try {
       const d = await api('/reports?' + new URLSearchParams(q));
-      currentReports = d.reports || [];
+      currentReports = (d.reports || []).map(r => (typeof decryptReportData === 'function' ? decryptReportData(r) : r));
       const searchVal = $('rSearch') ? $('rSearch').value.trim().toLowerCase() : '';
       if (searchVal) {
         currentReports = currentReports.filter(r =>
@@ -273,10 +276,13 @@
         const delBtn = canDeleteReports
           ? `<button class="btn btn-danger btn-xs" data-del="${r.id}" title="حذف هذا التقرير نهائياً">🗑️ حذف</button>`
           : '';
+        const encBadge = r._wasEncrypted || r.isEncrypted
+          ? `<span class="badge green" style="font-size:10.5px;padding:2px 6px;margin-right:4px" title="هذا التقرير مشفر ومحمي بتقنية E2EE">🔒 مشفر</span>`
+          : '';
 
         return `<tr>
           ${chkCell}
-          <td><b>${esc(r.reportNumber)}</b></td>
+          <td><b>${esc(r.reportNumber)}</b> ${encBadge}</td>
           <td class="det" style="min-width:200px">${esc(r.subject)}</td>
           <td>${esc(r.target || '—')}</td>
           <td>${esc(r.reportDate)}</td>
@@ -426,8 +432,15 @@
         </div>`;
     }
 
+    const secNotice = (r._wasEncrypted || r.isEncrypted) ? `
+      <div style="background:#ecfdf5;border:1px solid #10b981;color:#065f46;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">🔒</span>
+        <span><b>تم استلام هذا التقرير مشفراً بنجاح (E2EE):</b> تم فك التشفير وعرض المحتوى الأصلي بأمان على جهاز المدير.</span>
+      </div>` : '';
+
     $('mDetailBody').innerHTML = `
       ${headerHtml}
+      ${secNotice}
       <table class="recent-table" style="margin-bottom:6px">
         <tr><th style="width:180px">رقم التقرير</th><td><b>${esc(r.reportNumber || '—')}</b></td></tr>
         <tr><th>موضوع التقرير</th><td><b>${esc(r.subject || '—')}</b></td></tr>
@@ -525,6 +538,7 @@
   <h3 style="font-size:15px;margin-bottom:8px">التقرير التفصيلي</h3>
   <div class="det">${esc(r.details || '—')}</div>
   ${attSummaryHtml}
+  ${typeof renderReportSignaturesHTML === 'function' ? renderReportSignaturesHTML() : ''}
   <div class="foot"><span>نظام إدارة التقارير • مُدخل التقرير: ${esc(r.enteredBy || '—')}</span><span>طُبع بتاريخ ${fmtDateTime(new Date().toISOString())}</span></div>
   <div class="no-print" style="text-align:center;margin-top:22px"><button onclick="window.print()" style="padding:10px 26px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">🖨 طباعة</button></div>
 </body></html>`);
@@ -590,11 +604,7 @@
     </thead>
     <tbody>${rows}</tbody>
   </table>
-  <div class="sig-grid">
-    <div><span>المُعِد / المستخرج</span><div class="sig-box">${esc(dashStatsData?.user?.fullName || 'مدير النظام')}</div></div>
-    <div><span>مسؤول الرقابة والمتابعة</span><div class="sig-box">التوقيع والمراجعة</div></div>
-    <div><span>المدير العام / المسؤول</span><div class="sig-box">الختم والاعتماد الرسمي</div></div>
-  </div>
+  ${typeof renderReportSignaturesHTML === 'function' ? renderReportSignaturesHTML() : ''}
   <div class="foot"><span>نظام إدارة التقارير الرسمية</span><span>طُبع بتاريخ ${fmtDateTime(new Date().toISOString())}</span></div>
   <div class="no-print" style="text-align:center;margin-top:22px"><button onclick="window.print()" style="padding:10px 26px;background:#1f6feb;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:700">🖨 طباعة الكشف الإجمالي</button></div>
 </body></html>`);
@@ -659,6 +669,7 @@
           <h4 style="font-size:14px;margin:14px 0 6px">التقرير التفصيلي:</h4>
           <div class="det-box">${esc(r.details || '—')}</div>
           ${attSection}
+          ${typeof renderReportSignaturesHTML === 'function' ? renderReportSignaturesHTML() : ''}
           <div class="foot"><span>نظام إدارة التقارير • مُدخل التقرير: <b>${esc(r.enteredBy || '—')}</b></span><span>طُبع بتاريخ ${fmtDateTime(new Date().toISOString())}</span></div>
         </div>
       `;
@@ -1157,10 +1168,12 @@
   }
 
   /* ================= المستخدمون والصلاحيات ================= */
+  let allOrgUsers = [];
   async function renderUsers() {
     try {
       const d = await api('/users');
-      const list = d.users.filter(u => u.userName.toLowerCase().includes(($('userSearch').value || '').trim().toLowerCase()));
+      allOrgUsers = d.users || [];
+      const list = allOrgUsers.filter(u => u.userName.toLowerCase().includes(($('userSearch').value || '').trim().toLowerCase()));
       $('userTableBody').innerHTML = list.map(u => {
         const curPw = u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456');
         if (u.role === 'Admin') {
@@ -1365,11 +1378,48 @@
 
   $('newUserBtn').onclick = () => openUserEditor(null);
 
+  function checkUserNameDuplicate() {
+    const input = $('ufUserName');
+    const errBox = $('ufUserNameError');
+    if (!input || !errBox) return false;
+    const currentId = $('userForm')?.dataset.id || '';
+    const val = input.value.trim().toLowerCase();
+    if (!val) {
+      errBox.style.display = 'none';
+      input.style.borderColor = '';
+      return false;
+    }
+    const isDup = allOrgUsers.some(u => String(u.id) !== String(currentId) && (u.userName || '').trim().toLowerCase() === val);
+    if (isDup) {
+      errBox.style.display = 'block';
+      errBox.textContent = `⚠️ اسم المستخدم «${input.value.trim()}» مسجل مسبقاً لموظف آخر، يرجى اختيار اسم فريد.`;
+      input.style.borderColor = '#dc2626';
+      return true;
+    } else {
+      errBox.style.display = 'none';
+      input.style.borderColor = '';
+      return false;
+    }
+  }
+
   function openUserEditor(u) {
     $('userFormTitle').textContent = u ? 'تعديل المستخدم: ' + u.fullName : 'إضافة مستخدم جديد';
     $('ufUserName').value = u ? u.userName : '';
     $('ufUserName').readOnly = false;
     $('ufFullName').value = u ? u.fullName : '';
+
+    const errBox = $('ufUserNameError');
+    if (errBox) {
+      errBox.style.display = 'none';
+      errBox.textContent = '';
+    }
+    $('ufUserName').style.borderColor = '';
+
+    if (!$('ufUserName')._boundDupCheck) {
+      $('ufUserName')._boundDupCheck = true;
+      $('ufUserName').addEventListener('input', checkUserNameDuplicate);
+      $('ufUserName').addEventListener('blur', checkUserNameDuplicate);
+    }
     
     // وضع كلمة المرور الحالية للمستخدم
     const currentPw = u ? (u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456')) : '';
@@ -1420,6 +1470,13 @@
     const userName = $('ufUserName').value.trim();
     const fullName = $('ufFullName').value.trim();
     if (!userName || !fullName) { toast('الاسم واسم المستخدم مطلوبان', 'err'); return; }
+
+    if (checkUserNameDuplicate()) {
+      toast(`اسم مدخل البيانات (${userName}) مسجل مسبقاً، يرجى اختيار اسم فريد`, 'err');
+      $('ufUserName').focus();
+      return;
+    }
+
     const pw = $('ufPassword').value.trim();
     if (!id && !pw) { toast('كلمة المرور مطلوبة للمستخدم الجديد', 'err'); return; }
 
@@ -1485,32 +1542,71 @@
   let customLogoBase64 = '';
 
   function getHeaderFormConfig() {
-    const rawLines = $('hRightLines') ? $('hRightLines').value.trim() : '';
-    const rightLines = rawLines ? rawLines.split('\n').map(l => l.trim()).filter(Boolean) : REPORT_HEADER_CONFIG.rightLines;
+    const line1 = $('setHeaderLine1') ? $('setHeaderLine1').value.trim() : (REPORT_HEADER_CONFIG.line1 || '');
+    const line2 = $('setHeaderLine2') ? $('setHeaderLine2').value.trim() : (REPORT_HEADER_CONFIG.line2 || '');
+    const line3 = $('setHeaderLine3') ? $('setHeaderLine3').value.trim() : (REPORT_HEADER_CONFIG.line3 || '');
+    const line4 = $('setHeaderLine4') ? $('setHeaderLine4').value.trim() : (REPORT_HEADER_CONFIG.line4 || '');
+    const line5 = $('setHeaderLine5') ? $('setHeaderLine5').value.trim() : (REPORT_HEADER_CONFIG.line5 || '');
+
+    const rightLines = [line1, line2, line3, line4, line5].filter(Boolean);
+
     let logoSrc = $('hLogoSel') ? $('hLogoSel').value : REPORT_HEADER_CONFIG.logoSrc;
     if (logoSrc === 'custom' && customLogoBase64) {
       logoSrc = customLogoBase64;
     } else if (logoSrc === 'custom') {
       logoSrc = REPORT_HEADER_CONFIG.logoSrc;
     }
-    const fontFamily = $('hFontSel') ? $('hFontSel').value : (REPORT_HEADER_CONFIG.fontFamily || 'amiri');
+    const fontFamily = $('hFontSel') ? $('hFontSel').value : (REPORT_HEADER_CONFIG.fontFamily || 'diwani');
     const showBasmala = $('hShowBasmala') ? $('hShowBasmala').checked : (REPORT_HEADER_CONFIG.showBasmala !== false);
     const basmalaText = $('hBasmalaText') ? $('hBasmalaText').value.trim() : (REPORT_HEADER_CONFIG.basmalaText || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ');
-    const confidentialityBadge = $('hConfidential') ? $('hConfidential').value.trim() : REPORT_HEADER_CONFIG.confidentialityBadge;
-    return { rightLines, logoSrc, fontFamily, showBasmala, basmalaText, confidentialityBadge };
+    const confidentialityBadge = $('hConfidential') ? $('hConfidential').value.trim() : (REPORT_HEADER_CONFIG.confidentialityBadge || '');
+
+    const sig1Title = $('setSig1') ? $('setSig1').value.trim() : (REPORT_HEADER_CONFIG.sig1Title || 'توقيع ضابط التقييم');
+    const sig1Name = $('setSig1Name') ? $('setSig1Name').value.trim() : (REPORT_HEADER_CONFIG.sig1Name || '');
+    const sig2Title = $('setSig2') ? $('setSig2').value.trim() : (REPORT_HEADER_CONFIG.sig2Title || 'اعتماد مدير الاستخبارات');
+    const sig2Name = $('setSig2Name') ? $('setSig2Name').value.trim() : (REPORT_HEADER_CONFIG.sig2Name || '');
+    const sig3Title = $('setSig3') ? $('setSig3').value.trim() : (REPORT_HEADER_CONFIG.sig3Title || 'الختم الأمني');
+    const sig3Name = $('setSig3Name') ? $('setSig3Name').value.trim() : (REPORT_HEADER_CONFIG.sig3Name || '');
+
+    return {
+      line1, line2, line3, line4, line5,
+      rightLines,
+      logoSrc,
+      fontFamily,
+      showBasmala,
+      basmalaText,
+      confidentialityBadge,
+      sig1Title,
+      sig1Name,
+      sig2Title,
+      sig2Name,
+      sig3Title,
+      sig3Name,
+      showSignatures: true
+    };
   }
 
   function renderHeaderPreview() {
     if (!$('hLivePreview')) return;
     const cfg = getHeaderFormConfig();
-    $('hLivePreview').innerHTML = renderReportHeaderHTML({ reportDate: todayStr(), reportTime: '10:30' }, cfg);
+    const sigHtml = typeof renderReportSignaturesHTML === 'function' ? renderReportSignaturesHTML(cfg) : '';
+    $('hLivePreview').innerHTML = `
+      ${renderReportHeaderHTML({ reportDate: todayStr(), reportTime: '10:30' }, cfg)}
+      <div style="margin:24px 0 16px;padding:12px;background:#f8fafc;border-radius:8px;text-align:center;color:#64748b;font-size:13px;border:1px dashed #cbd5e1">
+        📄 هنا يظهر جدول وتفاصيل التقرير والبيانات الرسمية والمرفقات...
+      </div>
+      ${sigHtml}
+    `;
   }
 
+  ['setHeaderLine1', 'setHeaderLine2', 'setHeaderLine3', 'setHeaderLine4', 'setHeaderLine5',
+   'hConfidential', 'hBasmalaText', 'setSig1', 'setSig1Name', 'setSig2', 'setSig2Name', 'setSig3', 'setSig3Name'].forEach(id => {
+    if ($(id)) $(id).oninput = renderHeaderPreview;
+  });
   if ($('hRightLines')) $('hRightLines').oninput = renderHeaderPreview;
-  if ($('hConfidential')) $('hConfidential').oninput = renderHeaderPreview;
   if ($('hFontSel')) $('hFontSel').onchange = renderHeaderPreview;
   if ($('hShowBasmala')) $('hShowBasmala').onchange = renderHeaderPreview;
-  if ($('hBasmalaText')) $('hBasmalaText').oninput = renderHeaderPreview;
+
   if ($('hLogoSel')) {
     $('hLogoSel').onchange = function () {
       if (this.value === 'custom') {
@@ -1530,7 +1626,7 @@
       reader.onload = () => {
         customLogoBase64 = reader.result;
         renderHeaderPreview();
-        toast('تم اختيار الصورة بنجاح ✔ — اضغط «حفظ وتطبيق» لحفظها على النظام');
+        toast('تم اختيار الصورة بنجاح ✔ — اضغط «حفظ الترويسة والتوقيعات» لتثبيتها');
       };
       reader.readAsDataURL(file);
     };
@@ -1546,7 +1642,48 @@
         });
         updateReportHeaderConfig(cfg);
         renderHeaderPreview();
-        toast('تم حفظ وتطبيق الترويسة الجديدة على جميع التقارير بنجاح ✔');
+        toast('تم حفظ وتطبيق الترويسة والتوقيعات على جميع التقارير بنجاح ✔');
+      } catch (err) { toast(err.message, 'err'); }
+    };
+  }
+
+  if ($('hResetBtn')) {
+    $('hResetBtn').onclick = async () => {
+      if (!confirm('هل أنت متأكد من استعادة الإعدادات الافتراضية للترويسة والتوقيعات؟')) return;
+      const defaultCfg = {
+        line1: "الجمهورية اليمنية",
+        line2: "وزارة النقل",
+        line3: "الهيئة العامة لتنظيم شؤون النقل البري",
+        line4: "مكتب رئيس الهيئة",
+        line5: "",
+        rightLines: [
+          "الجمهورية اليمنية",
+          "وزارة النقل",
+          "الهيئة العامة لتنظيم شؤون النقل البري",
+          "مكتب رئيس الهيئة"
+        ],
+        logoSrc: "Image/1754379379088.jpg",
+        showBasmala: true,
+        basmalaText: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+        fontFamily: "diwani",
+        confidentialityBadge: "خاص وسري",
+        sig1Title: "توقيع ضابط التقييم",
+        sig1Name: "محمد صالح",
+        sig2Title: "اعتماد مدير الاستخبارات",
+        sig2Name: "",
+        sig3Title: "الختم الأمني",
+        sig3Name: "[....................]",
+        showSignatures: true
+      };
+      customLogoBase64 = '';
+      try {
+        await api('/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ reportHeaderConfig: defaultCfg })
+        });
+        updateReportHeaderConfig(defaultCfg);
+        renderSettings();
+        toast('تم استعادة الإعدادات الافتراضية بنجاح ✔');
       } catch (err) { toast(err.message, 'err'); }
     };
   }
@@ -1559,24 +1696,38 @@
       if (s.reportHeaderConfig) {
         updateReportHeaderConfig(s.reportHeaderConfig);
       }
+      const cfg = REPORT_HEADER_CONFIG;
+      if ($('setHeaderLine1')) $('setHeaderLine1').value = cfg.line1 !== undefined ? cfg.line1 : (cfg.rightLines?.[0] || 'الجمهورية اليمنية');
+      if ($('setHeaderLine2')) $('setHeaderLine2').value = cfg.line2 !== undefined ? cfg.line2 : (cfg.rightLines?.[1] || 'وزارة النقل');
+      if ($('setHeaderLine3')) $('setHeaderLine3').value = cfg.line3 !== undefined ? cfg.line3 : (cfg.rightLines?.[2] || 'الهيئة العامة لتنظيم شؤون النقل البري');
+      if ($('setHeaderLine4')) $('setHeaderLine4').value = cfg.line4 !== undefined ? cfg.line4 : (cfg.rightLines?.[3] || 'مكتب رئيس الهيئة');
+      if ($('setHeaderLine5')) $('setHeaderLine5').value = cfg.line5 !== undefined ? cfg.line5 : (cfg.rightLines?.[4] || '');
+
       if ($('hRightLines')) {
-        const lines = REPORT_HEADER_CONFIG.rightLines;
+        const lines = cfg.rightLines;
         $('hRightLines').value = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
       }
       if ($('hConfidential')) {
-        $('hConfidential').value = REPORT_HEADER_CONFIG.confidentialityBadge || '';
+        $('hConfidential').value = cfg.confidentialityBadge || '';
       }
       if ($('hFontSel')) {
-        $('hFontSel').value = REPORT_HEADER_CONFIG.fontFamily || 'diwani';
+        $('hFontSel').value = cfg.fontFamily || 'diwani';
       }
       if ($('hShowBasmala')) {
-        $('hShowBasmala').checked = REPORT_HEADER_CONFIG.showBasmala !== false;
+        $('hShowBasmala').checked = cfg.showBasmala !== false;
       }
       if ($('hBasmalaText')) {
-        $('hBasmalaText').value = REPORT_HEADER_CONFIG.basmalaText || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
+        $('hBasmalaText').value = cfg.basmalaText || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
       }
+      if ($('setSig1')) $('setSig1').value = cfg.sig1Title || 'توقيع ضابط التقييم';
+      if ($('setSig1Name')) $('setSig1Name').value = cfg.sig1Name || '';
+      if ($('setSig2')) $('setSig2').value = cfg.sig2Title || 'اعتماد مدير الاستخبارات';
+      if ($('setSig2Name')) $('setSig2Name').value = cfg.sig2Name || '';
+      if ($('setSig3')) $('setSig3').value = cfg.sig3Title || 'الختم الأمني';
+      if ($('setSig3Name')) $('setSig3Name').value = cfg.sig3Name || '';
+
       if ($('hLogoSel')) {
-        const currentSrc = REPORT_HEADER_CONFIG.logoSrc || '';
+        const currentSrc = cfg.logoSrc || '';
         if (currentSrc === 'Image/1754379379088.jpg') {
           $('hLogoSel').value = currentSrc;
         } else if (currentSrc) {
@@ -1620,48 +1771,51 @@
   /* ================= إغلاق النوافذ ================= */
   document.querySelectorAll('.x-btn').forEach(b => b.onclick = () => b.closest('.modal-back').classList.remove('show'));
 
-  /* ================= التشغيل الأولي ================= */
-  window.renderDash = renderDash;
-  window.renderReports = renderReports;
-  window.renderUsers = renderUsers;
-  window.renderSettings = renderSettings;
-  loadUserSelects();
-  renderDash();
-})();
+  /* ================= إدارة الباركود وبطاقة ربط الهواتف ================= */
+  window.showMyOrgQrModal = function() {
+    if (!me || !me.organization) {
+      toast('تعذر جلب بيانات المؤسسة للباركود', 'err');
+      return;
+    }
+    const o = me.organization;
+    const nameEl = document.getElementById('adminQrOrgName');
+    const codeEl = document.getElementById('adminQrOrgCode');
+    if (nameEl) nameEl.textContent = o.orgName || '';
+    if (codeEl) codeEl.textContent = o.orgCode || '';
+    const container = document.getElementById('adminQrCanvasContainer');
+    if (container) {
+      container.innerHTML = '';
+      const baseUrl = getServerBaseUrl() || location.origin;
+      const directUrl = baseUrl + '/login.html?org=' + encodeURIComponent(o.orgCode);
+      if (typeof QRCode !== 'undefined') {
+        new QRCode(container, {
+          text: directUrl,
+          width: 190,
+          height: 190
+        });
+      }
+    }
+    const modal = document.getElementById('adminOrgQrModal');
+    if (modal) modal.classList.add('show');
+  };
 
-window.showMyOrgQrModal = function() {
-  if (!me || !me.organization) return;
-  const org = me.organization;
-  document.getElementById('adminQrOrgName').textContent = org.orgName;
-  document.getElementById('adminQrOrgCode').textContent = org.orgCode;
-  const container = document.getElementById('adminQrCanvasContainer');
-  container.innerHTML = '';
-  
-  const baseUrl = getServerBaseUrl() || location.origin;
-  const directUrl = baseUrl + '/login.html?org=' + encodeURIComponent(org.orgCode);
-  
-  if (typeof QRCode !== 'undefined') {
-    new QRCode(container, {
-      text: directUrl,
-      width: 190,
-      height: 190
-    });
-  }
-  document.getElementById('adminOrgQrModal').classList.add('show');
-};
+  window.closeMyOrgQrModal = function() {
+    const modal = document.getElementById('adminOrgQrModal');
+    if (modal) modal.classList.remove('show');
+  };
 
-window.printMyOrgCard = function() {
-  if (!me || !me.organization) return;
-  const org = me.organization;
-  const canvas = document.querySelector('#adminQrCanvasContainer canvas');
-  const qrDataUrl = canvas ? canvas.toDataURL() : '';
+  window.printMyOrgCard = function() {
+    if (!me || !me.organization) return;
+    const o = me.organization;
+    const canvas = document.querySelector('#adminQrCanvasContainer canvas');
+    const qrDataUrl = canvas ? canvas.toDataURL() : '';
 
-  const w = window.open('', '_blank', 'width=650,height=750');
-  w.document.write(`<!DOCTYPE html>
+    const w = window.open('', '_blank', 'width=650,height=750');
+    w.document.write(`<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8" />
-<title>بطاقة ربط المنظومة — ${org.orgName}</title>
+<title>بطاقة ربط المنظومة — ${esc(o.orgName)}</title>
 <style>
   body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
   .card { background: #fff; border: 2px solid #0f172a; border-radius: 20px; padding: 32px 28px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
@@ -1682,12 +1836,12 @@ window.printMyOrgCard = function() {
   <div class="header">
     <img src="Image/codex_logo.jpg" alt="Codex" />
     <div>
-      <h2>منظومة كودكس السحابية لإدارة التقارير</h2>
+      <h2 style="margin:0">منظومة كودكس السحابية لإدارة التقارير</h2>
       <small style="color:#64748b">بطاقة ربط واعتماد الهواتف الميدانية</small>
     </div>
   </div>
   
-  <div class="org-title">${org.orgName}</div>
+  <div class="org-title">${esc(o.orgName)}</div>
   
   <div class="qr-box">
     <img src="${qrDataUrl}" alt="QR Code" />
@@ -1695,13 +1849,13 @@ window.printMyOrgCard = function() {
   
   <div>
     <div style="font-size:12px;color:#64748b;margin-bottom:4px;font-weight:700">رمز الجهة الرسمي:</div>
-    <div class="code-badge">${org.orgCode}</div>
+    <div class="code-badge">${esc(o.orgCode)}</div>
   </div>
 
   <div class="steps">
     <b>طريقة ربط الهاتف بالمنظومة:</b><br/>
     1. افتح تطبيق المنظومة أو كاميرا الهاتف وامسح رمز الـ QR أعلاه.<br/>
-    2. أو افتح التطبيق واكتب رمز الجهة: <b>${org.orgCode}</b><br/>
+    2. أو افتح التطبيق واكتب رمز الجهة: <b>${esc(o.orgCode)}</b><br/>
     3. أدخل اسم المستخدم وكلمة المرور الخاصة بك.
   </div>
 
@@ -1714,5 +1868,14 @@ window.printMyOrgCard = function() {
 </script>
 </body>
 </html>`);
-  w.document.close();
-};
+    w.document.close();
+  };
+
+  /* ================= التشغيل الأولي ================= */
+  window.renderDash = renderDash;
+  window.renderReports = renderReports;
+  window.renderUsers = renderUsers;
+  window.renderSettings = renderSettings;
+  loadUserSelects();
+  renderDash();
+})();

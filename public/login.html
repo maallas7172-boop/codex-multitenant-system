@@ -17,17 +17,18 @@
 <main class="login-wrap">
   <div class="login-card">
     <div style="text-align:center;margin-bottom:14px">
-      <img src="Image/codex_logo.jpg" alt="شركة كودكس للبرمجيات" style="width:80px;height:80px;object-fit:cover;border-radius:20px;box-shadow:0 10px 24px rgba(37,99,235,0.25);border:2px solid #ffffff" />
+      <img id="loginTopLogo" src="Image/app_logo.jpg" alt="نظام إدارة الحسابات" style="width:80px;height:80px;object-fit:cover;border-radius:20px;box-shadow:0 10px 24px rgba(37,99,235,0.25);border:2px solid #ffffff" />
     </div>
-    <h1 id="loginMainTitle">منظومة كودكس السحابية</h1>
-    <p class="sub" id="loginSubTitle">إدارة الحسابات والتقارير والمهام الميدانية للجهات والمؤسسات</p>
+    <h1 id="loginMainTitle">إدارة الحسابات</h1>
+    <p class="sub" id="loginSubTitle">منظومة إدارة الحسابات والتقارير المالية والميدانية</p>
 
     <form id="loginForm" class="form-grid">
       <div class="field full">
         <span>رمز الجهة / المنظمة (Organization Code)</span>
         <div class="org-code-box">
           <input type="text" id="orgCode" placeholder="مثال: DEMO أو AMAL..." style="text-transform:uppercase;font-weight:800;letter-spacing:1px" autocomplete="off" />
-          <button type="button" class="btn btn-outline" id="btnCheckOrg" style="padding:0 14px;font-size:13px;font-weight:700;white-space:nowrap" title="التحقق من الجهة">فحص 🔍</button>
+          <button type="button" class="btn btn-outline" id="btnCheckOrg" style="padding:0 12px;font-size:13px;font-weight:700;white-space:nowrap" title="التحقق من الجهة">فحص 🔍</button>
+          <button type="button" class="btn btn-outline" id="btnScanQr" style="padding:0 12px;font-size:13px;font-weight:700;white-space:nowrap" title="مسح باركود المؤسسة">📷 باركود</button>
         </div>
         <div id="orgStatusText" style="font-size:12px;font-weight:700;color:var(--primary);margin-top:2px;display:none"></div>
       </div>
@@ -50,13 +51,17 @@
 
     <div id="loginMessage" class="login-msg"></div>
 
-    <div class="login-company-footer">
-      <div>💻 تطوير وإنتاج: <strong>شركة كودكس للبرمجيات (Codex Software)</strong></div>
-      <div style="margin-top:4px">
-        <span>خدمة العملاء والدعم الفني: </span>
-        <a href="tel:783745550" class="dev-phone">📞 783745550</a>
-      </div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:4px">منظومة الحسابات والجهات المتعددة — الإصدار 3.0</div>
+    <!-- زر فحص الاتصال المباشر بالسيرفر بدون إظهار أي روابط -->
+    <div style="margin-top:16px;border-top:1px dashed var(--line);padding-top:14px">
+      <button type="button" class="btn btn-outline full" id="btnTestServerConn" style="font-size:13px;padding:9px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:8px">
+        <span>📶</span>
+        <span>فحص حالة الاتصال بالسيرفر</span>
+      </button>
+      <div id="connStatusBox" style="display:none;margin-top:10px;padding:10px 14px;border-radius:10px;font-size:12.5px;font-weight:800;text-align:center"></div>
+    </div>
+
+    <div style="text-align:center;font-size:11.5px;color:var(--muted);margin-top:18px">
+      منظومة إدارة الحسابات والتقارير الميدانية © 2026
     </div>
   </div>
 </main>

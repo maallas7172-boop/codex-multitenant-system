@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS organizations (
   status TEXT DEFAULT 'active',
   maxUsers INTEGER DEFAULT 50,
   subscriptionPlan TEXT DEFAULT 'standard',
+  allowHqAccess INTEGER DEFAULT 1,
   createdAt TEXT NOT NULL
 );
 
@@ -154,6 +155,13 @@ CREATE TABLE IF NOT EXISTS cloud_relay_queue (
 );
 `);
 
+// ترحيل تلقائي للأعمدة الجديدة في قواعد البيانات القائمة
+try { db.exec("ALTER TABLE organizations ADD COLUMN allowHqAccess INTEGER DEFAULT 1;"); } catch(e){}
+try { db.exec("ALTER TABLE organizations ADD COLUMN encKey TEXT;"); } catch(e){}
+try { db.exec("ALTER TABLE reports ADD COLUMN isEncrypted INTEGER DEFAULT 0;"); } catch(e){}
+try { db.exec("ALTER TABLE reports ADD COLUMN encryptedPayload TEXT;"); } catch(e){}
+try { db.exec("ALTER TABLE reports ADD COLUMN encryptedIv TEXT;"); } catch(e){}
+
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -190,10 +198,12 @@ function setSetting(orgId, key, value) {
   let demoOrgId;
   if (!demoOrg) {
     demoOrgId = uid();
-    db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, createdAt)
-      VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/codex_logo.jpg', '783745550', 'active', 50, ?)`)
-      .run(demoOrgId, nowIso());
-    console.log('✓ Created Demo Organization: DEMO');
+    const demoEncKey = crypto.randomBytes(32).toString('hex');
+    db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
+      VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/codex_logo.jpg', '783745550', 'active', 50, 1, ?, ?)`)
+      .run(demoOrgId, demoEncKey, nowIso());
+    setSetting(demoOrgId, 'enforceDeviceAuth', '1');
+    console.log('✓ Created Demo Organization: DEMO with E2EE key');
   } else {
     demoOrgId = demoOrg.id;
   }
@@ -215,6 +225,21 @@ function setSetting(orgId, key, value) {
       VALUES(?, ?, 'ahmed', 'أحمد محمد (موظف ميداني)', ?, '123456', 'EntryUser', 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, ?)`)
       .run(uId, demoOrgId, hashHex('123456'), nowIso());
   }
+
+  // ضمان توليد مفتاح تشفير طرفي وتفعيل اعتماد الأجهزة لجميع الجهات القائمة
+  try {
+    const allOrgs = db.prepare('SELECT id, encKey FROM organizations').all();
+    for (const o of allOrgs) {
+      if (!o.encKey) {
+        const k = crypto.randomBytes(32).toString('hex');
+        db.prepare('UPDATE organizations SET encKey=? WHERE id=?').run(k, o.id);
+      }
+      const currentEnforce = getSetting(o.id, 'enforceDeviceAuth', '');
+      if (!currentEnforce) {
+        setSetting(o.id, 'enforceDeviceAuth', '1');
+      }
+    }
+  } catch(e){}
 })();
 
 function publicUser(u) {
@@ -246,9 +271,17 @@ function publicUser(u) {
 }
 
 function parseReportRow(r) {
+  if (!r) return null;
   let images = [];
   try { images = JSON.parse(r.images || '[]'); } catch (e) { images = []; }
-  return { ...r, images, imageCount: images.length };
+  return {
+    ...r,
+    images,
+    imageCount: images.length,
+    isEncrypted: r.isEncrypted ? 1 : 0,
+    encryptedPayload: r.encryptedPayload || '',
+    encryptedIv: r.encryptedIv || ''
+  };
 }
 
 /* ------------------------- الجلسات المشفرة ------------------------- */
@@ -353,6 +386,10 @@ function buildMe(user) {
   let org = null;
   if (user.orgId) {
     org = db.prepare('SELECT * FROM organizations WHERE id=?').get(user.orgId);
+    if (org && !org.encKey) {
+      const k = crypto.randomBytes(32).toString('hex');
+      try { db.prepare('UPDATE organizations SET encKey=? WHERE id=?').run(k, org.id); org.encKey = k; } catch(e){}
+    }
   }
   const entryUsers = user.orgId ? db.prepare("SELECT id, userName, fullName, role FROM users WHERE orgId=? AND role='EntryUser' ORDER BY fullName").all() : [];
   return {
@@ -363,7 +400,8 @@ function buildMe(user) {
       orgName: org.orgName,
       logoUrl: org.logoUrl || 'Image/codex_logo.jpg',
       phone: org.phone,
-      status: org.status
+      status: org.status,
+      encKey: org.encKey || ''
     } : null,
     users: entryUsers,
     settings: user.orgId ? {
@@ -503,6 +541,11 @@ const server = http.createServer(async (req, res) => {
 
   try {
     /* ------------------------- المسارات العامة ------------------------- */
+    if (method === 'GET' && (p === '/api/ping' || p === '/api/health')) {
+      send(res, 200, { ok: true, status: 'alive', message: 'Codex Server is active and running', time: new Date().toISOString() });
+      return;
+    }
+
     if (method === 'GET' && p === '/api/public/org-info') {
       const code = (u.searchParams.get('orgCode') || '').trim().toUpperCase();
       if (!code) { send(res, 200, { found: false, error: 'رمز الجهة مطلوب' }); return; }
@@ -554,8 +597,9 @@ const server = http.createServer(async (req, res) => {
       let hashToCompare = b.passwordHash;
       if (!hashToCompare && b.password) hashToCompare = hashHex(b.password);
 
-      if (userName === 'superadmin' || orgCode === 'CODEX' || orgCode === 'SUPER') {
-        const superUser = db.prepare("SELECT * FROM users WHERE userName=? AND role='SuperAdmin'").get(userName);
+      const lowerUser = userName.toLowerCase();
+      if (lowerUser === 'superadmin' || orgCode === 'CODEX' || orgCode === 'SUPER') {
+        const superUser = db.prepare("SELECT * FROM users WHERE LOWER(userName)=? AND role='SuperAdmin'").get(lowerUser);
         if (superUser && superUser.isActive && superUser.passwordHash === hashToCompare) {
           const token = createSession(superUser.id, null);
           send(res, 200, { token, isSuperAdmin: true, ...buildMe(superUser) });
@@ -605,6 +649,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // فحص إلزامي لاعتماد الأجهزة لجميع مستخدمي الإدخال الميداني
+    if (me.role !== 'Admin' && me.role !== 'SuperAdmin') {
+      const org = db.prepare('SELECT * FROM organizations WHERE id=?').get(me.orgId);
+      const devAuth = checkDeviceAuth(me, org, req);
+      if (!devAuth.ok) {
+        send(res, 403, { error: devAuth.message, code: devAuth.code, deviceId: req.headers['x-device-id'] });
+        return;
+      }
+    }
+
     if (method === 'GET' && p === '/api/me') {
       send(res, 200, buildMe(me));
       return;
@@ -623,6 +677,7 @@ const server = http.createServer(async (req, res) => {
           const dCount = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved'").get(org.id).c;
           const qCount = db.prepare("SELECT COUNT(*) c FROM cloud_relay_queue WHERE orgId=? AND status='pending'").get(org.id).c;
           const adminUser = db.prepare("SELECT userName, fullName, plainPassword FROM users WHERE orgId=? AND role='Admin'").get(org.id);
+          const allowHq = (org.allowHqAccess === 0 || org.allowHqAccess === false) ? 0 : 1;
           return {
             ...org,
             usersCount: uCount,
@@ -630,7 +685,9 @@ const server = http.createServer(async (req, res) => {
             eventsCount: eCount,
             devicesCount: dCount,
             queueCount: qCount,
-            adminUser: adminUser || null
+            adminUser: adminUser || null,
+            allowHqAccess: allowHq,
+            encKey: allowHq ? (org.encKey || '') : null
           };
         });
 
@@ -656,10 +713,14 @@ const server = http.createServer(async (req, res) => {
         const exists = db.prepare('SELECT id FROM organizations WHERE orgCode=?').get(orgCode);
         if (exists) { sendError(res, 409, 'رمز الجهة موجود مسبقاً، يرجى اختيار رمز آخر'); return; }
 
+        const allowHqAccess = b.allowHqAccess !== undefined ? (b.allowHqAccess ? 1 : 0) : 1;
+        const encKey = crypto.randomBytes(32).toString('hex');
         const orgId = uid();
-        db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, createdAt)
-          VALUES(?, ?, ?, ?, ?, 'active', ?, ?)`)
-          .run(orgId, orgCode, orgName, b.logoUrl || 'Image/codex_logo.jpg', b.phone || '', b.maxUsers || 50, nowIso());
+        db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
+          VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`)
+          .run(orgId, orgCode, orgName, b.logoUrl || 'Image/codex_logo.jpg', b.phone || '', b.maxUsers || 50, allowHqAccess, encKey, nowIso());
+
+        setSetting(orgId, 'enforceDeviceAuth', '1');
 
         const adminId = uid();
         db.prepare(`INSERT INTO users(
@@ -671,8 +732,69 @@ const server = http.createServer(async (req, res) => {
         send(res, 200, {
           ok: true,
           message: 'تم إنشاء الجهة وتجهيز حساب المدير بنجاح ✔',
-          org: { id: orgId, orgCode, orgName, adminUserName, adminPassword }
+          org: { id: orgId, orgCode, orgName, adminUserName, adminPassword, allowHqAccess, encKey }
         });
+        return;
+      }
+
+      const toggleHqMatch = p.match(/^\/api\/super\/organizations\/([^/]+)\/toggle-hq-access$/);
+      if (toggleHqMatch && (method === 'POST' || method === 'PUT')) {
+        const targetOrgId = toggleHqMatch[1];
+        const org = db.prepare('SELECT id, allowHqAccess FROM organizations WHERE id=?').get(targetOrgId);
+        if (!org) { sendError(res, 404, 'الجهة غير موجودة'); return; }
+        const currentHq = (org.allowHqAccess === null || org.allowHqAccess === undefined) ? 1 : org.allowHqAccess;
+        const newAccess = currentHq ? 0 : 1;
+        db.prepare('UPDATE organizations SET allowHqAccess=? WHERE id=?').run(newAccess, targetOrgId);
+        send(res, 200, {
+          ok: true,
+          allowHqAccess: newAccess,
+          message: newAccess ? 'تم تمكين وصول المركز الرئيسي لتقارير الفرع بنجاح 🟢' : 'تم حجب تقارير الفرع عن المركز الرئيسي ⛔'
+        });
+        return;
+      }
+
+      if (method === 'GET' && p === '/api/super/reports') {
+        const filterOrgId = (u.searchParams.get('orgId') || '').trim();
+        const fromDate = (u.searchParams.get('from') || '').trim();
+        const toDate = (u.searchParams.get('to') || '').trim();
+        const q = (u.searchParams.get('q') || '').trim().toLowerCase();
+
+        let sql = `
+          SELECT r.*, o.orgName, o.orgCode, o.encKey as orgEncKey
+          FROM reports r
+          JOIN organizations o ON r.orgId = o.id
+          WHERE (o.allowHqAccess IS NULL OR o.allowHqAccess = 1)
+        `;
+        const params = [];
+
+        if (filterOrgId) {
+          sql += ' AND r.orgId = ?';
+          params.push(filterOrgId);
+        }
+        if (fromDate) {
+          sql += ' AND r.reportDate >= ?';
+          params.push(fromDate);
+        }
+        if (toDate) {
+          sql += ' AND r.reportDate <= ?';
+          params.push(toDate);
+        }
+        if (q) {
+          sql += ' AND (LOWER(r.subject) LIKE ? OR LOWER(r.reportNumber) LIKE ? OR LOWER(r.enteredBy) LIKE ? OR LOWER(r.target) LIKE ?)';
+          const term = '%' + q + '%';
+          params.push(term, term, term, term);
+        }
+
+        sql += ' ORDER BY r.reportDate DESC, r.createdAt DESC LIMIT 500';
+        const rows = db.prepare(sql).all(...params).map(r => {
+          const rep = parseReportRow(r);
+          rep.orgName = r.orgName;
+          rep.orgCode = r.orgCode;
+          rep.orgEncKey = r.orgEncKey;
+          return rep;
+        });
+
+        send(res, 200, { ok: true, count: rows.length, reports: rows });
         return;
       }
 
@@ -684,8 +806,9 @@ const server = http.createServer(async (req, res) => {
 
         if (method === 'PUT') {
           const b = await readBody(req);
-          db.prepare(`UPDATE organizations SET orgName=?, status=?, phone=?, maxUsers=? WHERE id=?`)
-            .run(String(b.orgName || org.orgName), String(b.status || org.status), String(b.phone ?? org.phone), b.maxUsers || org.maxUsers, targetOrgId);
+          const newHq = b.allowHqAccess !== undefined ? (b.allowHqAccess ? 1 : 0) : ((org.allowHqAccess === null || org.allowHqAccess === undefined) ? 1 : org.allowHqAccess);
+          db.prepare(`UPDATE organizations SET orgName=?, status=?, phone=?, maxUsers=?, allowHqAccess=? WHERE id=?`)
+            .run(String(b.orgName || org.orgName), String(b.status || org.status), String(b.phone ?? org.phone), b.maxUsers || org.maxUsers, newHq, targetOrgId);
           send(res, 200, { ok: true, message: 'تم تحديث بيانات الجهة بنجاح' });
           return;
         }
@@ -785,8 +908,8 @@ const server = http.createServer(async (req, res) => {
         const fullName = String(b.fullName || '').trim();
         if (!userName || !fullName) { sendError(res, 400, 'اسم المستخدم والاسم الكامل مطلوبان'); return; }
 
-        const exists = db.prepare('SELECT id FROM users WHERE orgId=? AND userName=?').get(orgId, userName);
-        if (exists) { sendError(res, 409, 'اسم المستخدم موجود مسبقاً في هذه الجهة'); return; }
+        const exists = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?)').get(orgId, userName);
+        if (exists) { sendError(res, 409, `اسم مدخل البيانات (${userName}) مسجل مسبقاً في هذا الفرع، يرجى اختيار اسم فريد`); return; }
 
         const pPlain = String(b.plainPassword || b.password || '123456').trim();
         const pHash = hashHex(pPlain);
@@ -818,6 +941,14 @@ const server = http.createServer(async (req, res) => {
 
       if (method === 'PUT') {
         const b = await readBody(req);
+        if (b.userName) {
+          const newU = String(b.userName).trim();
+          if (newU && newU.toLowerCase() !== user.userName.toLowerCase()) {
+            const dup = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?) AND id<>?').get(orgId, newU, user.id);
+            if (dup) { sendError(res, 409, `اسم مدخل البيانات (${newU}) مسجل مسبقاً في هذا الفرع، يرجى اختيار اسم فريد`); return; }
+            db.prepare('UPDATE users SET userName=? WHERE id=?').run(newU, user.id);
+          }
+        }
         db.prepare(`UPDATE users SET
           fullName=?, isActive=?, canDash=?, canEntry=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?, canEvents=?, canUsers=?, canSettings=?
           WHERE id=?`)
@@ -868,16 +999,20 @@ const server = http.createServer(async (req, res) => {
         const id = repData.id || uid();
         const t = nowIso();
         const repNum = String(repData.reportNumber || Date.now().toString().slice(-6));
+        const isEnc = repData.isEncrypted ? 1 : 0;
+        const encPayload = String(repData.encryptedPayload || '');
+        const encIv = String(repData.encryptedIv || '');
         
         db.prepare(`INSERT OR REPLACE INTO reports(
           id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
-          enteredBy, enteredByUserId, rating, logoId, createdAt, updatedAt
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
             id, orgId, repNum, String(repData.subject || ''), String(repData.target || ''),
             String(repData.reportDate || t.slice(0, 10)), String(repData.reportTime || t.slice(11, 16)),
             String(repData.location || ''), String(repData.details || ''), JSON.stringify(repData.images || []),
-            me.fullName, me.id, String(repData.rating || 'عادي'), String(repData.logoId || 'logo1'), t, t
+            me.fullName, me.id, String(repData.rating || 'عادي'), String(repData.logoId || 'logo1'),
+            isEnc, encPayload, encIv, t, t
           );
 
         // إدراج التقرير تلقائياً في طابور الترحيل السحابي المؤقت لينتقل لكمبيوتر المدير
@@ -907,15 +1042,19 @@ const server = http.createServer(async (req, res) => {
       if (method === 'PUT') {
         if (!can(me, 'canReportsEdit') && rep.enteredByUserId !== me.id) { sendError(res, 403, 'غير مصرح بتعديل هذا التقرير'); return; }
         const b = await readBody(req);
+        const isEnc = b.isEncrypted !== undefined ? (b.isEncrypted ? 1 : 0) : (rep.isEncrypted ? 1 : 0);
+        const encPayload = b.encryptedPayload !== undefined ? String(b.encryptedPayload) : (rep.encryptedPayload || '');
+        const encIv = b.encryptedIv !== undefined ? String(b.encryptedIv) : (rep.encryptedIv || '');
+
         db.prepare(`UPDATE reports SET
-          subject=?, target=?, reportDate=?, reportTime=?, location=?, details=?, images=?, rating=?, updatedAt=?
+          subject=?, target=?, reportDate=?, reportTime=?, location=?, details=?, images=?, rating=?, isEncrypted=?, encryptedPayload=?, encryptedIv=?, updatedAt=?
           WHERE id=?`)
           .run(
             String(b.subject ?? rep.subject), String(b.target ?? rep.target),
             String(b.reportDate ?? rep.reportDate), String(b.reportTime ?? rep.reportTime),
             String(b.location ?? rep.location), String(b.details ?? rep.details),
             JSON.stringify(b.images ?? JSON.parse(rep.images || '[]')),
-            String(b.rating ?? rep.rating), nowIso(), rep.id
+            String(b.rating ?? rep.rating), isEnc, encPayload, encIv, nowIso(), rep.id
           );
         send(res, 200, { report: parseReportRow(db.prepare('SELECT * FROM reports WHERE id=?').get(rep.id)) });
         return;
@@ -969,21 +1108,21 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    const em = p.match(/^\/api\/events\/([^/]+)$/);
+    const em = p.match(/^\/api\/events\/([^/]+)(?:\/status)?$/);
     if (em) {
       const event = db.prepare('SELECT * FROM events WHERE orgId=? AND id=?').get(orgId, em[1]);
       if (!event) { sendError(res, 404, 'المهمة غير موجودة'); return; }
       if (method === 'PUT') {
         const b = await readBody(req);
+        const newStatus = String(b.status || event.status);
+        const now = nowIso();
+        const receivedAt = b.receivedAt !== undefined ? b.receivedAt : (newStatus === 'received' && !event.receivedAt ? now : event.receivedAt);
+        const completedAt = b.completedAt !== undefined ? b.completedAt : (newStatus === 'completed' && !event.completedAt ? now : event.completedAt);
+        const feedbackNotes = b.feedbackNotes !== undefined ? String(b.feedbackNotes) : (event.feedbackNotes || '');
+
         db.prepare(`UPDATE events SET
           status=?, receivedAt=?, completedAt=?, feedbackNotes=? WHERE id=?`)
-          .run(
-            String(b.status || event.status),
-            b.receivedAt ?? event.receivedAt,
-            b.completedAt ?? event.completedAt,
-            String(b.feedbackNotes ?? event.feedbackNotes ?? ''),
-            event.id
-          );
+          .run(newStatus, receivedAt, completedAt, feedbackNotes, event.id);
 
         // إدراج التغذية الراجعة في طابور السحب لكمبيوتر المدير
         try {
@@ -1006,6 +1145,95 @@ const server = http.createServer(async (req, res) => {
         send(res, 200, { ok: true });
         return;
       }
+    }
+
+    /* ---- الإعدادات والنسخ الاحتياطي داخل الجهة ---- */
+    if (p === '/api/settings') {
+      if (!can(me, 'canSettings') && !can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
+      if (method === 'GET') {
+        let hdrCfg = null;
+        try {
+          const rawHdr = getSetting(orgId, 'reportHeaderConfig', '');
+          if (rawHdr) hdrCfg = JSON.parse(rawHdr);
+        } catch(e){}
+        const settings = {
+          baseUrl: (req.headers['host'] ? ('http://' + req.headers['host']) : ('http://localhost:' + PORT)),
+          enforceDeviceAuth: getSetting(orgId, 'enforceDeviceAuth', '1') === '1',
+          consumeAddAfterSync: getSetting(orgId, 'consumeAddAfterSync', '0') === '1',
+          reportHeaderConfig: hdrCfg
+        };
+        send(res, 200, { ok: true, settings });
+        return;
+      }
+      if (method === 'PUT') {
+        const b = await readBody(req);
+        if (b.reportHeaderConfig !== undefined) {
+          setSetting(orgId, 'reportHeaderConfig', JSON.stringify(b.reportHeaderConfig));
+        }
+        if (b.enforceDeviceAuth !== undefined) {
+          setSetting(orgId, 'enforceDeviceAuth', b.enforceDeviceAuth ? '1' : '0');
+        }
+        if (b.consumeAddAfterSync !== undefined) {
+          setSetting(orgId, 'consumeAddAfterSync', b.consumeAddAfterSync ? '1' : '0');
+        }
+        send(res, 200, { ok: true, message: 'تم حفظ الإعدادات بنجاح' });
+        return;
+      }
+    }
+
+    if (method === 'GET' && p === '/api/backup') {
+      if (!can(me, 'canSettings') && !isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const org = db.prepare('SELECT * FROM organizations WHERE id=?').get(orgId);
+      const reports = db.prepare('SELECT * FROM reports WHERE orgId=?').all(orgId).map(parseReportRow);
+      const events = db.prepare('SELECT * FROM events WHERE orgId=?').all(orgId);
+      const users = db.prepare('SELECT id, userName, fullName, role, isActive, plainPassword, createdAt FROM users WHERE orgId=?').all(orgId);
+      const settings = db.prepare('SELECT key, value FROM settings WHERE orgId=?').all(orgId);
+      const backupData = {
+        version: '2026.1',
+        exportedAt: nowIso(),
+        organization: org,
+        reports,
+        events,
+        users,
+        settings
+      };
+      send(res, 200, backupData);
+      return;
+    }
+
+    if (method === 'POST' && p === '/api/restore') {
+      if (!can(me, 'canSettings') && !isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const b = await readBody(req);
+      const backup = b.backup || b;
+      if (!backup || !backup.organization) { sendError(res, 400, 'ملف النسخة الاحتياطية غير صالح'); return; }
+
+      if (Array.isArray(backup.settings)) {
+        for (const s of backup.settings) {
+          setSetting(orgId, s.key, s.value);
+        }
+      }
+
+      if (Array.isArray(backup.reports)) {
+        for (const r of backup.reports) {
+          const exists = db.prepare('SELECT id FROM reports WHERE orgId=? AND id=?').get(orgId, r.id);
+          if (!exists) {
+            db.prepare(`INSERT INTO reports(
+              id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
+              enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+              .run(
+                r.id, orgId, r.reportNumber, r.subject || '', r.target || '',
+                r.reportDate || nowIso().slice(0, 10), r.reportTime || nowIso().slice(11, 16),
+                r.location || '', r.details || '', JSON.stringify(r.images || []),
+                r.enteredBy || me.fullName, r.enteredByUserId || me.id, r.rating || 'عادي', r.logoId || 'logo1',
+                r.isEncrypted ? 1 : 0, r.encryptedPayload || '', r.encryptedIv || '', r.createdAt || nowIso(), r.updatedAt || nowIso()
+              );
+          }
+        }
+      }
+
+      send(res, 200, { ok: true, message: 'تمت استعادة البيانات بنجاح' });
+      return;
     }
 
     /* ---- إدارة الأجهزة داخل الجهة ---- */

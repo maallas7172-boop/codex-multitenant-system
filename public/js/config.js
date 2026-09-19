@@ -4,6 +4,6 @@
 const APP_CONFIG = {
   appName: 'منظومة كودكس — الحسابات والتقارير',
   version: '3.0.0',
-  defaultServerUrl: '', // يتم تعيينه عند رفع الرابط السحابي
+  defaultServerUrl: 'https://codex-multitenant-system.onrender.com',
   autoSyncIntervalMs: 15000
 };

@@ -7,6 +7,12 @@
 
 let REPORT_HEADER_CONFIG = {
   // أسطر الجهة في الجانب الأيمن (سطر تحت سطر)
+  line1: "الجمهورية اليمنية",
+  line2: "وزارة النقل",
+  line3: "الهيئة العامة لتنظيم شؤون النقل البري",
+  line4: "مكتب رئيس الهيئة",
+  line5: "",
+
   rightLines: [
     "الجمهورية اليمنية",
     "وزارة النقل",
@@ -31,7 +37,16 @@ let REPORT_HEADER_CONFIG = {
   showDateTime: true,
 
   // إظهار رقم التقرير في الترويسة (معطّل افتراضياً)
-  showReportNumber: false
+  showReportNumber: false,
+
+  // التوقيعات والاعتمادات أسفل التقرير المطبوع
+  sig1Title: "توقيع ضابط التقييم",
+  sig1Name: "محمد صالح",
+  sig2Title: "اعتماد مدير الاستخبارات",
+  sig2Name: "",
+  sig3Title: "الختم الأمني",
+  sig3Name: "[....................]",
+  showSignatures: true
 };
 
 /**
@@ -68,7 +83,12 @@ function renderReportHeaderHTML(report, customOpts = {}) {
 
   // توليد أسطر الجهة على اليمين بحيث تكون متوسطة فوق بعضها بشكل منظم
   let rightHtml = '';
-  let lines = cfg.rightLines;
+  let lines = null;
+  if (cfg.line1 !== undefined || cfg.line2 !== undefined || cfg.line3 !== undefined || cfg.line4 !== undefined || cfg.line5 !== undefined) {
+    lines = [cfg.line1, cfg.line2, cfg.line3, cfg.line4, cfg.line5].map(l => (l || '').trim()).filter(Boolean);
+  } else {
+    lines = cfg.rightLines;
+  }
   if (typeof lines === 'string') {
     lines = lines.split('\n').map(x => x.trim()).filter(Boolean);
   }
@@ -271,3 +291,35 @@ function getReportHeaderCSS() {
     }
   `;
 }
+
+/**
+ * دالة توليد HTML التوقيعات والاعتمادات الرسمية أسفل التقرير المطبوع
+ */
+function renderReportSignaturesHTML(customOpts = {}) {
+  const cfg = { ...REPORT_HEADER_CONFIG, ...customOpts };
+  if (cfg.showSignatures === false) return '';
+
+  return `
+    <div class="report-signatures-master" style="margin-top:36px;padding-top:16px;border-top:2px solid #cbd5e1;display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;text-align:center;direction:rtl;page-break-inside:avoid">
+      <div class="sig-box" style="border:1px dashed #cbd5e1;border-radius:10px;padding:12px;background:#f8fafc">
+        <div style="font-weight:900;color:#0f172a;font-size:13.5px;margin-bottom:8px">${esc(cfg.sig1Title || 'توقيع ضابط التقييم')}</div>
+        <div style="min-height:38px;display:flex;align-items:center;justify-content:center;color:#334155;font-weight:700;font-size:13px">
+          ${cfg.sig1Name ? esc(cfg.sig1Name) : '<span style="color:#94a3b8;font-family:monospace">..................................</span>'}
+        </div>
+      </div>
+      <div class="sig-box" style="border:1px dashed #cbd5e1;border-radius:10px;padding:12px;background:#f8fafc">
+        <div style="font-weight:900;color:#0f172a;font-size:13.5px;margin-bottom:8px">${esc(cfg.sig2Title || 'اعتماد مدير الاستخبارات')}</div>
+        <div style="min-height:38px;display:flex;align-items:center;justify-content:center;color:#334155;font-weight:700;font-size:13px">
+          ${cfg.sig2Name ? esc(cfg.sig2Name) : '<span style="color:#94a3b8;font-family:monospace">..................................</span>'}
+        </div>
+      </div>
+      <div class="sig-box" style="border:1px dashed #cbd5e1;border-radius:10px;padding:12px;background:#f8fafc">
+        <div style="font-weight:900;color:#0f172a;font-size:13.5px;margin-bottom:8px">${esc(cfg.sig3Title || 'الختم الأمني')}</div>
+        <div style="min-height:38px;display:flex;align-items:center;justify-content:center;color:#334155;font-weight:700;font-size:13px">
+          ${cfg.sig3Name ? esc(cfg.sig3Name) : '<span style="color:#94a3b8;font-family:monospace">[....................]</span>'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
