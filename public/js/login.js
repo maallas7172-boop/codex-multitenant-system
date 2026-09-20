@@ -65,23 +65,35 @@
       if (code === 'CODEX' || code === 'SUPER') {
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#2563eb';
-        orgStatusText.textContent = '👑 بوابة الدخول للإدارة العليا (Super Admin)';
-        mainTitle.textContent = 'لوحة إدارة شركة كودكس للبرمجيات';
-        subTitle.textContent = 'الإدارة المركزية للجهات والمؤسسات المشتركة';
-        if (loginTopLogo) loginTopLogo.src = CODEX_LOGO;
+        orgStatusText.textContent = '👑 بوابة الدخول للإدارة المركزية (Super Admin)';
+        mainTitle.textContent = 'الإدارة المركزية';
+        subTitle.textContent = 'منظومة الإدارة المركزية للجهات والمؤسسات المشتركة';
+        if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
         return;
       }
 
-      // للجهات والمؤسسات الممنوحة النظام: تظهر ترويسة وشعار البرنامج القديم
+      // التحقق من كود الجهة عبر السيرفر
       const data = await api('/public/org-info?orgCode=' + encodeURIComponent(code));
       if (data && data.found) {
+        if (data.isSuper) {
+          orgStatusText.style.display = 'block';
+          orgStatusText.style.color = '#2563eb';
+          orgStatusText.textContent = '👑 بوابة الدخول للإدارة المركزية (Super Admin)';
+          mainTitle.textContent = 'الإدارة المركزية';
+          subTitle.textContent = 'منظومة الإدارة المركزية للجهات والمؤسسات المشتركة';
+          if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
+          return;
+        }
+
+        // عند نجاح الاقتران: تظهر رسالة تم الاقتران بنجاح دون ذكر اسم الجهة لضمان الخصوصية وسرية المؤسسة
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#10b981';
-        orgStatusText.textContent = '✔ الجهة: ' + data.org.orgName;
+        orgStatusText.textContent = '✔ تم الاقتران بنجاح';
         mainTitle.textContent = DEFAULT_TITLE;
-        subTitle.textContent = data.org.orgName + ' — ' + DEFAULT_SUBTITLE;
+        subTitle.textContent = DEFAULT_SUBTITLE;
         if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
         setOrgCode(code);
+        if (showFeedback) show('تم الاقتران بنجاح ✔', 'ok');
       } else {
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#ef4444';
@@ -89,6 +101,7 @@
         mainTitle.textContent = DEFAULT_TITLE;
         subTitle.textContent = DEFAULT_SUBTITLE;
         if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
+        if (showFeedback) show('رمز الجهة غير مسجل في النظام', 'err');
       }
     } catch(e) {
       if (showFeedback) show('تعذر فحص الجهة: ' + e.message, 'err');
@@ -150,7 +163,16 @@
         });
         clearTimeout(timeoutId);
 
-        if (res.ok) {
+        const cType = res.headers.get('content-type') || '';
+        let isJson = false;
+        try {
+          if (res.ok && cType.includes('application/json')) {
+            const j = await res.json();
+            if (j && (j.found !== undefined || j.ok !== undefined)) isJson = true;
+          }
+        } catch(e){}
+
+        if (isJson) {
           if (connStatusBox) {
             connStatusBox.style.display = 'block';
             connStatusBox.style.background = '#ecfdf5';
@@ -159,7 +181,7 @@
             connStatusBox.innerHTML = '🟢 الاتصال بالسيرفر نشط ومستقر تماماً ✔';
           }
         } else {
-          throw new Error('استجابة غير متوقعة');
+          throw new Error('الخادم لم يعد استجابة JSON صحيحة');
         }
       } catch (err) {
         if (connStatusBox) {

@@ -30,8 +30,19 @@ const MAX_BODY = 60 * 1024 * 1024;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-/* ------------------------- قاعدة البيانات ------------------------- */
+/* ------------------------- قاعدة البيانات (SQLite3) ------------------------- */
 const db = new DatabaseSync(DB_PATH);
+try {
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA busy_timeout = 10000;
+    PRAGMA foreign_keys = ON;
+  `);
+} catch (e) {
+  console.warn('SQLite PRAGMA Notice:', e.message);
+}
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS organizations (
   id TEXT PRIMARY KEY,
@@ -164,6 +175,22 @@ try { db.exec("ALTER TABLE reports ADD COLUMN encryptedIv TEXT;"); } catch(e){}
 
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+function runAutoSqliteBackup() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const targetPath = path.join(BACKUP_DIR, `multitenant_auto_${today}.db`);
+    if (!fs.existsSync(targetPath)) {
+      const safeTarget = targetPath.replace(/\\/g, '/').replace(/'/g, "''");
+      db.exec(`VACUUM INTO '${safeTarget}'`);
+      console.log('✓ Created automatic daily SQLite snapshot:', path.basename(targetPath));
+    }
+  } catch(e) {
+    console.warn('Auto SQLite backup notice:', e.message);
+  }
+}
+setTimeout(runAutoSqliteBackup, 2000);
+setInterval(runAutoSqliteBackup, 6 * 3600 * 1000);
 
 function uid() { return crypto.randomUUID(); }
 function nowIso() { return new Date().toISOString(); }
@@ -481,11 +508,29 @@ function readBody(req) {
   });
 }
 
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > MAX_BODY) { reject(new Error('الحجم كبير جداً')); }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+  });
+}
+
 const MIME_MAP = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.db': 'application/x-sqlite3',
+  '.sqlite': 'application/x-sqlite3',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -549,8 +594,9 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && p === '/api/public/org-info') {
       const code = (u.searchParams.get('orgCode') || '').trim().toUpperCase();
       if (!code) { send(res, 200, { found: false, error: 'رمز الجهة مطلوب' }); return; }
-      if (code === 'CODEX' || code === 'SUPER') {
-        send(res, 200, { found: true, isSuper: true, org: { orgCode: 'CODEX', orgName: 'شركة كودكس للبرمجيات (Super Admin)' } });
+      const masterCode = getSetting('GLOBAL', 'masterOrgCode', 'CODEX').toUpperCase();
+      if (code === 'CODEX' || code === 'SUPER' || code === masterCode) {
+        send(res, 200, { found: true, isSuper: true, org: { orgCode: masterCode, orgName: 'الإدارة المركزية (Super Admin)' } });
         return;
       }
       const org = db.prepare('SELECT id, orgCode, orgName, logoUrl, status FROM organizations WHERE orgCode=?').get(code);
@@ -566,7 +612,8 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && p === '/api/public/users') {
       const code = (u.searchParams.get('orgCode') || '').trim().toUpperCase();
       let orgId = null;
-      if (code && code !== 'CODEX' && code !== 'SUPER') {
+      const masterCode = getSetting('GLOBAL', 'masterOrgCode', 'CODEX').toUpperCase();
+      if (code && code !== 'CODEX' && code !== 'SUPER' && code !== masterCode) {
         const org = db.prepare('SELECT id FROM organizations WHERE orgCode=?').get(code);
         if (org) orgId = org.id;
       }
@@ -598,8 +645,9 @@ const server = http.createServer(async (req, res) => {
       if (!hashToCompare && b.password) hashToCompare = hashHex(b.password);
 
       const lowerUser = userName.toLowerCase();
-      if (lowerUser === 'superadmin' || orgCode === 'CODEX' || orgCode === 'SUPER') {
-        const superUser = db.prepare("SELECT * FROM users WHERE LOWER(userName)=? AND role='SuperAdmin'").get(lowerUser);
+      const masterCode = getSetting('GLOBAL', 'masterOrgCode', 'CODEX').toUpperCase();
+      if (lowerUser === 'superadmin' || orgCode === 'CODEX' || orgCode === 'SUPER' || orgCode === masterCode) {
+        const superUser = db.prepare("SELECT * FROM users WHERE LOWER(userName)=? AND role IN ('SuperAdmin', 'SuperSupervisor', 'CentralUser')").get(lowerUser);
         if (superUser && superUser.isActive && superUser.passwordHash === hashToCompare) {
           const token = createSession(superUser.id, null);
           send(res, 200, { token, isSuperAdmin: true, ...buildMe(superUser) });
@@ -809,7 +857,23 @@ const server = http.createServer(async (req, res) => {
           const newHq = b.allowHqAccess !== undefined ? (b.allowHqAccess ? 1 : 0) : ((org.allowHqAccess === null || org.allowHqAccess === undefined) ? 1 : org.allowHqAccess);
           db.prepare(`UPDATE organizations SET orgName=?, status=?, phone=?, maxUsers=?, allowHqAccess=? WHERE id=?`)
             .run(String(b.orgName || org.orgName), String(b.status || org.status), String(b.phone ?? org.phone), b.maxUsers || org.maxUsers, newHq, targetOrgId);
-          send(res, 200, { ok: true, message: 'تم تحديث بيانات الجهة بنجاح' });
+
+          if (b.adminUserName || b.adminPassword) {
+            const adminUser = db.prepare("SELECT * FROM users WHERE orgId=? AND role='Admin'").get(targetOrgId);
+            if (adminUser) {
+              const newAdminUserName = String(b.adminUserName || adminUser.userName).trim();
+              let newAdminHash = adminUser.passwordHash;
+              let newAdminPlain = adminUser.plainPassword;
+              if (b.adminPassword) {
+                newAdminPlain = String(b.adminPassword);
+                newAdminHash = hashHex(newAdminPlain);
+              }
+              db.prepare('UPDATE users SET userName=?, passwordHash=?, plainPassword=? WHERE id=?')
+                .run(newAdminUserName, newAdminHash, newAdminPlain, adminUser.id);
+            }
+          }
+
+          send(res, 200, { ok: true, message: 'تم تحديث بيانات الجهة وحسابها بنجاح ✔' });
           return;
         }
 
@@ -824,6 +888,259 @@ const server = http.createServer(async (req, res) => {
           send(res, 200, { ok: true, message: 'تم حذف الجهة وبياناتها بالكامل' });
           return;
         }
+      }
+
+      /* ---------------- مسارات إدارة حساب وبيانات الإدارة المركزية ---------------- */
+      // 1. تعديل بيانات حساب الإدارة المركزية والرمز الماستر
+      if (method === 'PUT' && p === '/api/super/profile') {
+        const b = await readBody(req);
+        const newUserName = String(b.userName || '').trim();
+        const newPassword = String(b.password || '').trim();
+        const newMasterCode = String(b.masterOrgCode || '').trim().toUpperCase();
+
+        if (newUserName) {
+          db.prepare('UPDATE users SET userName=? WHERE id=?').run(newUserName, me.id);
+        }
+        if (newPassword) {
+          const hash = hashHex(newPassword);
+          db.prepare('UPDATE users SET passwordHash=?, plainPassword=? WHERE id=?').run(hash, newPassword, me.id);
+        }
+        if (newMasterCode) {
+          setSetting('GLOBAL', 'masterOrgCode', newMasterCode);
+        }
+        send(res, 200, { ok: true, message: 'تم تحديث بيانات حساب الإدارة المركزية والرمز بنجاح ✔' });
+        return;
+      }
+
+      // 2. إدارة مستخدمي الإدارة المركزية
+      if (method === 'GET' && p === '/api/super/users') {
+        const list = db.prepare("SELECT * FROM users WHERE orgId IS NULL OR role IN ('SuperAdmin', 'SuperSupervisor', 'CentralUser') ORDER BY role='SuperAdmin' DESC, createdAt DESC").all();
+        send(res, 200, { ok: true, users: list.map(publicUser) });
+        return;
+      }
+
+      if (method === 'POST' && p === '/api/super/users') {
+        const b = await readBody(req);
+        const uName = String(b.userName || '').trim();
+        const fName = String(b.fullName || '').trim();
+        const pwd = String(b.password || '').trim();
+        if (!uName || !pwd) { sendError(res, 400, 'اسم المستخدم وكلمة المرور مطلوبة'); return; }
+        const existing = db.prepare("SELECT id FROM users WHERE userName=?").get(uName);
+        if (existing) { sendError(res, 400, 'اسم المستخدم مستخدم مسبقاً'); return; }
+        const uId = uid();
+        const hash = hashHex(pwd);
+        db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+          canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, createdAt)
+          VALUES(?, NULL, ?, ?, ?, ?, 'SuperSupervisor', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+            uId, uName, fName || uName, hash, pwd, b.isActive !== false ? 1 : 0,
+            b.canDash ? 1 : 0, b.canEntry ? 1 : 0, b.canReports ? 1 : 0, b.canReportsEdit ? 1 : 0,
+            b.canReportsDelete ? 1 : 0, b.canReportsPrint ? 1 : 0, b.canEvents ? 1 : 0,
+            b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, nowIso()
+          );
+        send(res, 200, { ok: true, message: 'تم إنشاء مستخدم الإدارة المركزية بنجاح ✔' });
+        return;
+      }
+
+      const superUserMatch = p.match(/^\/api\/super\/users\/([^/]+)$/);
+      if (superUserMatch) {
+        const targetUId = superUserMatch[1];
+        if (method === 'PUT') {
+          const b = await readBody(req);
+          const target = db.prepare("SELECT * FROM users WHERE id=?").get(targetUId);
+          if (!target) { sendError(res, 404, 'المستخدم غير موجود'); return; }
+          let hash = target.passwordHash;
+          let plain = target.plainPassword;
+          if (b.password) {
+            plain = String(b.password);
+            hash = hashHex(plain);
+          }
+          const fName = String(b.fullName || target.fullName);
+          const isActive = b.isActive !== undefined ? (b.isActive ? 1 : 0) : target.isActive;
+          db.prepare(`UPDATE users SET fullName=?, passwordHash=?, plainPassword=?, isActive=?,
+            canDash=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?, canEvents=?, canUsers=?, canSettings=?
+            WHERE id=?`).run(
+              fName, hash, plain, isActive,
+              b.canDash ? 1 : 0, b.canReports ? 1 : 0, b.canReportsEdit ? 1 : 0,
+              b.canReportsDelete ? 1 : 0, b.canReportsPrint ? 1 : 0, b.canEvents ? 1 : 0,
+              b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, targetUId
+            );
+          send(res, 200, { ok: true, message: 'تم تحديث بيانات المستخدم بنجاح ✔' });
+          return;
+        }
+        if (method === 'DELETE') {
+          if (targetUId === me.id) { sendError(res, 400, 'لا يمكنك حذف حسابك الحالي'); return; }
+          db.prepare("DELETE FROM users WHERE id=?").run(targetUId);
+          send(res, 200, { ok: true, message: 'تم حذف المستخدم بنجاح ✔' });
+          return;
+        }
+      }
+
+      // 3. إعدادات الإدارة المركزية والترويسة والختوم
+      if (method === 'GET' && p === '/api/super/settings') {
+        let headerCfg = null;
+        try { headerCfg = JSON.parse(getSetting('GLOBAL', 'reportHeaderConfig', 'null')); } catch(e){}
+        const masterOrgCode = getSetting('GLOBAL', 'masterOrgCode', 'CODEX');
+        send(res, 200, {
+          ok: true,
+          masterOrgCode,
+          superAdminUserName: me.userName,
+          superAdminPlainPassword: me.plainPassword,
+          reportHeaderConfig: headerCfg
+        });
+        return;
+      }
+
+      if (method === 'POST' && p === '/api/super/settings') {
+        const b = await readBody(req);
+        if (b.reportHeaderConfig !== undefined) {
+          setSetting('GLOBAL', 'reportHeaderConfig', JSON.stringify(b.reportHeaderConfig));
+        }
+        if (b.masterOrgCode) {
+          setSetting('GLOBAL', 'masterOrgCode', String(b.masterOrgCode).trim().toUpperCase());
+        }
+        send(res, 200, { ok: true, message: 'تم حفظ إعدادات الإدارة المركزية بنجاح ✔' });
+        return;
+      }
+
+      // 4. النسخ الاحتياطي لقاعدة بيانات SQLite الشاملة للنظام
+      if (method === 'GET' && (p === '/api/super/backup' || p === '/api/super/backup/db')) {
+        const format = u.searchParams.get('format');
+        if (format === 'json') {
+          const allOrgs = db.prepare("SELECT * FROM organizations").all();
+          const allUsers = db.prepare("SELECT * FROM users").all();
+          const allReports = db.prepare("SELECT * FROM reports").all();
+          const allEvents = db.prepare("SELECT * FROM events").all();
+          const allDevices = db.prepare("SELECT * FROM devices").all();
+          const allSettings = db.prepare("SELECT * FROM settings").all();
+          const backupData = {
+            version: '3.0',
+            system: 'CentralAdmin_FullBackup',
+            databaseEngine: 'SQLite3',
+            date: nowIso(),
+            organizations: allOrgs,
+            users: allUsers,
+            reports: allReports,
+            events: allEvents,
+            devices: allDevices,
+            settings: allSettings
+          };
+          const out = JSON.stringify(backupData, null, 2);
+          const fileName = `Central_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'Access-Control-Allow-Origin': '*'
+          });
+          res.end(out);
+          return;
+        }
+
+        // التنزيل المباشر لقاعدة بيانات SQLite الأصلية (.db) عبر لقطة VACUUM الآمنة
+        const tempBackupPath = path.join(DATA_DIR, `temp_super_backup_${Date.now()}.db`);
+        const safePath = tempBackupPath.replace(/\\/g, '/').replace(/'/g, "''");
+        try {
+          if (fs.existsSync(tempBackupPath)) fs.unlinkSync(tempBackupPath);
+          db.exec(`VACUUM INTO '${safePath}'`);
+          const fileBuf = fs.readFileSync(tempBackupPath);
+          try { fs.unlinkSync(tempBackupPath); } catch(e){}
+          const fileName = `Central_Database_${new Date().toISOString().slice(0, 10)}.db`;
+          res.writeHead(200, {
+            'Content-Type': 'application/x-sqlite3',
+            'Content-Length': fileBuf.length,
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'Access-Control-Allow-Origin': '*'
+          });
+          res.end(fileBuf);
+          return;
+        } catch(err) {
+          console.error('Vacuum backup error:', err);
+          sendError(res, 500, 'تعذر توليد ملف قاعدة بيانات SQLite: ' + err.message);
+          return;
+        }
+      }
+
+      // 5. استعادة النسخة الاحتياطية (ملف SQLite .db مباشر أو ملف JSON)
+      if (method === 'POST' && p === '/api/super/restore') {
+        const rawBuf = await readRawBody(req);
+        if (!rawBuf || rawBuf.length === 0) {
+          sendError(res, 400, 'لم يتم إرسال أي ملف للاستعادة');
+          return;
+        }
+
+        const isSqlite = rawBuf.length >= 16 && rawBuf.subarray(0, 16).toString('utf8').startsWith('SQLite format 3');
+        if (isSqlite) {
+          const tempRestorePath = path.join(DATA_DIR, `temp_restore_${Date.now()}.db`);
+          fs.writeFileSync(tempRestorePath, rawBuf);
+          try {
+            const safeAttach = tempRestorePath.replace(/\\/g, '/').replace(/'/g, "''");
+            db.exec(`ATTACH DATABASE '${safeAttach}' AS src;`);
+            const srcTables = db.prepare("SELECT name FROM src.sqlite_master WHERE type='table'").all().map(r => r.name);
+            db.exec('BEGIN TRANSACTION;');
+            for (const tbl of ['organizations', 'users', 'reports', 'events', 'devices', 'settings']) {
+              if (srcTables.includes(tbl)) {
+                try {
+                  db.exec(`INSERT OR REPLACE INTO ${tbl} SELECT * FROM src.${tbl};`);
+                } catch (e) {
+                  console.warn(`Restore notice for ${tbl}:`, e.message);
+                }
+              }
+            }
+            db.exec('COMMIT;');
+            db.exec('DETACH DATABASE src;');
+            try { fs.unlinkSync(tempRestorePath); } catch(e){}
+            send(res, 200, { ok: true, message: 'تمت استعادة ودمج قاعدة بيانات SQLite بنجاح ✔' });
+            return;
+          } catch(err) {
+            try { db.exec('ROLLBACK;'); } catch(e){}
+            try { db.exec('DETACH DATABASE src;'); } catch(e){}
+            try { if (fs.existsSync(tempRestorePath)) fs.unlinkSync(tempRestorePath); } catch(e){}
+            sendError(res, 400, 'فشلت استعادة ملف قاعدة بيانات SQLite: ' + err.message);
+            return;
+          }
+        }
+
+        let b;
+        try {
+          b = JSON.parse(rawBuf.toString('utf8'));
+        } catch(e) {
+          sendError(res, 400, 'الملف المرفوع ليس ملف قاعدة بيانات SQLite (.db) ولا ملف JSON صالح');
+          return;
+        }
+
+        if (!b || (!b.organizations && !b.reports)) {
+          sendError(res, 400, 'ملف النسخة الاحتياطية غير صالح');
+          return;
+        }
+        if (Array.isArray(b.organizations)) {
+          for (const o of b.organizations) {
+            db.prepare(`INSERT OR REPLACE INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
+              VALUES(?,?,?,?,?,?,?,?,?,?)`).run(o.id, o.orgCode, o.orgName, o.logoUrl || '', o.phone || '', o.status || 'active', o.maxUsers || 50, o.allowHqAccess ?? 1, o.encKey || null, o.createdAt || nowIso());
+          }
+        }
+        if (Array.isArray(b.users)) {
+          for (const u of b.users) {
+            db.prepare(`INSERT OR REPLACE INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+              canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, createdAt)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+                u.id, u.orgId || null, u.userName, u.fullName, u.passwordHash, u.plainPassword, u.role, u.isActive ? 1 : 0,
+                u.canDash ? 1 : 0, u.canEntry ? 1 : 0, u.canReports ? 1 : 0, u.canReportsEdit ? 1 : 0,
+                u.canReportsDelete ? 1 : 0, u.canReportsPrint ? 1 : 0, u.canEvents ? 1 : 0,
+                u.canUsers ? 1 : 0, u.canSettings ? 1 : 0, u.createdAt || nowIso()
+              );
+          }
+        }
+        if (Array.isArray(b.reports)) {
+          for (const r of b.reports) {
+            db.prepare(`INSERT OR REPLACE INTO reports(id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images, enteredBy, enteredByUserId, rating, logoId, createdAt, updatedAt, syncedAt)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+                r.id, r.orgId, r.reportNumber, r.subject, r.target || '', r.reportDate, r.reportTime || '', r.location || '', r.details || '',
+                typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
+                r.enteredBy || '', r.enteredByUserId || '', r.rating || '', r.logoId || '', r.createdAt || nowIso(), r.updatedAt || null, r.syncedAt || null
+              );
+          }
+        }
+        send(res, 200, { ok: true, message: 'تم استعادة النسخة الاحتياطية بنجاح ✔' });
+        return;
       }
     }
 
@@ -1034,6 +1351,78 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    /* استيراد تقارير دفعة واحدة من ملف */
+    if (p === '/api/reports/import' && method === 'POST') {
+      if (!can(me, 'canAdd') && !isOrgAdmin(me) && !can(me, 'canReports')) { sendError(res, 403, 'غير مصرح باستيراد التقارير'); return; }
+      const b = await readBody(req);
+      let incoming = [];
+      if (Array.isArray(b.reports)) {
+        incoming = b.reports;
+      } else if (Array.isArray(b)) {
+        incoming = b;
+      } else if (b.backup && Array.isArray(b.backup.reports)) {
+        incoming = b.backup.reports;
+      } else {
+        sendError(res, 400, 'صيغة الاستيراد غير صالحة، يجب تمرير قائمة التقارير');
+        return;
+      }
+
+      if (!incoming.length) {
+        sendError(res, 400, 'الملف أو البيانات لا تحتوي على أي تقارير للاستيراد');
+        return;
+      }
+
+      let importedCount = 0;
+      const t = nowIso();
+      for (const r of incoming) {
+        if (!r || typeof r !== 'object') continue;
+        const subject = String(r.subject || '').trim();
+        if (!subject) continue;
+
+        const id = (r.id && String(r.id).trim()) || uid();
+        const repNum = String(r.reportNumber || Date.now().toString().slice(-6));
+        const target = String(r.target || '');
+        const repDate = String(r.reportDate || t.slice(0, 10));
+        const repTime = String(r.reportTime || t.slice(11, 16));
+        const loc = String(r.location || '');
+        const details = String(r.details || '');
+        const rating = String(r.rating || 'عادي');
+        const logoId = String(r.logoId || 'logo1');
+        const enteredBy = String(r.enteredBy || me.fullName);
+        const enteredByUserId = String(r.enteredByUserId || me.id);
+        const images = Array.isArray(r.images) ? JSON.stringify(r.images) : (typeof r.images === 'string' ? r.images : '[]');
+
+        db.prepare(`INSERT OR REPLACE INTO reports(
+          id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
+          enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt, syncedAt
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(
+            id, orgId, repNum, subject, target, repDate, repTime, loc, details, images,
+            enteredBy, enteredByUserId, rating, logoId, 0, '', '', r.createdAt || t, t, t
+          );
+        importedCount++;
+      }
+
+      send(res, 200, { ok: true, importedCount, message: `تم استيراد (${importedCount}) تقرير بنجاح ✔` });
+      return;
+    }
+
+    /* حذف تقارير متعددة دفعة واحدة */
+    if (p === '/api/reports/batch-delete' && method === 'POST') {
+      if (!can(me, 'canReportsDelete') && !isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح بحذف التقارير'); return; }
+      const b = await readBody(req);
+      const ids = Array.isArray(b.ids) ? b.ids : [];
+      let deleted = 0;
+      for (const rid of ids) {
+        try {
+          const resDel = db.prepare('DELETE FROM reports WHERE orgId=? AND id=?').run(orgId, rid);
+          if (resDel.changes > 0) deleted++;
+        } catch(e){}
+      }
+      send(res, 200, { ok: true, deletedCount: deleted, message: `تم حذف (${deleted}) تقرير بنجاح ✔` });
+      return;
+    }
+
     const rm = p.match(/^\/api\/reports\/([^/]+)$/);
     if (rm) {
       const rep = db.prepare('SELECT * FROM reports WHERE orgId=? AND id=?').get(orgId, rm[1]);
@@ -1183,27 +1572,171 @@ const server = http.createServer(async (req, res) => {
 
     if (method === 'GET' && p === '/api/backup') {
       if (!can(me, 'canSettings') && !isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const format = u.searchParams.get('format');
+      if (format === 'json') {
+        const org = db.prepare('SELECT * FROM organizations WHERE id=?').get(orgId);
+        const reports = db.prepare('SELECT * FROM reports WHERE orgId=?').all(orgId).map(parseReportRow);
+        const events = db.prepare('SELECT * FROM events WHERE orgId=?').all(orgId);
+        const users = db.prepare('SELECT id, userName, fullName, role, isActive, plainPassword, createdAt FROM users WHERE orgId=?').all(orgId);
+        const settings = db.prepare('SELECT key, value FROM settings WHERE orgId=?').all(orgId);
+        const backupData = {
+          version: '2026.1',
+          databaseEngine: 'SQLite3',
+          exportedAt: nowIso(),
+          organization: org,
+          reports,
+          events,
+          users,
+          settings
+        };
+        send(res, 200, backupData);
+        return;
+      }
+
+      // الصيغة الافتراضية: ملف قاعدة بيانات SQLite (.db) مستقل وخاص بالفرع
       const org = db.prepare('SELECT * FROM organizations WHERE id=?').get(orgId);
-      const reports = db.prepare('SELECT * FROM reports WHERE orgId=?').all(orgId).map(parseReportRow);
-      const events = db.prepare('SELECT * FROM events WHERE orgId=?').all(orgId);
-      const users = db.prepare('SELECT id, userName, fullName, role, isActive, plainPassword, createdAt FROM users WHERE orgId=?').all(orgId);
-      const settings = db.prepare('SELECT key, value FROM settings WHERE orgId=?').all(orgId);
-      const backupData = {
-        version: '2026.1',
-        exportedAt: nowIso(),
-        organization: org,
-        reports,
-        events,
-        users,
-        settings
-      };
-      send(res, 200, backupData);
+      const orgCode = (org ? org.orgCode : 'BRANCH').toUpperCase();
+      const tempBranchPath = path.join(DATA_DIR, `temp_branch_${orgId}_${Date.now()}.db`);
+      if (fs.existsSync(tempBranchPath)) fs.unlinkSync(tempBranchPath);
+      const bDb = new DatabaseSync(tempBranchPath);
+      try {
+        bDb.exec(`
+          PRAGMA journal_mode = WAL;
+          CREATE TABLE organizations (id TEXT PRIMARY KEY, orgCode TEXT, orgName TEXT, logoUrl TEXT, phone TEXT, email TEXT, status TEXT, maxUsers INTEGER, allowHqAccess INTEGER, encKey TEXT, createdAt TEXT);
+          CREATE TABLE users (id TEXT PRIMARY KEY, orgId TEXT, userName TEXT, fullName TEXT, passwordHash TEXT, plainPassword TEXT, role TEXT, isActive INTEGER, canDash INTEGER, canEntry INTEGER, canReports INTEGER, canReportsEdit INTEGER, canReportsDelete INTEGER, canReportsPrint INTEGER, canEvents INTEGER, canUsers INTEGER, canSettings INTEGER, createdAt TEXT);
+          CREATE TABLE reports (id TEXT PRIMARY KEY, orgId TEXT, reportNumber TEXT, subject TEXT, target TEXT, reportDate TEXT, reportTime TEXT, location TEXT, details TEXT, images TEXT, enteredBy TEXT, enteredByUserId TEXT, rating TEXT, logoId TEXT, isEncrypted INTEGER, encryptedPayload TEXT, encryptedIv TEXT, createdAt TEXT, updatedAt TEXT, syncedAt TEXT);
+          CREATE TABLE events (id TEXT PRIMARY KEY, orgId TEXT, title TEXT, eventType TEXT, notes TEXT, eventDate TEXT, eventTime TEXT, location TEXT, assignedUserId TEXT, assignedUserName TEXT, createdBy TEXT, createdById TEXT, createdDate TEXT, status TEXT, receivedAt TEXT, completedAt TEXT, feedbackNotes TEXT, isArchived INTEGER);
+          CREATE TABLE devices (id TEXT PRIMARY KEY, orgId TEXT, deviceId TEXT, deviceName TEXT, userId TEXT, userName TEXT, userFullName TEXT, status TEXT, registeredAt TEXT, approvedAt TEXT, lastSeenAt TEXT, approvedBy TEXT);
+          CREATE TABLE settings (orgId TEXT, key TEXT, value TEXT, PRIMARY KEY(orgId, key));
+        `);
+        if (org) {
+          bDb.prepare('INSERT INTO organizations VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(
+            org.id, org.orgCode, org.orgName, org.logoUrl||'', org.phone||'', org.email||'', org.status||'active', org.maxUsers||50, org.allowHqAccess??1, org.encKey||null, org.createdAt||nowIso()
+          );
+        }
+        const users = db.prepare('SELECT * FROM users WHERE orgId=?').all(orgId);
+        for (const u of users) {
+          bDb.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+            u.id, u.orgId, u.userName, u.fullName, u.passwordHash, u.plainPassword||'', u.role, u.isActive?1:0,
+            u.canDash?1:0, u.canEntry?1:0, u.canReports?1:0, u.canReportsEdit?1:0, u.canReportsDelete?1:0, u.canReportsPrint?1:0,
+            u.canEvents?1:0, u.canUsers?1:0, u.canSettings?1:0, u.createdAt||nowIso()
+          );
+        }
+        const reports = db.prepare('SELECT * FROM reports WHERE orgId=?').all(orgId);
+        for (const r of reports) {
+          bDb.prepare('INSERT INTO reports VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+            r.id, r.orgId, r.reportNumber, r.subject||'', r.target||'', r.reportDate||'', r.reportTime||'', r.location||'', r.details||'',
+            typeof r.images === 'string' ? r.images : JSON.stringify(r.images||[]), r.enteredBy||'', r.enteredByUserId||'', r.rating||'عادي',
+            r.logoId||'logo1', r.isEncrypted?1:0, r.encryptedPayload||'', r.encryptedIv||'', r.createdAt||nowIso(), r.updatedAt||nowIso(), r.syncedAt||''
+          );
+        }
+        const events = db.prepare('SELECT * FROM events WHERE orgId=?').all(orgId);
+        for (const e of events) {
+          bDb.prepare('INSERT INTO events VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+            e.id, e.orgId, e.title, e.eventType, e.notes||'', e.eventDate||'', e.eventTime||'', e.location||'', e.assignedUserId||'',
+            e.assignedUserName||'', e.createdBy||'', e.createdById||'', e.createdDate||nowIso(), e.status||'pending', e.receivedAt||null,
+            e.completedAt||null, e.feedbackNotes||'', e.isArchived?1:0
+          );
+        }
+        const devices = db.prepare('SELECT * FROM devices WHERE orgId=?').all(orgId);
+        for (const d of devices) {
+          bDb.prepare('INSERT INTO devices VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(
+            d.id, d.orgId, d.deviceId, d.deviceName||'', d.userId||'', d.userName||'', d.userFullName||'', d.status||'pending',
+            d.registeredAt||nowIso(), d.approvedAt||null, d.lastSeenAt||nowIso(), d.approvedBy||''
+          );
+        }
+        const settings = db.prepare('SELECT * FROM settings WHERE orgId=?').all(orgId);
+        for (const s of settings) {
+          bDb.prepare('INSERT INTO settings VALUES(?,?,?)').run(s.orgId, s.key, s.value);
+        }
+      } finally {
+        bDb.close();
+      }
+
+      const fileBuf = fs.readFileSync(tempBranchPath);
+      try { fs.unlinkSync(tempBranchPath); } catch(e){}
+      const fileName = `Branch_${orgCode}_${new Date().toISOString().slice(0,10)}.db`;
+      res.writeHead(200, {
+        'Content-Type': 'application/x-sqlite3',
+        'Content-Length': fileBuf.length,
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(fileBuf);
       return;
     }
 
     if (method === 'POST' && p === '/api/restore') {
       if (!can(me, 'canSettings') && !isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
-      const b = await readBody(req);
+      const rawBuf = await readRawBody(req);
+      if (!rawBuf || rawBuf.length === 0) {
+        sendError(res, 400, 'لم يتم إرسال أي ملف للاستعادة');
+        return;
+      }
+
+      const isSqlite = rawBuf.length >= 16 && rawBuf.subarray(0, 16).toString('utf8').startsWith('SQLite format 3');
+      if (isSqlite) {
+        const tempBranchRestore = path.join(DATA_DIR, `temp_b_restore_${orgId}_${Date.now()}.db`);
+        fs.writeFileSync(tempBranchRestore, rawBuf);
+        try {
+          const safeAttach = tempBranchRestore.replace(/\\/g, '/').replace(/'/g, "''");
+          db.exec(`ATTACH DATABASE '${safeAttach}' AS bsrc;`);
+          const srcTables = db.prepare("SELECT name FROM bsrc.sqlite_master WHERE type='table'").all().map(r => r.name);
+          db.exec('BEGIN TRANSACTION;');
+          if (srcTables.includes('settings')) {
+            const srcSettings = db.prepare('SELECT * FROM bsrc.settings').all();
+            for (const s of srcSettings) setSetting(orgId, s.key, s.value);
+          }
+          if (srcTables.includes('reports')) {
+            const srcReports = db.prepare('SELECT * FROM bsrc.reports').all();
+            for (const r of srcReports) {
+              const exists = db.prepare('SELECT id FROM reports WHERE orgId=? AND id=?').get(orgId, r.id);
+              if (!exists) {
+                db.prepare(`INSERT INTO reports(id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images, enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+                    r.id, orgId, r.reportNumber, r.subject||'', r.target||'', r.reportDate||nowIso().slice(0,10), r.reportTime||nowIso().slice(11,16),
+                    r.location||'', r.details||'', typeof r.images === 'string' ? r.images : JSON.stringify(r.images||[]),
+                    r.enteredBy||me.fullName, r.enteredByUserId||me.id, r.rating||'عادي', r.logoId||'logo1',
+                    r.isEncrypted?1:0, r.encryptedPayload||'', r.encryptedIv||'', r.createdAt||nowIso(), r.updatedAt||nowIso()
+                  );
+              }
+            }
+          }
+          if (srcTables.includes('events')) {
+            const srcEvents = db.prepare('SELECT * FROM bsrc.events').all();
+            for (const e of srcEvents) {
+              const exists = db.prepare('SELECT id FROM events WHERE orgId=? AND id=?').get(orgId, e.id);
+              if (!exists) {
+                db.prepare(`INSERT INTO events(id, orgId, title, eventType, notes, eventDate, eventTime, location, assignedUserId, assignedUserName, createdBy, createdById, createdDate, status, receivedAt, completedAt, feedbackNotes, isArchived)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+                    e.id, orgId, e.title, e.eventType, e.notes||'', e.eventDate||'', e.eventTime||'', e.location||'', e.assignedUserId||'',
+                    e.assignedUserName||'', e.createdBy||'', e.createdById||'', e.createdDate||nowIso(), e.status||'pending', e.receivedAt||null,
+                    e.completedAt||null, e.feedbackNotes||'', e.isArchived?1:0
+                  );
+              }
+            }
+          }
+          db.exec('COMMIT;');
+          db.exec('DETACH DATABASE bsrc;');
+          try { fs.unlinkSync(tempBranchRestore); } catch(e){}
+          send(res, 200, { ok: true, message: 'تمت استعادة قاعدة بيانات SQLite بنجاح ✔' });
+          return;
+        } catch(err) {
+          try { db.exec('ROLLBACK;'); } catch(e){}
+          try { db.exec('DETACH DATABASE bsrc;'); } catch(e){}
+          try { if (fs.existsSync(tempBranchRestore)) fs.unlinkSync(tempBranchRestore); } catch(e){}
+          sendError(res, 400, 'فشلت استعادة ملف قاعدة بيانات SQLite: ' + err.message);
+          return;
+        }
+      }
+
+      let b;
+      try {
+        b = JSON.parse(rawBuf.toString('utf8'));
+      } catch(e) {
+        sendError(res, 400, 'الملف المرفوع ليس ملف قاعدة بيانات SQLite (.db) ولا ملف JSON صالح');
+        return;
+      }
       const backup = b.backup || b;
       if (!backup || !backup.organization) { sendError(res, 400, 'ملف النسخة الاحتياطية غير صالح'); return; }
 
@@ -1232,7 +1765,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      send(res, 200, { ok: true, message: 'تمت استعادة البيانات بنجاح' });
+      send(res, 200, { ok: true, message: 'تمت استعادة البيانات بنجاح ✔' });
       return;
     }
 

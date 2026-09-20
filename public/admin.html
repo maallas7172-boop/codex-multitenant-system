@@ -113,9 +113,10 @@
           <p>عرض وتصفية التقارير مع إمكانية الطباعة المخصصة (إجمالية / تفصيلية) والتصدير إلى Word و PDF.</p>
         </div>
         <div class="btn-row">
-          <button class="btn btn-outline" id="btnExportReportsJson" title="تصدير التقارير المفلترة إلى ملف خارجي (JSON) لنقلها لبرنامج آخر">📤 تصدير إلى ملف (JSON)</button>
-          <button class="btn btn-outline" id="btnImportReportsJson" title="استيراد تقارير من ملف خارجي (JSON) وإدراجها في النظام">📥 استيراد من ملف (JSON)</button>
-          <input type="file" id="importReportsFileInput" accept=".json,application/json" style="display:none" />
+          <button class="btn btn-outline" id="btnExportReportsTemplate" title="تنزيل قالب تعبئة بيانات التقارير (Excel / CSV أو JSON) لتسهيل الإدخال والاستيراد دون تعارض">📋 تصدير قالب للتعبئة</button>
+          <button class="btn btn-outline" id="btnExportReportsJson" title="تصدير التقارير المفلترة إلى ملف خارجي لنقلها لبرنامج آخر">📤 تصدير التقارير</button>
+          <button class="btn btn-outline" id="btnImportReportsJson" title="استيراد تقارير من ملف خارجي (Excel/CSV أو JSON) وإدراجها في النظام">📥 استيراد من ملف</button>
+          <input type="file" id="importReportsFileInput" accept=".csv,.json,text/csv,application/json" style="display:none" />
           <button class="btn btn-danger" id="btnBatchDeleteReports" style="display:none" title="حذف كافة التقارير المحددة">🗑️ حذف المحدد (<span id="selectedReportsCount">0</span>)</button>
           <button class="btn btn-secondary" id="openPrintChoiceBtn" title="خيارات طباعة وتصدير التقارير المفلترة">🖨️ طباعة التقارير المفلترة</button>
           <button class="btn btn-primary" onclick="renderReports()">🔄 تحديث القائمة</button>
@@ -470,14 +471,20 @@
 
       <div class="grid-2">
         <div class="card">
-          <h3 style="margin-bottom:14px">💾 النسخ الاحتياطي والاستعادة</h3>
-          <div class="btn-row">
-            <button class="btn btn-secondary" id="backupBtn">⬇️ تنزيل نسخة احتياطية يدوية</button>
-            <label class="btn btn-outline" style="cursor:pointer">⬆️ استعادة من ملف<input type="file" id="restoreInput" accept=".json" style="display:none" /></label>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <span style="font-size:24px">💾</span>
+            <div>
+              <h3 style="margin:0;font-size:16px;font-weight:900">النسخ الاحتياطي لقاعدة البيانات (SQLite .db)</h3>
+              <div style="font-size:12px;color:var(--muted)">تصدير واستعادة قاعدة بيانات الفرع بصيغة SQLite3 الرسمية</div>
+            </div>
           </div>
-          <p style="color:var(--muted);font-size:12.5px;margin-top:12px;line-height:1.8">
-            يقوم النظام تلقائياً بإنشاء نسخة احتياطية آلياً عند كل عملية خروج وتسجيل الخروج وتنسيق الملفات داخل مجلد البيانات.
-          </p>
+          <div class="btn-row">
+            <button class="btn btn-secondary" id="backupBtn">⬇️ تنزيل قاعدة بيانات SQLite (.db)</button>
+            <label class="btn btn-outline" style="cursor:pointer">⬆️ استعادة قاعدة بيانات (.db)<input type="file" id="restoreInput" accept=".db,.sqlite,.json" style="display:none" /></label>
+          </div>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:8px 12px;border-radius:8px;margin-top:12px;font-size:12px;color:#166534">
+            🟢 <b>محرك قاعدة البيانات:</b> SQLite 3 Relational Database Engine (WAL Mode)
+          </div>
         </div>
 
         <div class="card">
@@ -724,6 +731,72 @@
     <div class="modal-foot" style="display:flex;justify-content:space-between;gap:8px">
       <button type="button" class="btn btn-outline" onclick="closeMyOrgQrModal()">إلغاء</button>
       <button type="button" class="btn btn-primary" onclick="printMyOrgCard()">🖨️ طباعة بطاقة الربط</button>
+    </div>
+  </div>
+</div>
+
+<!-- نافذة تصدير قالب التقارير المعتمد لتجنب تعارض الحقول والأنواع -->
+<div class="modal-back" id="reportsTemplateModal">
+  <div class="modal card" style="max-width:600px;width:95%">
+    <div class="modal-head">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:24px">📋</span>
+        <h3 style="margin:0;font-size:18px">تصدير قالب تعبئة بيانات التقارير</h3>
+      </div>
+      <button type="button" class="x-btn" onclick="closeReportsTemplateModal()">&times;</button>
+    </div>
+    <p style="font-size:13px;color:#475569;line-height:1.8;margin:12px 0 16px">
+      تم إعداد القالب متضمناً كافة أسماء الحقول الرسمية وأنواع البيانات المقبولة بدقة لتفادي أي تعارض عند استيراد البيانات. اختر الصيغة المناسبة لك:
+    </p>
+    
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:14px;margin-bottom:18px">
+      <!-- بطاقة قالب إكسل -->
+      <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:16px;text-align:center;display:flex;flex-direction:column;justify-content:space-between">
+        <div>
+          <div style="font-size:32px;margin-bottom:6px">📗</div>
+          <div style="font-weight:900;color:#166534;font-size:15px;margin-bottom:4px">قالب إكسل (Excel / CSV)</div>
+          <div style="font-size:12px;color:#15803d;line-height:1.6;margin-bottom:12px">
+            جاهز للتعبئة المباشرة ببرامج Microsoft Excel مع صفوف نموذجية وترميز سليم بالكامل.
+          </div>
+        </div>
+        <button type="button" class="btn btn-secondary" onclick="downloadReportsCsvTemplate()" style="width:100%;font-weight:800;justify-content:center">
+          ⬇️ تنزيل قالب Excel (CSV)
+        </button>
+      </div>
+
+      <!-- بطاقة قالب JSON -->
+      <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;padding:16px;text-align:center;display:flex;flex-direction:column;justify-content:space-between">
+        <div>
+          <div style="font-size:32px;margin-bottom:6px">📄</div>
+          <div style="font-weight:900;color:#1e40af;font-size:15px;margin-bottom:4px">قالب مهيكل (JSON)</div>
+          <div style="font-size:12px;color:#1d4ed8;line-height:1.6;margin-bottom:12px">
+            مجهّز بالبنية البرمجية الصريحة مع دليل شرح نوع وقيمة كل حقل لتفادي أي التباس.
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary" onclick="downloadReportsJsonTemplate()" style="width:100%;font-weight:800;justify-content:center">
+          ⬇️ تنزيل قالب JSON
+        </button>
+      </div>
+    </div>
+
+    <!-- جدول إرشادي مصغر للحقول لتجنب التعارض -->
+    <div style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:12px">
+      <div style="font-weight:800;color:var(--text);margin-bottom:8px">📌 أسماء الحقول والأنواع المعتمدة في النظام:</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;color:#475569">
+        <div>• <b>رقم التقرير</b>: نص / رقم فريد (مثال: 1001)</div>
+        <div>• <b>موضوع التقرير</b>: نص عنوان التقرير (مطلوب)</div>
+        <div>• <b>الجهة المستهدفة</b>: نص الجهة أو الشخص المعني</div>
+        <div>• <b>تاريخ التقرير</b>: تاريخ بصيغة YYYY-MM-DD</div>
+        <div>• <b>وقت التقرير</b>: وقت بصيغة HH:MM (مثال: 10:30)</div>
+        <div>• <b>الموقع</b>: مكان أو موقع الحدث الميداني</div>
+        <div>• <b>تفاصيل التقرير</b>: النص التفصيلي الكامل للبيان</div>
+        <div>• <b>التقييم</b>: عادي / هام / سري / عاجل</div>
+        <div>• <b>اسم المدخل</b>: اسم الموظف محرر التقرير</div>
+      </div>
+    </div>
+    
+    <div class="modal-foot" style="margin-top:16px;display:flex;justify-content:flex-end">
+      <button type="button" class="btn btn-outline" onclick="closeReportsTemplateModal()">إغلاق</button>
     </div>
   </div>
 </div>

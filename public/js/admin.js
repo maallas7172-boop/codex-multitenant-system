@@ -775,7 +775,155 @@
   if ($('btnExportWordDetailed')) $('btnExportWordDetailed').onclick = () => { $('printModalBack').classList.remove('show'); exportReportsToWord(true); };
   if ($('btnExportPdfChoice')) $('btnExportPdfChoice').onclick = () => { $('printModalBack').classList.remove('show'); printReportsSummary(); };
 
-  /* ================= تصدير واستيراد التقارير (JSON) ================= */
+  /* ================= تصدير واستيراد التقارير وقوالب التعبئة ================= */
+  window.openReportsTemplateModal = function () {
+    if ($('reportsTemplateModal')) $('reportsTemplateModal').classList.add('show');
+  };
+
+  window.closeReportsTemplateModal = function () {
+    if ($('reportsTemplateModal')) $('reportsTemplateModal').classList.remove('show');
+  };
+
+  window.downloadReportsCsvTemplate = function () {
+    const headers = ['رقم_التقرير', 'موضوع_التقرير', 'الجهة_المستهدفة', 'تاريخ_التقرير', 'وقت_التقرير', 'الموقع', 'تفاصيل_التقرير', 'التقييم', 'اسم_المدخل'];
+    const row1 = ['1001', 'تقرير زيارة تدقيق مالي وإداري', 'إدارة الرقابة والمتابعة', '2026-09-20', '10:30', 'المقر الرئيسي - مبنى 1', 'تمت مراجعة القيود وسير العمل الميداني بنجاح تام وفق الخطة المعمول بها', 'عادي', 'أحمد محمد'];
+    const row2 = ['1002', 'تقرير صيانة ومتابعة فنية عاجلة', 'فرع المدينة', '2026-09-20', '14:15', 'صالة الفرع', 'تم فحص أجهزة الشبكة ومعالجة العطل بالكامل واستئناف العمل', 'عاجل', 'سالم علي'];
+    
+    const csvContent = '\uFEFF' + [headers, row1, row2]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'قالب_تعبئة_التقارير_المعتمد.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('تم تنزيل قالب Excel (CSV) بنجاح ✔');
+    closeReportsTemplateModal();
+  };
+
+  window.downloadReportsJsonTemplate = function () {
+    const templateData = {
+      system: 'منظومة إدارة الحسابات والتقارير',
+      version: '3.0',
+      description: 'قالب إدخال وتوريد بيانات التقارير المعتمد لتجنب تعارض الحقول والأنواع',
+      fieldDefinitions: {
+        reportNumber: { description: 'رقم التقرير الفريد', type: 'string / number', example: '1001', required: true },
+        subject: { description: 'موضوع وعنوان التقرير', type: 'string', example: 'تقرير جرد سنوي', required: true },
+        target: { description: 'الجهة أو الشخص المستهدف', type: 'string', example: 'الإدارة العامة', required: false },
+        reportDate: { description: 'تاريخ التقرير بصيغة YYYY-MM-DD', type: 'string', example: '2026-09-20', required: true },
+        reportTime: { description: 'وقت التقرير بصيغة HH:MM', type: 'string', example: '10:30', required: false },
+        location: { description: 'موقع أو مكان الحدث', type: 'string', example: 'الفرع الرئيسي', required: false },
+        details: { description: 'شرح وتفاصيل التقرير الكاملة', type: 'string', example: 'تم إنجاز كافة المهام الميدانية والمحاسبية...', required: true },
+        rating: { description: 'مستوى الأهمية', type: 'string', allowedValues: ['عادي', 'هام', 'سري', 'عاجل'], default: 'عادي' },
+        enteredBy: { description: 'اسم الموظف أو محرر التقرير', type: 'string', example: 'محمد أحمد', required: false }
+      },
+      reports: [
+        {
+          reportNumber: '1001',
+          subject: 'تقرير زيارة تدقيق مالي وإداري',
+          target: 'إدارة الرقابة والمتابعة',
+          reportDate: '2026-09-20',
+          reportTime: '10:30',
+          location: 'المقر الرئيسي - مبنى 1',
+          details: 'تمت مراجعة القيود وسير العمل الميداني بنجاح تام وفق الخطة المعمول بها',
+          rating: 'عادي',
+          enteredBy: 'أحمد محمد'
+        },
+        {
+          reportNumber: '1002',
+          subject: 'تقرير صيانة ومتابعة فنية عاجلة',
+          target: 'فرع المدينة',
+          reportDate: '2026-09-20',
+          reportTime: '14:15',
+          location: 'صالة الفرع',
+          details: 'تم فحص أجهزة الشبكة ومعالجة العطل بالكامل واستئناف العمل',
+          rating: 'عاجل',
+          enteredBy: 'سالم علي'
+        }
+      ]
+    };
+    const blob = new Blob([JSON.stringify(templateData, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'قالب_تعبئة_التقارير_المعتمد.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('تم تنزيل قالب JSON المهيكل بنجاح ✔');
+    closeReportsTemplateModal();
+  };
+
+  function parseCsvToReports(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    const lines = [];
+    let row = [];
+    let cur = '';
+    let inQuote = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      const next = text[i + 1];
+      if (ch === '"') {
+        if (inQuote && next === '"') { cur += '"'; i++; }
+        else { inQuote = !inQuote; }
+      } else if (ch === ',' && !inQuote) {
+        row.push(cur.trim());
+        cur = '';
+      } else if ((ch === '\r' || ch === '\n') && !inQuote) {
+        if (ch === '\r' && next === '\n') i++;
+        row.push(cur.trim());
+        if (row.some(c => c.length > 0)) lines.push(row);
+        row = [];
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur.length > 0 || row.length > 0) {
+      row.push(cur.trim());
+      if (row.some(c => c.length > 0)) lines.push(row);
+    }
+    if (lines.length < 2) throw new Error('الملف لا يحتوي على صفوف بيانات كافية (مطلوب ترويسة وصف بيانات على الأقل)');
+
+    const headers = lines[0].map(h => h.trim().toLowerCase().replace(/[_ \-]/g, ''));
+    const reports = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const r = lines[i];
+      const rep = {};
+      headers.forEach((h, idx) => {
+        const val = (r[idx] || '').trim();
+        if (h.includes('رقم') || h === 'reportnumber' || h === 'number' || h === 'id') rep.reportNumber = val;
+        else if (h.includes('موضوع') || h.includes('عنوان') || h === 'subject' || h === 'title') rep.subject = val;
+        else if (h.includes('مستهدف') || h.includes('جهة') || h === 'target') rep.target = val;
+        else if (h.includes('تاريخ') || h === 'reportdate' || h === 'date') rep.reportDate = val;
+        else if (h.includes('وقت') || h === 'reporttime' || h === 'time') rep.reportTime = val;
+        else if (h.includes('موقع') || h.includes('مكان') || h === 'location') rep.location = val;
+        else if (h.includes('تفاصيل') || h.includes('بيان') || h.includes('شرح') || h === 'details') rep.details = val;
+        else if (h.includes('تقييم') || h.includes('أهمية') || h === 'rating') rep.rating = val;
+        else if (h.includes('مدخل') || h.includes('موظف') || h === 'enteredby') rep.enteredBy = val;
+      });
+
+      if (rep.subject || rep.details || rep.reportNumber) {
+        if (!rep.subject) rep.subject = rep.details ? rep.details.slice(0, 30) : 'تقرير مستورد';
+        if (!rep.reportDate) rep.reportDate = new Date().toISOString().slice(0, 10);
+        reports.push(rep);
+      }
+    }
+    return reports;
+  }
+
+  if ($('btnExportReportsTemplate')) {
+    $('btnExportReportsTemplate').onclick = openReportsTemplateModal;
+  }
+
   if ($('btnExportReportsJson')) {
     $('btnExportReportsJson').onclick = async () => {
       if (!currentReports || !currentReports.length) {
@@ -785,7 +933,7 @@
       try {
         const dump = {
           system: 'إدارة الحسابات',
-          version: '2.0.0',
+          version: '3.0.0',
           exportedAt: new Date().toISOString(),
           count: currentReports.length,
           reports: currentReports
@@ -797,7 +945,7 @@
         a.download = `تقارير_إدارة_الحسابات_${dateStr}.json`;
         a.click();
         URL.revokeObjectURL(a.href);
-        toast(`تم تصدير (${currentReports.length}) تقرير إلى ملف JSON بنجاح ✔`);
+        toast(`تم تصدير (${currentReports.length}) تقرير بنجاح ✔`);
       } catch (err) {
         toast('تعذر تصدير التقارير: ' + err.message, 'err');
       }
@@ -820,29 +968,35 @@
 
       try {
         const text = await file.text();
-        let parsed = null;
-        try {
-          parsed = JSON.parse(text);
-        } catch (e) {
-          throw new Error('الملف المحدد ليس ملف JSON صالحاً');
-        }
-
         let reportsList = [];
-        if (Array.isArray(parsed)) {
-          reportsList = parsed;
-        } else if (parsed && Array.isArray(parsed.reports)) {
-          reportsList = parsed.reports;
-        } else if (parsed && parsed.backup && Array.isArray(parsed.backup.reports)) {
-          reportsList = parsed.backup.reports;
+
+        const isCsv = file.name.toLowerCase().endsWith('.csv') || (!text.trim().startsWith('{') && !text.trim().startsWith('['));
+        if (isCsv) {
+          reportsList = parseCsvToReports(text);
         } else {
-          throw new Error('لم يتم العثور على قائمة تقارير صالحة داخل الملف');
+          let parsed = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch (e) {
+            throw new Error('الملف المحدد ليس ملف JSON أو CSV صالح');
+          }
+
+          if (Array.isArray(parsed)) {
+            reportsList = parsed;
+          } else if (parsed && Array.isArray(parsed.reports)) {
+            reportsList = parsed.reports;
+          } else if (parsed && parsed.backup && Array.isArray(parsed.backup.reports)) {
+            reportsList = parsed.backup.reports;
+          } else {
+            throw new Error('لم يتم العثور على قائمة تقارير صالحة داخل الملف');
+          }
         }
 
         if (!reportsList.length) {
-          throw new Error('الملف لا يحتوي على أي تقارير لاستيرادها');
+          throw new Error('الملف لا يحتوي على أي تقارير صالحة للاستيراد');
         }
 
-        const confirmMsg = `تم العثور على (${reportsList.length}) تقرير في الملف:\n«${file.name}»\n\nهل ترغب في استيرادها وإضافتها إلى النظام الآن؟`;
+        const confirmMsg = `تم العثور على (${reportsList.length}) تقرير جاهز للاستيراد من الملف:\n«${file.name}»\n\nهل ترغب في استيرادها وإضافتها إلى النظام الآن؟`;
         if (!confirm(confirmMsg)) return;
 
         toast('⏳ جارٍ استيراد ومعالجة التقارير...');
@@ -856,6 +1010,8 @@
         if (typeof renderDashboard === 'function') renderDashboard();
       } catch (err) {
         toast('فشل الاستيراد: ' + err.message, 'err');
+      } finally {
+        this.value = '';
       }
     };
   }
@@ -1741,28 +1897,50 @@
     } catch (err) { toast(err.message, 'err'); }
   }
 
-  /* النسخ الاحتياطي */
+  /* النسخ الاحتياطي لقاعدة بيانات SQLite */
   $('backupBtn').onclick = async () => {
     try {
-      const d = await api('/backup');
-      const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+      toast('جارٍ تحضير ملف قاعدة بيانات SQLite (.db)...');
+      const tok = getToken();
+      const res = await fetch(getServerBaseUrl() + '/api/backup?format=sqlite', {
+        headers: { 'Authorization': 'Bearer ' + tok }
+      });
+      if (!res.ok) throw new Error('فشل تنزيل قاعدة البيانات');
+      const blob = await res.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'نظام-التقارير-نسخة-احتياطية-' + todayStr() + '.json';
+      a.download = `بيانات_الفرع_${(me?.organization?.orgCode || 'BRANCH')}_${todayStr()}.db`;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast('تم تنزيل النسخة الاحتياطية ✔');
+      toast('تم تنزيل ملف قاعدة بيانات الفرع SQLite (.db) بنجاح ✔');
     } catch (err) { toast(err.message, 'err'); }
   };
   $('restoreInput').onchange = async function () {
     const file = this.files[0];
     if (!file) return;
-    if (!confirm('سيتم استبدال جميع البيانات الحالية بمحتوى النسخة الاحتياطية. متابعة؟')) { this.value = ''; return; }
+    if (!confirm(`سيتم استبدال ودمج البيانات الحالية من ملف قاعدة البيانات (${file.name}). متابعة؟`)) { this.value = ''; return; }
     try {
-      const text = await file.text();
-      const backup = JSON.parse(text);
-      await api('/restore', { method: 'POST', body: JSON.stringify({ backup }) });
-      toast('تمت الاستعادة بنجاح ✔');
+      toast('جارٍ استعادة قاعدة البيانات...');
+      const isDb = file.name.endsWith('.db') || file.name.endsWith('.sqlite');
+      if (isDb) {
+        const arrayBuf = await file.arrayBuffer();
+        const res = await fetch(getServerBaseUrl() + '/api/restore', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + getToken(),
+            'Content-Type': 'application/x-sqlite3'
+          },
+          body: arrayBuf
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'فشلت الاستعادة');
+        toast('تمت استعادة قاعدة بيانات SQLite بنجاح ✔');
+      } else {
+        const text = await file.text();
+        const backup = JSON.parse(text);
+        await api('/restore', { method: 'POST', body: JSON.stringify({ backup }) });
+        toast('تمت الاستعادة بنجاح ✔');
+      }
       renderSettings(); renderUsers();
     } catch (err) { toast('فشلت الاستعادة: ' + err.message, 'err'); }
     this.value = '';

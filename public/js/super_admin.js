@@ -87,40 +87,29 @@ let superReportSearchDebounce = null;
   }
 })();
 
-// التبديل بين قسم الفروع وقسم التقارير الشاملة
+// التبديل بين كافة أقسام الإدارة المركزية
 function switchSuperTab(tab) {
-  const orgsTab = document.getElementById('orgsTabSection');
-  const reportsTab = document.getElementById('reportsTabSection');
-  const tabBtnOrgs = document.getElementById('tabBtnOrgs');
-  const tabBtnReports = document.getElementById('tabBtnReports');
-
-  if (tab === 'reports') {
-    if (orgsTab) orgsTab.style.display = 'none';
-    if (reportsTab) reportsTab.style.display = 'block';
-
-    if (tabBtnOrgs) {
-      tabBtnOrgs.classList.remove('btn-primary');
-      tabBtnOrgs.classList.add('btn-outline');
+  const tabs = ['orgs', 'reports', 'users', 'settings', 'profile'];
+  tabs.forEach(t => {
+    const sec = document.getElementById(t + 'TabSection');
+    const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (sec) sec.style.display = (t === tab) ? 'block' : 'none';
+    if (btn) {
+      if (t === tab) {
+        btn.classList.remove('btn-outline');
+        btn.classList.add('btn-primary');
+      } else {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline');
+      }
     }
-    if (tabBtnReports) {
-      tabBtnReports.classList.remove('btn-outline');
-      tabBtnReports.classList.add('btn-primary');
-    }
+  });
 
-    loadSuperReports();
-  } else {
-    if (orgsTab) orgsTab.style.display = 'block';
-    if (reportsTab) reportsTab.style.display = 'none';
-
-    if (tabBtnOrgs) {
-      tabBtnOrgs.classList.remove('btn-outline');
-      tabBtnOrgs.classList.add('btn-primary');
-    }
-    if (tabBtnReports) {
-      tabBtnReports.classList.remove('btn-primary');
-      tabBtnReports.classList.add('btn-outline');
-    }
-  }
+  if (tab === 'reports') loadSuperReports();
+  else if (tab === 'users') loadSuperUsers();
+  else if (tab === 'settings') loadSuperSettings();
+  else if (tab === 'profile') loadSuperProfile();
+  else if (tab === 'orgs') loadDashboard();
 }
 
 async function loadDashboard() {
@@ -205,6 +194,7 @@ function renderOrgsTable(orgs) {
         <td style="padding:12px;text-align:center">${hqBadge}</td>
         <td style="padding:12px;text-align:center">
           <div style="display:flex;gap:6px;justify-content:center">
+            <button class="btn btn-primary btn-sm" onclick="openEditOrgModal('${org.id}')" style="font-size:11.5px;padding:4px 8px" title="تعديل بيانات الفرع وحسابه وصلاحياته">✏️ تعديل</button>
             <button class="btn btn-secondary btn-sm" onclick="showOrgQrModal('${org.orgCode}', '${esc(org.orgName)}')" style="font-size:11.5px;padding:4px 8px" title="عرض وطباعة باركود وQR الجهة">📱 باركود</button>
             <button class="btn btn-outline btn-sm" onclick="toggleOrgStatus('${org.id}', '${org.status}')" style="font-size:11.5px;padding:4px 8px" title="تفعيل / تجميد">
               ${isActive ? '⛔ تجميد' : '🟢 تفعيل'}
@@ -628,4 +618,656 @@ function printOrgCard() {
 </body>
 </html>`);
   w.document.close();
+}
+
+/* =========================================================
+   إدارة وتعديل بيانات المؤسسة (Edit Organization)
+   ========================================================= */
+function openEditOrgModal(orgId) {
+  const org = allOrgs.find(o => o.id === orgId);
+  if (!org) return;
+
+  document.getElementById('editOrgId').value = org.id;
+  document.getElementById('editOrgName').value = org.orgName || '';
+  document.getElementById('editOrgCode').value = org.orgCode || '';
+  document.getElementById('editOrgPhone').value = org.phone || '';
+  document.getElementById('editOrgStatus').value = org.status || 'active';
+  document.getElementById('editOrgMaxUsers').value = org.maxUsers || 50;
+
+  const hasHqAccess = (org.allowHqAccess === undefined || org.allowHqAccess === null || Number(org.allowHqAccess) === 1);
+  const allowHqChk = document.getElementById('editOrgAllowHq');
+  if (allowHqChk) allowHqChk.checked = hasHqAccess;
+
+  const adminUserInput = document.getElementById('editAdminUser');
+  const adminPwdInput = document.getElementById('editAdminPassword');
+  if (adminUserInput) adminUserInput.value = org.adminUser ? org.adminUser.userName : '';
+  if (adminPwdInput) adminPwdInput.value = '';
+
+  const modal = document.getElementById('editOrgModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeEditOrgModal() {
+  const modal = document.getElementById('editOrgModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function saveEditOrg(e) {
+  e.preventDefault();
+  const orgId = document.getElementById('editOrgId').value;
+  const orgName = document.getElementById('editOrgName').value.trim();
+  const phone = document.getElementById('editOrgPhone').value.trim();
+  const status = document.getElementById('editOrgStatus').value;
+  const maxUsers = parseInt(document.getElementById('editOrgMaxUsers').value, 10) || 50;
+  const allowHqAccess = document.getElementById('editOrgAllowHq') ? (document.getElementById('editOrgAllowHq').checked ? 1 : 0) : 1;
+  const adminUserName = document.getElementById('editAdminUser') ? document.getElementById('editAdminUser').value.trim() : '';
+  const adminPassword = document.getElementById('editAdminPassword') ? document.getElementById('editAdminPassword').value.trim() : '';
+
+  const btn = document.getElementById('btnSaveEditOrg');
+  btn.disabled = true; btn.textContent = 'جارٍ الحفظ...';
+
+  try {
+    const res = await api(`/super/organizations/${orgId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        orgName, phone, status, maxUsers, allowHqAccess,
+        adminUserName, adminPassword
+      })
+    });
+    toast(res.message || 'تم حفظ تعديلات الفرع بنجاح ✔');
+    closeEditOrgModal();
+    await loadDashboard();
+  } catch (err) {
+    alert('تعذر تحديث بيانات الفرع: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'حفظ التعديلات ✔';
+  }
+}
+
+/* =========================================================
+   إدارة مستخدمي الإدارة المركزية والصلاحيات
+   ========================================================= */
+let allSuperUsers = [];
+
+async function loadSuperUsers() {
+  const tbody = document.getElementById('superUsersTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">جارٍ تحميل المستخدمين...</td></tr>';
+  try {
+    const res = await api('/super/users');
+    allSuperUsers = (res && res.users) || [];
+    renderSuperUsersTable(allSuperUsers);
+  } catch(e) {
+    toast('تعذر جلب مستخدمي الإدارة: ' + e.message, 'err');
+  }
+}
+
+function renderSuperUsersTable(users) {
+  const tbody = document.getElementById('superUsersTableBody');
+  if (!tbody) return;
+  if (!users || users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">لا يوجد مستخدمون مضافون حالياً. اضغط على زر إضافة مستخدم للبدء.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = users.map(u => {
+    const isMainAdmin = u.role === 'SuperAdmin';
+    const statusBadge = u.isActive
+      ? '<span style="background:#ecfdf5;color:#047857;padding:3px 8px;border-radius:6px;font-weight:800;font-size:12px">🟢 نشط</span>'
+      : '<span style="background:#fef2f2;color:#b91c1c;padding:3px 8px;border-radius:6px;font-weight:800;font-size:12px">⛔ موقوف</span>';
+
+    const perms = [];
+    if (isMainAdmin) {
+      perms.push('👑 كامل الصلاحيات المطلقة');
+    } else {
+      if (u.canDash) perms.push('الفروع');
+      if (u.canReports) perms.push('استعراض التقارير');
+      if (u.canReportsPrint) perms.push('طباعة');
+      if (u.canReportsDelete) perms.push('حذف التقارير');
+      if (u.canUsers) perms.push('المستخدمين');
+      if (u.canSettings) perms.push('الإعدادات');
+    }
+    const permsText = perms.length > 0 ? perms.join(' • ') : 'بدون صلاحيات';
+
+    const actions = isMainAdmin
+      ? '<span style="color:#64748b;font-size:12px">الحساب الرئيسي</span>'
+      : `
+        <div style="display:flex;gap:6px;justify-content:center">
+          <button class="btn btn-outline btn-sm" onclick="openAddSuperUserModal('${u.id}')" style="font-size:11.5px;padding:4px 8px" title="تعديل المستخدم والصلاحيات">✏️ تعديل</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleSuperUserStatus('${u.id}', ${u.isActive ? 1 : 0})" style="font-size:11.5px;padding:4px 8px">
+            ${u.isActive ? '⛔ إيقاف' : '🟢 تفعيل'}
+          </button>
+          <button class="btn btn-danger btn-sm" onclick="deleteSuperUser('${u.id}', '${esc(u.userName)}')" style="font-size:11.5px;padding:4px 8px" title="حذف المستخدم">
+            🗑️
+          </button>
+        </div>
+      `;
+
+    return `
+      <tr style="border-bottom:1px solid var(--line)">
+        <td style="padding:12px"><b style="color:#0f172a">${esc(u.userName)}</b></td>
+        <td style="padding:12px">${esc(u.fullName)}</td>
+        <td style="padding:12px"><span style="background:#f1f5f9;color:#334155;padding:3px 8px;border-radius:6px;font-weight:700;font-size:12px">${isMainAdmin ? 'مدير عام المركز' : 'مشرف إدارة مركزية'}</span></td>
+        <td style="padding:12px;font-size:12.5px;color:#2563eb;font-weight:700">${permsText}</td>
+        <td style="padding:12px">${statusBadge}</td>
+        <td style="padding:12px;text-align:center">${actions}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openAddSuperUserModal(userId = null) {
+  const form = document.getElementById('superUserForm');
+  if (form) form.reset();
+
+  const title = document.getElementById('superUserModalTitle');
+  const suIdInput = document.getElementById('suId');
+  const suUserInput = document.getElementById('suUserName');
+  const suPwdInput = document.getElementById('suPassword');
+
+  if (userId) {
+    const user = allSuperUsers.find(u => u.id === userId);
+    if (!user) return;
+    if (title) title.textContent = '✏️ تعديل مستخدم المركز والصلاحيات';
+    if (suIdInput) suIdInput.value = user.id;
+    if (suUserInput) {
+      suUserInput.value = user.userName;
+      suUserInput.disabled = true;
+    }
+    document.getElementById('suFullName').value = user.fullName || '';
+    if (suPwdInput) suPwdInput.required = false;
+    document.getElementById('suIsActive').checked = !!user.isActive;
+
+    document.getElementById('suCanDash').checked = !!user.canDash;
+    document.getElementById('suCanReports').checked = !!user.canReports;
+    document.getElementById('suCanReportsPrint').checked = !!user.canReportsPrint;
+    document.getElementById('suCanReportsDelete').checked = !!user.canReportsDelete;
+    document.getElementById('suCanUsers').checked = !!user.canUsers;
+    document.getElementById('suCanSettings').checked = !!user.canSettings;
+  } else {
+    if (title) title.textContent = '➕ إضافة مستخدم جديد للمركز';
+    if (suIdInput) suIdInput.value = '';
+    if (suUserInput) {
+      suUserInput.value = '';
+      suUserInput.disabled = false;
+    }
+    if (suPwdInput) suPwdInput.required = true;
+    document.getElementById('suIsActive').checked = true;
+
+    document.getElementById('suCanDash').checked = true;
+    document.getElementById('suCanReports').checked = true;
+    document.getElementById('suCanReportsPrint').checked = true;
+    document.getElementById('suCanReportsDelete').checked = false;
+    document.getElementById('suCanUsers').checked = false;
+    document.getElementById('suCanSettings').checked = false;
+  }
+
+  const modal = document.getElementById('superUserModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeSuperUserModal() {
+  const modal = document.getElementById('superUserModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function saveSuperUser(e) {
+  e.preventDefault();
+  const userId = document.getElementById('suId').value;
+  const userName = document.getElementById('suUserName').value.trim();
+  const fullName = document.getElementById('suFullName').value.trim();
+  const password = document.getElementById('suPassword').value.trim();
+  const isActive = document.getElementById('suIsActive').checked ? 1 : 0;
+
+  const canDash = document.getElementById('suCanDash').checked ? 1 : 0;
+  const canReports = document.getElementById('suCanReports').checked ? 1 : 0;
+  const canReportsPrint = document.getElementById('suCanReportsPrint').checked ? 1 : 0;
+  const canReportsDelete = document.getElementById('suCanReportsDelete').checked ? 1 : 0;
+  const canUsers = document.getElementById('suCanUsers').checked ? 1 : 0;
+  const canSettings = document.getElementById('suCanSettings').checked ? 1 : 0;
+
+  const btn = document.getElementById('btnSaveSuperUser');
+  btn.disabled = true; btn.textContent = 'جارٍ الحفظ...';
+
+  try {
+    if (userId) {
+      await api(`/super/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          fullName, password, isActive,
+          canDash, canReports, canReportsPrint, canReportsDelete,
+          canUsers, canSettings
+        })
+      });
+      toast('تم تحديث بيانات المستخدم وصلاحياته بنجاح ✔');
+    } else {
+      await api('/super/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          userName, fullName, password, isActive,
+          canDash, canReports, canReportsPrint, canReportsDelete,
+          canUsers, canSettings
+        })
+      });
+      toast('تم إنشاء مستخدم الإدارة المركزية بنجاح ✔');
+    }
+    closeSuperUserModal();
+    await loadSuperUsers();
+  } catch (err) {
+    alert('خطأ: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'حفظ المستخدم ✔';
+  }
+}
+
+async function toggleSuperUserStatus(userId, currentActive) {
+  try {
+    await api(`/super/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ isActive: currentActive ? 0 : 1 })
+    });
+    toast('تم تغيير حالة الحساب ✔');
+    await loadSuperUsers();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function deleteSuperUser(userId, userName) {
+  if (!confirm(`هل أنت متأكد من حذف المستخدم (${userName})؟`)) return;
+  try {
+    await api(`/super/users/${userId}`, { method: 'DELETE' });
+    toast('تم حذف المستخدم بنجاح ✔');
+    await loadSuperUsers();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+/* =========================================================
+   إعدادات الترويسة والختوم والنسخ الاحتياطي
+   ========================================================= */
+let superCustomLogoBase64 = null;
+
+async function loadSuperSettings() {
+  try {
+    const res = await api('/super/settings');
+    if (!res) return;
+
+    if (res.masterOrgCode) {
+      const spInput = document.getElementById('spMasterCode');
+      if (spInput) spInput.value = res.masterOrgCode;
+    }
+    if (res.superAdminUserName) {
+      const uInput = document.getElementById('spUserName');
+      if (uInput) uInput.value = res.superAdminUserName;
+    }
+
+    const cfg = res.reportHeaderConfig || {};
+    if (cfg.lines) {
+      if (cfg.lines[0] !== undefined) document.getElementById('shHeaderLine1').value = cfg.lines[0];
+      if (cfg.lines[1] !== undefined) document.getElementById('shHeaderLine2').value = cfg.lines[1];
+      if (cfg.lines[2] !== undefined) document.getElementById('shHeaderLine3').value = cfg.lines[2];
+      if (cfg.lines[3] !== undefined) document.getElementById('shHeaderLine4').value = cfg.lines[3];
+      if (cfg.lines[4] !== undefined) document.getElementById('shHeaderLine5').value = cfg.lines[4];
+    }
+    if (cfg.confidential !== undefined) document.getElementById('shConfidential').value = cfg.confidential;
+    if (cfg.font) document.getElementById('shFontSel').value = cfg.font;
+    if (cfg.showBasmala !== undefined) document.getElementById('shShowBasmala').checked = !!cfg.showBasmala;
+    if (cfg.basmalaText) document.getElementById('shBasmalaText').value = cfg.basmalaText;
+
+    if (cfg.logoUrl) {
+      if (cfg.logoUrl.startsWith('data:')) {
+        superCustomLogoBase64 = cfg.logoUrl;
+        document.getElementById('shLogoSel').value = 'custom';
+      } else {
+        document.getElementById('shLogoSel').value = cfg.logoUrl;
+      }
+    }
+
+    if (cfg.signatures) {
+      if (cfg.signatures.sig1Title) document.getElementById('shSig1').value = cfg.signatures.sig1Title;
+      if (cfg.signatures.sig1Name !== undefined) document.getElementById('shSig1Name').value = cfg.signatures.sig1Name;
+      if (cfg.signatures.sig2Title) document.getElementById('shSig2').value = cfg.signatures.sig2Title;
+      if (cfg.signatures.sig2Name !== undefined) document.getElementById('shSig2Name').value = cfg.signatures.sig2Name;
+      if (cfg.signatures.sig3Title) document.getElementById('shSig3').value = cfg.signatures.sig3Title;
+      if (cfg.signatures.sig3Name !== undefined) document.getElementById('shSig3Name').value = cfg.signatures.sig3Name;
+    }
+
+    updateSuperHeaderLivePreview();
+  } catch(e) {
+    toast('تعذر جلب إعدادات الترويسة: ' + e.message, 'err');
+  }
+}
+
+function onSuperLogoSelChange() {
+  const sel = document.getElementById('shLogoSel');
+  const fileInput = document.getElementById('shLogoFile');
+  if (sel && sel.value === 'custom') {
+    if (fileInput) fileInput.click();
+  }
+  updateSuperHeaderLivePreview();
+}
+
+function handleSuperLogoUpload(input) {
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      superCustomLogoBase64 = e.target.result;
+      updateSuperHeaderLivePreview();
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+function updateSuperHeaderLivePreview() {
+  const preview = document.getElementById('shLivePreview');
+  if (!preview) return;
+
+  const l1 = document.getElementById('shHeaderLine1')?.value || '';
+  const l2 = document.getElementById('shHeaderLine2')?.value || '';
+  const l3 = document.getElementById('shHeaderLine3')?.value || '';
+  const l4 = document.getElementById('shHeaderLine4')?.value || '';
+  const l5 = document.getElementById('shHeaderLine5')?.value || '';
+  const conf = document.getElementById('shConfidential')?.value || '';
+  const showBasmala = document.getElementById('shShowBasmala')?.checked;
+  const basmalaText = document.getElementById('shBasmalaText')?.value || '';
+
+  const logoSel = document.getElementById('shLogoSel')?.value;
+  let logoSrc = 'Image/1754379379088.jpg';
+  if (logoSel === 'custom' && superCustomLogoBase64) {
+    logoSrc = superCustomLogoBase64;
+  } else if (logoSel && logoSel !== 'custom') {
+    logoSrc = logoSel;
+  }
+
+  const sig1 = document.getElementById('shSig1')?.value || '';
+  const sig1N = document.getElementById('shSig1Name')?.value || '';
+  const sig2 = document.getElementById('shSig2')?.value || '';
+  const sig2N = document.getElementById('shSig2Name')?.value || '';
+  const sig3 = document.getElementById('shSig3')?.value || '';
+  const sig3N = document.getElementById('shSig3Name')?.value || '';
+
+  preview.innerHTML = `
+    <div style="border:1px solid #cbd5e1;padding:16px;border-radius:8px;background:#fff;font-family:inherit">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f172a;padding-bottom:12px">
+        <div style="text-align:right;font-size:12px;line-height:1.6;font-weight:700">
+          <div>${esc(l1)}</div>
+          <div>${esc(l2)}</div>
+          <div>${esc(l3)}</div>
+          <div>${esc(l4)}</div>
+          <div>${esc(l5)}</div>
+        </div>
+        <div style="text-align:center">
+          ${showBasmala ? `<div style="font-size:11px;font-weight:700;margin-bottom:4px">${esc(basmalaText)}</div>` : ''}
+          <img src="${logoSrc}" style="width:64px;height:64px;object-fit:contain" alt="Logo" />
+        </div>
+        <div style="text-align:left;font-size:11px;line-height:1.6;color:#64748b">
+          <div>التاريخ: ${new Date().toISOString().slice(0, 10)}</div>
+          <div>الرقم: 001/م</div>
+          ${conf ? `<div style="display:inline-block;padding:2px 6px;border:1px solid #ef4444;color:#ef4444;border-radius:4px;font-weight:800;font-size:10px;margin-top:4px">${esc(conf)}</div>` : ''}
+        </div>
+      </div>
+
+      <div style="height:40px;display:grid;place-items:center;color:#94a3b8;font-size:12px;border-bottom:1px dashed #e2e8f0;margin-bottom:12px">
+        [ مساحة موضوع وبيان التقرير الرسمي ]
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;font-size:11.5px;margin-top:10px;gap:8px">
+        <div>
+          <b>${esc(sig1)}</b><br/>
+          <span style="color:#64748b">${esc(sig1N)}</span>
+        </div>
+        <div>
+          <b>${esc(sig2)}</b><br/>
+          <span style="color:#64748b">${esc(sig2N)}</span>
+        </div>
+        <div>
+          <b>${esc(sig3)}</b><br/>
+          <span style="color:#64748b">${esc(sig3N)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function saveSuperHeaderSettings() {
+  const logoSel = document.getElementById('shLogoSel')?.value;
+  let logoUrl = logoSel === 'custom' ? superCustomLogoBase64 : logoSel;
+
+  const reportHeaderConfig = {
+    lines: [
+      document.getElementById('shHeaderLine1')?.value || '',
+      document.getElementById('shHeaderLine2')?.value || '',
+      document.getElementById('shHeaderLine3')?.value || '',
+      document.getElementById('shHeaderLine4')?.value || '',
+      document.getElementById('shHeaderLine5')?.value || ''
+    ],
+    confidential: document.getElementById('shConfidential')?.value || '',
+    logoUrl,
+    font: document.getElementById('shFontSel')?.value || 'diwani',
+    showBasmala: document.getElementById('shShowBasmala')?.checked,
+    basmalaText: document.getElementById('shBasmalaText')?.value || '',
+    signatures: {
+      sig1Title: document.getElementById('shSig1')?.value || '',
+      sig1Name: document.getElementById('shSig1Name')?.value || '',
+      sig2Title: document.getElementById('shSig2')?.value || '',
+      sig2Name: document.getElementById('shSig2Name')?.value || '',
+      sig3Title: document.getElementById('shSig3')?.value || '',
+      sig3Name: document.getElementById('shSig3Name')?.value || ''
+    }
+  };
+
+  try {
+    await api('/super/settings', {
+      method: 'POST',
+      body: JSON.stringify({ reportHeaderConfig })
+    });
+    toast('تم حفظ بيانات الترويسة والختوم بنجاح ✔');
+  } catch (e) {
+    alert('تعذر حفظ الترويسة: ' + e.message);
+  }
+}
+
+/* =========================================================
+   النسخ الاحتياطي والاستعادة لقاعدة بيانات SQLite للإدارة المركزية
+   ========================================================= */
+async function downloadSuperBackup() {
+  try {
+    toast('جارٍ استخراج وتجهيز ملف قاعدة بيانات SQLite (.db)...');
+    const tok = getToken();
+    const res = await fetch(getServerBaseUrl() + '/api/super/backup?format=sqlite', {
+      headers: { 'Authorization': 'Bearer ' + tok }
+    });
+    if (!res.ok) throw new Error('فشل توليد قاعدة البيانات (كود ' + res.status + ')');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Central_Database_${new Date().toISOString().slice(0, 10)}.db`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    toast('تم تنزيل ملف قاعدة بيانات SQLite بنجاح ✔');
+  } catch(e) {
+    alert('تعذر تنزيل قاعدة البيانات: ' + e.message);
+  }
+}
+
+async function restoreSuperBackup(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  if (!confirm(`تحذير: هل أنت متأكد من استعادة قاعدة البيانات من الملف (${file.name})؟\nسيتم دمج وتحديث بيانات النظام والفروع بدقة.`)) {
+    input.value = '';
+    return;
+  }
+
+  try {
+    toast('جارٍ استعادة ودمج البيانات...');
+    const isDb = file.name.endsWith('.db') || file.name.endsWith('.sqlite');
+    if (isDb) {
+      const arrayBuf = await file.arrayBuffer();
+      const res = await fetch(getServerBaseUrl() + '/api/super/restore', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + getToken(),
+          'Content-Type': 'application/x-sqlite3'
+        },
+        body: arrayBuf
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'فشلت الاستعادة');
+      toast(data.message || 'تمت استعادة قاعدة بيانات SQLite بنجاح ✔');
+    } else {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await api('/super/restore', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      toast(res.message || 'تمت استعادة النسخة الاحتياطية بنجاح ✔');
+    }
+    await loadDashboard();
+  } catch(err) {
+    alert('فشل استعادة البيانات: ' + err.message);
+  } finally {
+    input.value = '';
+  }
+}
+
+/* =========================================================
+   حساب الإدارة المركزية وتغيير الرمز الماستر
+   ========================================================= */
+async function loadSuperProfile() {
+  try {
+    const res = await api('/super/settings');
+    if (res) {
+      if (res.superAdminUserName) document.getElementById('spUserName').value = res.superAdminUserName;
+      if (res.masterOrgCode) document.getElementById('spMasterCode').value = res.masterOrgCode;
+    }
+  } catch(e){}
+}
+
+async function saveSuperProfile(e) {
+  e.preventDefault();
+  const userName = document.getElementById('spUserName').value.trim();
+  const password = document.getElementById('spPassword').value.trim();
+  const masterOrgCode = document.getElementById('spMasterCode').value.trim().toUpperCase();
+
+  const btn = document.getElementById('btnSaveSuperProfile');
+  btn.disabled = true; btn.textContent = 'جارٍ الحفظ...';
+
+  try {
+    const res = await api('/super/profile', {
+      method: 'PUT',
+      body: JSON.stringify({ userName, password, masterOrgCode })
+    });
+    toast(res.message || 'تم حفظ وتحديث بيانات حساب الإدارة والرمز بنجاح ✔');
+    document.getElementById('spPassword').value = '';
+  } catch(err) {
+    alert('خطأ: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 حفظ التغييرات وتحديث البيانات ✔';
+  }
+}
+
+function togglePassVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁️';
+  }
+}
+
+/* =========================================================
+   تصدير قالب إدخال وتوريد بيانات التقارير المعتمد
+   ========================================================= */
+function openReportsTemplateModal() {
+  const m = document.getElementById('reportsTemplateModal');
+  if (m) m.classList.add('show');
+}
+
+function closeReportsTemplateModal() {
+  const m = document.getElementById('reportsTemplateModal');
+  if (m) m.classList.remove('show');
+}
+
+function downloadReportsCsvTemplate() {
+  const headers = ['رقم_التقرير', 'موضوع_التقرير', 'الجهة_المستهدفة', 'تاريخ_التقرير', 'وقت_التقرير', 'الموقع', 'تفاصيل_التقرير', 'التقييم', 'اسم_المدخل'];
+  const row1 = ['1001', 'تقرير زيارة تدقيق مالي وإداري', 'إدارة الرقابة والمتابعة', '2026-09-20', '10:30', 'المقر الرئيسي - مبنى 1', 'تمت مراجعة القيود وسير العمل الميداني بنجاح تام وفق الخطة المعمول بها', 'عادي', 'أحمد محمد'];
+  const row2 = ['1002', 'تقرير صيانة ومتابعة فنية عاجلة', 'فرع المدينة', '2026-09-20', '14:15', 'صالة الفرع', 'تم فحص أجهزة الشبكة ومعالجة العطل بالكامل واستئناف العمل', 'عاجل', 'سالم علي'];
+  
+  const csvContent = '\uFEFF' + [headers, row1, row2]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'قالب_تعبئة_التقارير_المعتمد.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('تم تنزيل قالب Excel (CSV) بنجاح ✔');
+  closeReportsTemplateModal();
+}
+
+function downloadReportsJsonTemplate() {
+  const templateData = {
+    system: 'منظومة إدارة الحسابات والتقارير الموحدة',
+    version: '3.0',
+    description: 'قالب إدخال وتوريد بيانات التقارير المعتمد لتجنب تعارض الحقول والأنواع',
+    fieldDefinitions: {
+      reportNumber: { description: 'رقم التقرير الفريد', type: 'string / number', example: '1001', required: true },
+      subject: { description: 'موضوع وعنوان التقرير', type: 'string', example: 'تقرير جرد سنوي', required: true },
+      target: { description: 'الجهة أو الشخص المستهدف', type: 'string', example: 'الإدارة العامة', required: false },
+      reportDate: { description: 'تاريخ التقرير بصيغة YYYY-MM-DD', type: 'string', example: '2026-09-20', required: true },
+      reportTime: { description: 'وقت التقرير بصيغة HH:MM', type: 'string', example: '10:30', required: false },
+      location: { description: 'موقع أو مكان الحدث', type: 'string', example: 'الفرع الرئيسي', required: false },
+      details: { description: 'شرح وتفاصيل التقرير الكاملة', type: 'string', example: 'تم إنجاز كافة المهام الميدانية والمحاسبية...', required: true },
+      rating: { description: 'مستوى الأهمية', type: 'string', allowedValues: ['عادي', 'هام', 'سري', 'عاجل'], default: 'عادي' },
+      enteredBy: { description: 'اسم الموظف أو محرر التقرير', type: 'string', example: 'محمد أحمد', required: false }
+    },
+    reports: [
+      {
+        reportNumber: '1001',
+        subject: 'تقرير زيارة تدقيق مالي وإداري',
+        target: 'إدارة الرقابة والمتابعة',
+        reportDate: '2026-09-20',
+        reportTime: '10:30',
+        location: 'المقر الرئيسي - مبنى 1',
+        details: 'تمت مراجعة القيود وسير العمل الميداني بنجاح تام وفق الخطة المعمول بها',
+        rating: 'عادي',
+        enteredBy: 'أحمد محمد'
+      },
+      {
+        reportNumber: '1002',
+        subject: 'تقرير صيانة ومتابعة فنية عاجلة',
+        target: 'فرع المدينة',
+        reportDate: '2026-09-20',
+        reportTime: '14:15',
+        location: 'صالة الفرع',
+        details: 'تم فحص أجهزة الشبكة ومعالجة العطل بالكامل واستئناف العمل',
+        rating: 'عاجل',
+        enteredBy: 'سالم علي'
+      }
+    ]
+  };
+  const blob = new Blob([JSON.stringify(templateData, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'قالب_تعبئة_التقارير_المعتمد.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('تم تنزيل قالب JSON المهيكل بنجاح ✔');
+  closeReportsTemplateModal();
 }
