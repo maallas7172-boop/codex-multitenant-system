@@ -1539,18 +1539,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* ---- إدارة المهام والتكليفات داخل الجهة ---- */
-    if (p === '/api/events') {
+    if (p === '/api/events' || p === '/api/events/mine') {
       if (method === 'GET') {
         if (!can(me, 'canEvents') && !can(me, 'canEntry')) { sendError(res, 403, 'غير مصرح'); return; }
         let sql = 'SELECT * FROM events WHERE orgId=?';
         const params = [orgId];
-        if (me.role !== 'Admin' && !me.canEvents) {
-          sql += ' AND assignedUserId=?';
-          params.push(me.id);
+        if (me.role !== 'Admin' && (!me.canEvents || p === '/api/events/mine')) {
+          sql += ' AND (assignedUserId=? OR assignedUserId IS NULL OR assignedUserId="" OR LOWER(assignedUserName)=? OR LOWER(assignedUserName)=?)';
+          params.push(me.id, me.userName.toLowerCase(), me.fullName.toLowerCase());
         }
         sql += ' ORDER BY eventDate DESC, createdDate DESC';
         const events = db.prepare(sql).all(...params);
-        send(res, 200, { events });
+        send(res, 200, { ok: true, events });
         return;
       }
       if (method === 'POST') {
@@ -1574,13 +1574,19 @@ const server = http.createServer(async (req, res) => {
             String(b.location || ''), assignedUserId, assignedUserName,
             me.fullName, me.id, t, 'pending'
           );
-        send(res, 200, { event: db.prepare('SELECT * FROM events WHERE id=?').get(id) });
+
+        // دفع التكليفات فوراً إلى السحابة إن كنا محلياً
+        if (!process.env.RENDER && typeof performCloudRelaySync === 'function') {
+          setTimeout(() => performCloudRelaySync().catch(() => {}), 100);
+        }
+
+        send(res, 200, { ok: true, message: 'تم إرسال وتكليف المهمة بنجاح ✔', event: db.prepare('SELECT * FROM events WHERE id=?').get(id) });
         return;
       }
     }
 
     const em = p.match(/^\/api\/events\/([^/]+)(?:\/status)?$/);
-    if (em) {
+    if (em && em[1] !== 'mine') {
       const event = db.prepare('SELECT * FROM events WHERE orgId=? AND id=?').get(orgId, em[1]);
       if (!event) { sendError(res, 404, 'المهمة غير موجودة'); return; }
       if (method === 'PUT') {

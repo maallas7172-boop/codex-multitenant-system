@@ -5,6 +5,7 @@ let allOrgs = [];
 let allSuperReports = [];
 let activeSuperReport = null;
 let superReportSearchDebounce = null;
+let currentSuperHeaderConfig = null;
 
 (async function () {
   let me = null;
@@ -302,9 +303,14 @@ async function loadSuperReports() {
             ${imagesCount > 0 ? `<span class="badge blue" style="font-size:11px">📷 ${imagesCount} صور</span>` : '<span style="color:#94a3b8">—</span>'}
           </td>
           <td style="padding:12px;text-align:center">
-            <button class="btn btn-outline btn-sm" onclick="showSuperReportDetail(${r.id})" style="font-size:12px;padding:4px 10px;font-weight:700">
-              👁️ عرض
-            </button>
+            <div style="display:flex;gap:6px;justify-content:center;align-items:center">
+              <button class="btn btn-outline btn-sm" onclick="showSuperReportDetail('${esc(r.id)}')" style="font-size:12px;padding:4px 10px;font-weight:700" title="عرض تفاصيل التقرير">
+                👁️ عرض
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="printSuperReportById('${esc(r.id)}')" style="font-size:12px;padding:4px 10px;font-weight:700;background:#0284c7;border-color:#0284c7;color:#fff" title="طباعة هذا التقرير">
+                🖨️ طباعة
+              </button>
+            </div>
           </td>
         </tr>
       `;
@@ -316,119 +322,208 @@ async function loadSuperReports() {
 
 // عرض تفاصيل التقرير في نافذة منبثقة
 function showSuperReportDetail(reportId) {
-  const r = allSuperReports.find(x => Number(x.id) === Number(reportId));
+  const r = allSuperReports.find(x => String(x.id) === String(reportId) || String(x.reportNumber) === String(reportId));
   if (!r) return alert('لم يتم العثور على التقرير المطلوب.');
 
   activeSuperReport = r;
 
-  document.getElementById('srdTitle').textContent = `📄 تفاصيل التقرير (${r.reportNumber || '#' + r.id})`;
-  document.getElementById('srdOrgName').textContent = `${r.orgName || 'فرع'} (${r.orgCode || ''})`;
-  document.getElementById('srdReportNumber').textContent = r.reportNumber || '#' + r.id;
-  document.getElementById('srdDateTime').textContent = `${r.reportDate || ''} ${r.reportTime || ''}`;
-  document.getElementById('srdEnteredBy').textContent = r.enteredBy || '—';
-  document.getElementById('srdTarget').textContent = r.targetSector || r.location || '—';
-  document.getElementById('srdSubject').textContent = r.subject || 'بدون موضوع';
-  document.getElementById('srdDetails').textContent = r.details || r.notes || 'لا يوجد نص تفصيلي للتقرير.';
+  const titleEl = document.getElementById('srdTitle');
+  if (titleEl) titleEl.textContent = `📄 تفاصيل التقرير (${r.reportNumber || '#' + r.id})`;
+  const orgNameEl = document.getElementById('srdOrgName');
+  if (orgNameEl) orgNameEl.textContent = `${r.orgName || 'فرع'} (${r.orgCode || ''})`;
+  const repNumEl = document.getElementById('srdReportNumber');
+  if (repNumEl) repNumEl.textContent = r.reportNumber || '#' + r.id;
+  const dtEl = document.getElementById('srdDateTime');
+  if (dtEl) dtEl.textContent = `${r.reportDate || ''} ${r.reportTime || ''}`.trim() || '—';
+  const entEl = document.getElementById('srdEnteredBy');
+  if (entEl) entEl.textContent = r.enteredBy || '—';
+  const targetEl = document.getElementById('srdTarget');
+  if (targetEl) targetEl.textContent = r.target || r.targetSector || r.location || '—';
+  const subjEl = document.getElementById('srdSubject');
+  if (subjEl) subjEl.textContent = r.subject || 'بدون موضوع';
+  const detEl = document.getElementById('srdDetails');
+  if (detEl) detEl.textContent = r.details || r.notes || 'لا يوجد نص تفصيلي للتقرير.';
 
   // الصور المرفقة
   const gallery = document.getElementById('srdImagesGallery');
   const sec = document.getElementById('srdImagesSection');
-  gallery.innerHTML = '';
+  if (gallery && sec) {
+    gallery.innerHTML = '';
+    let imgList = [];
+    if (r.images) {
+      try {
+        imgList = typeof r.images === 'string' ? JSON.parse(r.images) : r.images;
+      } catch(e) { imgList = []; }
+    }
 
-  let imgList = [];
-  if (r.images) {
-    try {
-      imgList = typeof r.images === 'string' ? JSON.parse(r.images) : r.images;
-    } catch(e) {}
+    if (Array.isArray(imgList) && imgList.length > 0) {
+      sec.style.display = 'block';
+      gallery.innerHTML = imgList.map((imgSrc, idx) => {
+        return `
+          <a href="${imgSrc}" target="_blank" rel="noopener noreferrer" style="display:inline-block;border:2px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;box-shadow:var(--shadow-soft)" title="عرض الصورة بالحجم الكامل">
+            <img src="${imgSrc}" alt="مرفق ${idx + 1}" style="width:110px;height:110px;object-fit:cover;display:block" />
+          </a>
+        `;
+      }).join('');
+    } else {
+      sec.style.display = 'none';
+    }
   }
 
-  if (Array.isArray(imgList) && imgList.length > 0) {
-    sec.style.display = 'block';
-    gallery.innerHTML = imgList.map((imgSrc, idx) => {
-      return `
-        <a href="${imgSrc}" target="_blank" style="display:inline-block;border:2px solid var(--line);border-radius:8px;overflow:hidden;background:#fff">
-          <img src="${imgSrc}" alt="مرفق ${idx + 1}" style="width:110px;height:110px;object-fit:cover;display:block" />
-        </a>
-      `;
-    }).join('');
-  } else {
-    sec.style.display = 'none';
+  const modal = document.getElementById('superReportDetailModal');
+  if (modal) {
+    modal.classList.add('show');
+    modal.style.display = 'grid';
   }
-
-  document.getElementById('superReportDetailModal').classList.add('show');
 }
 
 function closeSuperReportDetailModal() {
-  document.getElementById('superReportDetailModal').classList.remove('show');
+  const modal = document.getElementById('superReportDetailModal');
+  if (modal) {
+    modal.classList.remove('show');
+    modal.style.display = 'none';
+  }
 }
 
-// طباعة التقرير من لوحة المركز
-function printSuperReport() {
-  if (!activeSuperReport) return;
-  const r = activeSuperReport;
+// طباعة تقرير محدد بواسطة الـ ID مباشرة
+function printSuperReportById(reportId) {
+  const r = allSuperReports.find(x => String(x.id) === String(reportId) || String(x.reportNumber) === String(reportId));
+  if (!r) return alert('لم يتم العثور على التقرير المطلوب.');
+  activeSuperReport = r;
+  printSuperReport(r);
+}
+
+// طباعة التقرير من لوحة المركز بتنسيق رسمي متكامل
+function printSuperReport(reportToPrint) {
+  const r = reportToPrint || activeSuperReport;
+  if (!r) return;
 
   let imgList = [];
   if (r.images) {
     try {
-      imgList = typeof r.images === 'string' ? JSON.parse(r.images) : r.images;
-    } catch(e) {}
+      imgList = typeof r.images === 'string' ? JSON.parse(r.images) : (r.images || []);
+    } catch(e) { imgList = []; }
   }
+
+  const cfg = currentSuperHeaderConfig || {};
+  const lines = (cfg.lines && cfg.lines.length > 0 && cfg.lines.some(Boolean)) ? cfg.lines : [
+    'الجمهورية اليمنية',
+    'وزارة النقل',
+    'الهيئة العامة لتنظيم شؤون النقل البري',
+    'الإدارة العامة للعمليات والمتابعة',
+    'المركز الرئيسي'
+  ];
+  const headerLinesHtml = lines.filter(Boolean).map(l => `<div>${esc(l)}</div>`).join('');
+  const logoUrl = cfg.logoUrl || 'Image/1754379379088.jpg';
+  const showBasmala = cfg.showBasmala !== false;
+  const basmalaText = cfg.basmalaText || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
+  const confidential = cfg.confidential || '';
+
+  const sigs = cfg.signatures || {};
+  const sig1Title = sigs.sig1Title || 'توقيع ضابط التقييم';
+  const sig1Name = sigs.sig1Name !== undefined ? sigs.sig1Name : 'محمد صالح';
+  const sig2Title = sigs.sig2Title || 'اعتماد مدير العمليات';
+  const sig2Name = sigs.sig2Name !== undefined ? sigs.sig2Name : '';
+  const sig3Title = sigs.sig3Title || 'الختم الرسمي للمركز';
+  const sig3Name = sigs.sig3Name !== undefined ? sigs.sig3Name : '[....................]';
 
   const imagesHtml = (Array.isArray(imgList) && imgList.length > 0)
     ? `<div style="margin-top:20px">
-        <h4 style="border-bottom:1px solid #cbd5e1;padding-bottom:6px">📷 المرفقات والصور الميدانية:</h4>
+        <h4 style="border-bottom:1.5px solid #cbd5e1;padding-bottom:6px;color:#1e3a8a;margin-bottom:12px">📷 المرفقات والصور الميدانية:</h4>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px">
-          ${imgList.map(src => `<img src="${src}" style="max-width:240px;max-height:180px;border-radius:8px;border:1px solid #cbd5e1" />`).join('')}
+          ${imgList.map(src => `<div style="border:1px solid #cbd5e1;border-radius:8px;padding:4px;background:#fff"><img src="${src}" style="max-width:240px;max-height:180px;border-radius:6px;display:block" /></div>`).join('')}
         </div>
        </div>`
     : '';
 
-  const w = window.open('', '_blank', 'width=800,height=900');
+  const w = window.open('', '_blank', 'width=850,height=950');
   w.document.write(`<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8" />
-<title>تقرير — ${esc(r.subject || r.reportNumber)}</title>
+<title>تقرير — ${esc(r.subject || r.reportNumber || 'تقرير')}</title>
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; margin: 0; padding: 24px; direction: rtl; }
-  .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 20px; }
-  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px; border-radius: 8px; margin-bottom: 20px; }
-  .box { background: #fff; border: 1px solid #e2e8f0; padding: 14px; border-radius: 8px; margin-bottom: 16px; }
-  .box-title { font-weight: 800; font-size: 14px; color: #1e3a8a; margin-bottom: 8px; }
-  @media print { body { padding: 0; } }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; margin: 0; padding: 24px; direction: rtl; font-size: 13.5px; }
+  .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 20px; }
+  .header-right { text-align: right; font-size: 13px; line-height: 1.6; font-weight: 700; color: #0f172a; }
+  .header-center { text-align: center; }
+  .header-center img { width: 68px; height: 68px; object-fit: contain; margin-bottom: 4px; }
+  .header-center .basmala { font-size: 13px; font-weight: 800; color: #334155; margin-bottom: 4px; }
+  .header-left { text-align: left; font-size: 12.5px; line-height: 1.7; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px 18px; border-radius: 8px; margin-bottom: 18px; }
+  .meta-item { font-size: 13px; line-height: 1.6; }
+  .meta-item b { color: #1e3a8a; }
+  .box { background: #fff; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 18px; }
+  .box-title { font-weight: 800; font-size: 14px; color: #1e3a8a; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
+  .details-content { line-height: 2; font-size: 13.5px; white-space: pre-wrap; color: #1e293b; }
+  .signatures-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; margin-top: 36px; padding-top: 20px; border-top: 1.5px dashed #cbd5e1; gap: 14px; }
+  .sig-title { font-weight: 800; font-size: 13.5px; color: #0f172a; margin-bottom: 6px; }
+  .sig-name { font-size: 12.5px; color: #64748b; }
+  .no-print { text-align: center; margin-bottom: 18px; }
+  .no-print button { background: #1e3a8a; color: #fff; border: none; padding: 10px 24px; font-size: 14px; font-weight: 800; border-radius: 8px; cursor: pointer; font-family: inherit; }
+  @media print {
+    body { padding: 0; }
+    .no-print { display: none !important; }
+  }
 </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <h2 style="margin:0;color:#1e3a8a">منظومة التقارير الميدانية — الإدارة المركزية</h2>
-      <div style="color:#64748b;font-size:13px;margin-top:4px">الفرع: <b>${esc(r.orgName || 'فرع')}</b> (${esc(r.orgCode || '')})</div>
+  <div class="no-print">
+    <button onclick="window.print()">🖨️ طباعة التقرير</button>
+    <button onclick="window.close()" style="background:#f1f5f9;color:#0f172a;border:1px solid #cbd5e1;margin-right:10px">✕ إغلاق</button>
+  </div>
+
+  <div class="header-wrap">
+    <div class="header-right">
+      ${headerLinesHtml}
     </div>
-    <div style="text-align:left">
-      <div style="font-family:monospace;font-size:16px;font-weight:900">رقم: ${esc(r.reportNumber || '#' + r.id)}</div>
-      <div style="font-size:12px;color:#64748b">${esc(r.reportDate || '')} ${esc(r.reportTime || '')}</div>
+    <div class="header-center">
+      ${showBasmala ? `<div class="basmala">${esc(basmalaText)}</div>` : ''}
+      <img src="${logoUrl}" alt="شعار" />
+      ${confidential ? `<div style="font-size:11px;font-weight:800;color:#b91c1c;margin-top:2px">${esc(confidential)}</div>` : ''}
+    </div>
+    <div class="header-left">
+      <div><b>الفرع:</b> <span style="color:#0284c7;font-weight:800">${esc(r.orgName || 'فرع')}</span> (${esc(r.orgCode || '')})</div>
+      <div><b>رقم التقرير:</b> <span style="font-family:monospace;font-weight:900;font-size:14px">${esc(r.reportNumber || '#' + r.id)}</span></div>
+      <div><b>التاريخ:</b> ${esc(r.reportDate || '')}</div>
+      <div><b>الوقت:</b> ${esc(r.reportTime || '')}</div>
     </div>
   </div>
 
   <div class="meta-grid">
-    <div><b>الموظف / مدخل البيانات:</b> ${esc(r.enteredBy || '—')}</div>
-    <div><b>الجهة المستهدفة / الموقع:</b> ${esc(r.targetSector || r.location || '—')}</div>
-    <div><b>موضوع التقرير:</b> ${esc(r.subject || '—')}</div>
-    <div><b>تاريخ الرفع:</b> ${esc(r.reportDate || '')}</div>
+    <div class="meta-item"><b>الموظف / مدخل البيانات:</b> ${esc(r.enteredBy || '—')}</div>
+    <div class="meta-item"><b>الجهة المستهدفة / الموقع:</b> ${esc(r.target || r.targetSector || r.location || '—')}</div>
+    <div class="meta-item" style="grid-column: 1 / -1"><b>موضوع التقرير:</b> <span style="font-weight:800;font-size:14px">${esc(r.subject || 'بدون موضوع')}</span></div>
   </div>
 
   <div class="box">
     <div class="box-title">📝 بيان وتفاصيل التقرير:</div>
-    <div style="line-height:1.9;font-size:14px;white-space:pre-wrap">${esc(r.details || r.notes || '—')}</div>
+    <div class="details-content">${esc(r.details || r.notes || 'لا يوجد نص تفصيلي')}</div>
   </div>
 
   ${imagesHtml}
 
-  <div style="margin-top:30px;padding-top:14px;border-top:1px solid #e2e8f0;text-align:center;font-size:12px;color:#94a3b8">
-    تم إصدار هذا التقرير عبر منظومة كودكس السحابية لإدارة التقارير
+  <div class="signatures-grid">
+    <div>
+      <div class="sig-title">${esc(sig1Title)}</div>
+      <div class="sig-name">${esc(sig1Name)}</div>
+    </div>
+    <div>
+      <div class="sig-title">${esc(sig2Title)}</div>
+      <div class="sig-name">${esc(sig2Name)}</div>
+    </div>
+    <div>
+      <div class="sig-title">${esc(sig3Title)}</div>
+      <div class="sig-name">${esc(sig3Name)}</div>
+    </div>
   </div>
+
+  <div style="margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;text-align:center;font-size:11.5px;color:#94a3b8">
+    منظومة كودكس السحابية لإدارة التقارير الموحدة • تاريخ الطباعة: ${new Date().toLocaleDateString('ar-YE')}
+  </div>
+
   <script>
-    window.onload = function() { window.print(); };
+    window.addEventListener('load', () => setTimeout(() => window.print(), 350));
   </script>
 </body>
 </html>`);
@@ -903,6 +998,7 @@ async function loadSuperSettings() {
     }
 
     const cfg = res.reportHeaderConfig || {};
+    currentSuperHeaderConfig = cfg;
     if (cfg.lines) {
       if (cfg.lines[0] !== undefined) document.getElementById('shHeaderLine1').value = cfg.lines[0];
       if (cfg.lines[1] !== undefined) document.getElementById('shHeaderLine2').value = cfg.lines[1];
@@ -1062,6 +1158,7 @@ async function saveSuperHeaderSettings() {
       method: 'POST',
       body: JSON.stringify({ reportHeaderConfig })
     });
+    currentSuperHeaderConfig = reportHeaderConfig;
     toast('تم حفظ بيانات الترويسة والختوم بنجاح ✔');
   } catch (e) {
     alert('تعذر حفظ الترويسة: ' + e.message);

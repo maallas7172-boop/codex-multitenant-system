@@ -173,7 +173,7 @@ function getDeviceName() {
 }
 
 function formatServerUrl(raw) {
-  let url = (raw || '').trim().replace(/\/+$/, '');
+  let url = (raw || '').trim().replace(/^مثال\s*:\s*/i, '').replace(/\/+$/, '');
   if (!url) return '';
   if (!/^https?:\/\//i.test(url)) {
     if (/^(localhost|127\.|192\.168\.|10\.|172\.)/i.test(url)) url = 'http://' + url;
@@ -185,12 +185,28 @@ function formatServerUrl(raw) {
 function getServerBaseUrl() {
   const custom = (localStorage.getItem(SERVER_URL_KEY) || '').trim();
   if (custom) return formatServerUrl(custom);
+
+  // إذا كان التطبيق يعمل داخل بيئة أندرويد / Capacitor / WebView أو ملف محلي
+  const isCapacitorOrMobileApp = (
+    typeof window !== 'undefined' && (
+      !!window.Capacitor ||
+      location.protocol === 'capacitor:' ||
+      location.protocol === 'file:' ||
+      (location.hostname === 'localhost' && (!location.port || location.port === '80' || location.port === '443'))
+    )
+  );
+
+  if (isCapacitorOrMobileApp && typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) {
+    return formatServerUrl(APP_CONFIG.defaultServerUrl);
+  }
+
   if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) {
-    if (location.protocol === 'file:' || location.protocol === 'capacitor:' || location.port === '5500' || location.origin.includes('localhost') === false) {
+    if (location.protocol === 'file:' || location.port === '5500' || (!location.origin.includes('localhost') && !location.origin.includes('127.0.0.1'))) {
       return formatServerUrl(APP_CONFIG.defaultServerUrl);
     }
   }
-  return '';
+
+  return formatServerUrl((typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) || '');
 }
 
 function setCustomServerUrl(url) {
@@ -203,7 +219,7 @@ function setCustomServerUrl(url) {
 }
 
 async function testServerConnection(url) {
-  const base = formatServerUrl(url);
+  const base = formatServerUrl(url) || (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) || '';
   const orgCode = getOrgCode();
   const target = (base ? base : '') + '/api/public/org-info?orgCode=' + encodeURIComponent(orgCode || 'DEMO');
   const controller = new AbortController();
@@ -222,7 +238,13 @@ async function testServerConnection(url) {
     });
     clearTimeout(timer);
     if (!res.ok) throw new Error('الخادم استجاب بكود ' + res.status);
-    const data = await res.json();
+    const raw = await res.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      throw new Error('الخادم لم يعد استجابة JSON صحيحة. يرجى التأكد من كتابة الرابط كاملاً: https://codex-multitenant-system.onrender.com');
+    }
     return { ok: true, org: data.org };
   } catch (err) {
     clearTimeout(timer);
@@ -261,6 +283,9 @@ async function api(pathname, opts = {}) {
     }
     if (res.status === 404) {
       throw new Error('⚠️ المسار المطلوب غير موجود في الخادم (404).');
+    }
+    if (raw && (raw.includes('<!DOCTYPE') || raw.includes('<html') || raw.includes('<head>'))) {
+      throw new Error('الخادم أعاد صفحة ويب بدلاً من استجابة البيانات (كود ' + res.status + '). يرجى التحقق من فتح وتخطي تحذير الرابط في المتصفح.');
     }
     throw new Error('الخادم أرسل استجابة غير متوقعة (كود ' + res.status + ').');
   }

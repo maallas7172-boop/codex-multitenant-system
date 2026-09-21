@@ -158,7 +158,11 @@
   window.addEventListener('offline', () => {
     checkServerStatusAndPending();
   });
-  setInterval(checkServerStatusAndPending, (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.autoSyncIntervalMs) || 15000);
+  const syncInterval = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.autoSyncIntervalMs) || 12000;
+  setInterval(() => {
+    checkServerStatusAndPending();
+    if (typeof loadMyTasks === 'function') loadMyTasks();
+  }, syncInterval);
 
   /* ---------- استرجاع المسودات المحلية ---------- */
   function loadLocalDrafts() {
@@ -499,6 +503,31 @@
   /* ================= مهام وتكليفات الموظف (My Tasks & Events) ================= */
   let myTasksList = [];
   let currentActiveFeedbackTaskId = null;
+  let knownTaskIds = new Set();
+  let isFirstTaskLoad = true;
+
+  function playTaskNotificationSound() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
+        gain.gain.setValueAtTime(0.35, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.45);
+      }
+    } catch (e) {}
+    try {
+      if (navigator.vibrate) navigator.vibrate([250, 100, 250]);
+    } catch(e) {}
+  }
 
   function getMyEventTypeBadge(type) {
     const map = {
@@ -519,8 +548,28 @@
   async function loadMyTasks() {
     try {
       const res = await api('/events/mine');
-      myTasksList = res.events || [];
-      const pendingCount = myTasksList.filter(x => x.status === 'pending').length;
+      const newTasks = res.events || [];
+      const pendingTasks = newTasks.filter(x => x.status === 'pending');
+
+      // كشف المهام الجديدة القادمة من المدير وتنبيه الموظف فوراً
+      if (!isFirstTaskLoad) {
+        const freshlyAdded = pendingTasks.filter(t => !knownTaskIds.has(t.id));
+        if (freshlyAdded.length > 0) {
+          playTaskNotificationSound();
+          const firstTitle = freshlyAdded[0].title || 'مهمة جديدة';
+          const alertMsg = freshlyAdded.length === 1
+            ? `🔔 مهمة جديدة من المدير: "${firstTitle}"`
+            : `🔔 لديك (${freshlyAdded.length}) مهام وتكليفات جديدة من المدير!`;
+          toast(alertMsg, 'ok');
+          if ('Notification' in window && Notification.permission === 'granted') {
+            try { new Notification('📋 تكليف مهمة جديدة', { body: alertMsg, icon: 'Image/app_logo.jpg' }); } catch(e){}
+          }
+        }
+      }
+      isFirstTaskLoad = false;
+      knownTaskIds = new Set(newTasks.map(t => t.id));
+      myTasksList = newTasks;
+      const pendingCount = pendingTasks.length;
 
       if ($('myTasksBadge')) {
         $('myTasksBadge').textContent = pendingCount;
