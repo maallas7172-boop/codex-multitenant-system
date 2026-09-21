@@ -112,6 +112,37 @@
     } catch (err) { toast(err.message, 'err'); }
   }
 
+  window.renderDash = renderDash;
+
+  window.triggerCloudSync = async function() {
+    const btn = $('btnCloudSyncTop');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ جارٍ المزامنة...';
+    }
+    try {
+      const res = await api('/relay/sync-now', { method: 'POST' });
+      if (res.ok) {
+        let msg = res.message || 'تمت المزامنة بنجاح ✔';
+        if (res.pulledReports > 0) msg += ` (تم جلب ${res.pulledReports} تقرير جديد)`;
+        if (res.pulledDevices > 0) msg += ` (تم جلب ${res.pulledDevices} هاتف جديد)`;
+        toast(msg, 'ok');
+      } else {
+        toast(res.message || 'تعذر الاتصال بالسحابة', 'warn');
+      }
+      renderDash();
+      if (typeof renderReports === 'function') renderReports();
+      if (typeof renderDevices === 'function') renderDevices();
+    } catch(err) {
+      toast('خطأ في المزامنة: ' + err.message, 'err');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '☁️ مزامنة السحابة';
+      }
+    }
+  };
+
   function updateDashUI(s) {
     if (!s) return;
     const pendingCount = s.devicesPending || 0;

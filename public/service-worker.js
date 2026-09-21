@@ -1,7 +1,7 @@
 /* =========================================================
    service-worker.js — دعم التثبيت والعمل أوفلاين (PWA) — كامل الملفات
    ========================================================= */
-const CACHE_NAME = 'reports-app-v3.0';
+const CACHE_NAME = 'reports-app-v3.1';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -19,6 +19,7 @@ const STATIC_ASSETS = [
   './js/super_admin.js',
   './js/report-header.js',
   './js/qrcode.min.js',
+  './js/crypto-js.js',
   './Image/app_logo.jpg',
   './Image/codex_logo.jpg',
   './Image/1754379379088.jpg'
@@ -27,7 +28,6 @@ const STATIC_ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // استخدام allSettled لضمان استمرار التثبيت حتى لو تعذر تحميل بعض الأصول
       return Promise.allSettled(
         STATIC_ASSETS.map(url => cache.add(url).catch(() => {}))
       );
@@ -85,10 +85,12 @@ self.addEventListener('fetch', (event) => {
           cache.put(event.request, responseToCache);
         });
         return networkResponse;
-      }).catch(() => {
+      }).catch(async () => {
         if (event.request.mode === 'navigate') {
-          return caches.match('./entry.html') || caches.match('./login.html');
+          const navFallback = (await caches.match('./entry.html')) || (await caches.match('./login.html'));
+          if (navFallback) return navFallback;
         }
+        return new Response('', { status: 408, statusText: 'Offline' });
       });
     })
   );

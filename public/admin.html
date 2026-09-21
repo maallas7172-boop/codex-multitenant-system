@@ -54,7 +54,10 @@
           <h2>لوحة التحكم</h2>
           <p>إحصائيات حية عن التقارير والمستخدمين في النظام.</p>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="renderDash()">🔄 تحديث</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" id="btnCloudSyncTop" onclick="triggerCloudSync()" style="background:#0284c7;border-color:#0284c7">☁️ مزامنة السحابة</button>
+          <button class="btn btn-outline btn-sm" onclick="renderDash()">🔄 تحديث</button>
+        </div>
       </div>
 
       <!-- بانر إشعار الأجهزة المعلقة -->

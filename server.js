@@ -1235,6 +1235,18 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // 5. المزامنة الفورية مع السحابة من واجهة المدير (Trigger Sync Now)
+    if (method === 'POST' && p === '/api/relay/sync-now') {
+      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      try {
+        const syncRes = await performCloudRelaySync(orgId);
+        send(res, 200, { ok: true, ...syncRes, message: 'تمت المزامنة مع السحابة وجلب التقارير بنجاح ✔' });
+      } catch(e) {
+        send(res, 200, { ok: false, error: e.message, message: 'تعذر الاتصال بالسحابة: ' + e.message });
+      }
+      return;
+    }
+
     /* ---- إحصائيات لوحة تحكم الجهة ---- */
     if (method === 'GET' && p === '/api/stats') {
       if (!can(me, 'canDash')) { sendError(res, 403, 'غير مصرح'); return; }
@@ -1376,7 +1388,7 @@ const server = http.createServer(async (req, res) => {
           report: fullReport,
           reportNumber: repNum,
           queueId: queueId,
-          message: 'تم استلام التقرير في طابور الانتظار بنجاح ✔'
+          message: 'تم ترحيل وحفظ التقرير بنجاح ✔'
         });
         return;
       }
@@ -1843,6 +1855,154 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+/* ------------------------- محرك المزامنة السحابية للنسخة المحلية ------------------------- */
+const CLOUD_URL = process.env.CLOUD_RELAY_URL || 'https://codex-multitenant-system.onrender.com';
+
+function httpJsonRequest(targetUrl, opts = {}, body = null) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(targetUrl);
+      const isHttps = u.protocol === 'https:';
+      const client = isHttps ? https : http;
+      const req = client.request({
+        hostname: u.hostname,
+        port: u.port || (isHttps ? 443 : 80),
+        path: u.pathname + u.search,
+        method: opts.method || 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(opts.headers || {})
+        },
+        timeout: 10000
+      }, res => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
+          catch(e) { resolve({ status: res.statusCode, raw: data }); }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('انتهت مهلة الاتصال بالسحابة')); });
+      if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body));
+      req.end();
+    } catch(err) {
+      reject(err);
+    }
+  });
+}
+
+async function performCloudRelaySync(targetOrgId) {
+  const org = db.prepare('SELECT * FROM organizations WHERE id=?').get(targetOrgId);
+  if (!org) return { pulledReports: 0, pulledDevices: 0, pushedDevices: 0 };
+
+  const admin = db.prepare("SELECT * FROM users WHERE orgId=? AND role='Admin'").get(targetOrgId);
+  if (!admin) return { pulledReports: 0, pulledDevices: 0, pushedDevices: 0 };
+
+  // 1. تسجيل الدخول بالسحابة كمدير للجهة
+  const loginRes = await httpJsonRequest(CLOUD_URL + '/api/login', { method: 'POST' }, {
+    orgCode: org.orgCode,
+    userName: admin.userName,
+    password: admin.plainPassword || 'Admin@123'
+  });
+
+  if (loginRes.status !== 200 || !loginRes.data || !loginRes.data.token) {
+    throw new Error('فشل تسجيل الدخول بالسحابة (كود ' + loginRes.status + ')');
+  }
+
+  const cloudToken = loginRes.data.token;
+  let pulledReports = 0, pulledDevices = 0, pushedDevices = 0;
+
+  // 2. سحب التقارير والأجهزة من طابور السحابة
+  const pullRes = await httpJsonRequest(CLOUD_URL + '/api/relay/pull', {
+    method: 'GET',
+    headers: {
+      'Authorization': 'Bearer ' + cloudToken,
+      'X-Org-Code': org.orgCode
+    }
+  });
+
+  if (pullRes.status === 200 && Array.isArray(pullRes.data.items) && pullRes.data.items.length > 0) {
+    const ackIds = [];
+    for (const item of pullRes.data.items) {
+      if (item.itemType === 'report' && item.payload) {
+        const r = item.payload;
+        try {
+          db.prepare(`INSERT OR REPLACE INTO reports(
+            id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
+            enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt, syncedAt
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(
+              r.id, org.id, r.reportNumber, r.subject || '', r.target || '',
+              r.reportDate || '', r.reportTime || '', r.location || '', r.details || '',
+              typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
+              r.enteredBy || '', r.enteredByUserId || null,
+              r.rating || 'عادي', r.logoId || 'logo1',
+              r.isEncrypted ? 1 : 0, r.encryptedPayload || '', r.encryptedIv || '',
+              r.createdAt || nowIso(), r.updatedAt || nowIso(), nowIso()
+            );
+          ackIds.push(item.id);
+          pulledReports++;
+          console.log(`[💾 HardDisk Sync] تم حفظ التقرير (${r.reportNumber} - ${r.subject}) بنجاح على القرص الصلب`);
+        } catch(e){}
+      } else if (item.itemType === 'device_registration' && item.payload) {
+        const dev = item.payload;
+        try {
+          const exists = db.prepare('SELECT id FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
+          if (!exists) {
+            db.prepare(`INSERT INTO devices(
+              id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+              .run(
+                dev.id, org.id, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
+                dev.userFullName || '', dev.status || 'pending', dev.registeredAt || nowIso(),
+                dev.lastSeenAt || nowIso(), dev.approvedAt || null, dev.approvedBy || ''
+              );
+          }
+          ackIds.push(item.id);
+          pulledDevices++;
+          console.log(`[📱 Device Sync] تم مزامنة الهاتف الجديد (${dev.deviceName || dev.deviceId}) محلياً`);
+        } catch(e){}
+      } else if (item.itemType === 'event_feedback' && item.payload) {
+        const f = item.payload;
+        try {
+          db.prepare(`UPDATE events SET status=?, receivedAt=?, completedAt=?, feedbackNotes=? WHERE id=? AND orgId=?`)
+            .run(f.status, f.receivedAt || null, f.completedAt || null, f.feedbackNotes || '', f.eventId, org.id);
+          ackIds.push(item.id);
+        } catch(e){}
+      }
+    }
+
+    // تأكيد الحفظ وتفريغ الطابور السحابي
+    if (ackIds.length > 0) {
+      await httpJsonRequest(CLOUD_URL + '/api/relay/ack', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + cloudToken,
+          'X-Org-Code': org.orgCode
+        }
+      }, { itemIds: ackIds });
+    }
+  }
+
+  // 3. رفع الأجهزة المعتمدة محلياً إلى السحابة
+  const localApprovedDevices = db.prepare("SELECT * FROM devices WHERE orgId=? AND status='approved'").all(org.id);
+  if (localApprovedDevices.length > 0) {
+    const pushDevRes = await httpJsonRequest(CLOUD_URL + '/api/relay/push-devices', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + cloudToken,
+        'X-Org-Code': org.orgCode
+      }
+    }, { devices: localApprovedDevices });
+    if (pushDevRes.status === 200 && pushDevRes.data) {
+      pushedDevices = pushDevRes.data.syncedDevices || 0;
+    }
+  }
+
+  return { pulledReports, pulledDevices, pushedDevices };
+}
+
 server.listen(PORT, HOST, () => {
   console.log('========================================================');
   console.log('  منظومة كودكس السحابية والمحلية — (Multi-Tenant Hybrid Relay)');
@@ -1851,4 +2011,16 @@ server.listen(PORT, HOST, () => {
   console.log('  حساب Super Admin: superadmin / CodexSuper@2026');
   console.log('  الجهة الافتراضية: DEMO (Admin: admin/Admin@123)');
   console.log('========================================================');
+
+  // تفعيل المزامنة التلقائية مع السحابة في الخلفية عند العمل محلياً
+  if (!process.env.RENDER) {
+    setInterval(async () => {
+      try {
+        const orgs = db.prepare("SELECT id FROM organizations WHERE status='active'").all();
+        for (const o of orgs) {
+          await performCloudRelaySync(o.id).catch(() => {});
+        }
+      } catch(e){}
+    }, 12000);
+  }
 });

@@ -441,7 +441,7 @@
       if (currentDraftId) {
         saveLocalDrafts(loadLocalDrafts().filter(x => x.id !== currentDraftId));
       }
-      toast(r.message || '✅ تمت المزامنة بنجاح وحجز رقم التقرير الرسمي');
+      toast(r.message || '✅ تم ترحيل التقرير بنجاح وحجز رقمه الرسمي', 'ok');
       $('syncMsg').textContent = (r.message || 'تم ترحيل التقرير إلى قاعدة بيانات النظام.') + ' لا يمكن فتحه من هذا الجهاز مجدداً.';
       setTimeout(() => { location.href = 'entry.html'; }, 2000);
     } catch (err) {
@@ -462,10 +462,19 @@
         });
       }
       saveLocalDrafts(list);
-      if (err.message && (err.message.includes('بانتظار اعتماد') || err.message.includes('حظر') || err.message.includes('قيد المراجعة'))) {
-        toast(err.message, 'err');
+      
+      const isNetworkErr = !navigator.onLine ||
+        (err.message && (
+          err.message.includes('Failed to fetch') ||
+          err.message.includes('تعذر الاتصال') ||
+          err.message.includes('NetworkError') ||
+          err.message.includes('Load failed')
+        ));
+
+      if (isNetworkErr) {
+        toast('⚠️ الهاتف في وضع عدم الاتصال بالإنترنت — تم حفظ التقرير في قائمة الانتظار وستتم المزامنة تلقائياً فور توفر الإنترنت 🚀', 'info');
       } else {
-        toast('⚠️ لا يوجد اتصال بالسيرفر حالياً — تم وضع التقرير في قائمة الانتظار وستتم المزامنة تلقائياً بمجرد توفر الإنترنت 🚀', 'info');
+        toast('⚠️ ' + (err.message || 'حدث خطأ أثناء المزامنة'), 'err');
       }
       busy = false;
       $('syncBtn').disabled = false;
