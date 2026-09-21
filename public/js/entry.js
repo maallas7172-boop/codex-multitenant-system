@@ -5,6 +5,7 @@
    - اسم المدخل يُملأ تلقائياً من الجلسة
    ========================================================= */
 (async function () {
+  const DRAFT_KEY = 'codex_mt_local_drafts_v1';
   let me = null;
   try { me = await currentMe(); } catch (e) { location.replace('login.html'); return; }
   if (me.settings && me.settings.reportHeaderConfig && typeof updateReportHeaderConfig === 'function') {

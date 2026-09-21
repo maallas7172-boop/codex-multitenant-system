@@ -1235,7 +1235,46 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // 5. المزامنة الفورية مع السحابة من واجهة المدير (Trigger Sync Now)
+    // 5. دفع وتحديث المستخدمين والصلاحيات من كمبيوتر المدير إلى السحابة (Push Users & Permissions to Cloud)
+    if (method === 'POST' && p === '/api/relay/push-users') {
+      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const b = await readBody(req);
+      const users = Array.isArray(b.users) ? b.users : [];
+      let upsertedCount = 0;
+      for (const u of users) {
+        if (!u.id || !u.userName) continue;
+        db.prepare(`INSERT OR REPLACE INTO users(
+          id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+          canOpen, canAdd, canDelete, canEdit, canPrint,
+          canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint,
+          canEvents, canUsers, canSettings, createdAt
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(
+            u.id, orgId, u.userName, u.fullName || u.userName, u.passwordHash, u.plainPassword || '', u.role || 'EntryUser', u.isActive ? 1 : 0,
+            u.canOpen ? 1 : 0, u.canAdd ? 1 : 0, u.canDelete ? 1 : 0, u.canEdit ? 1 : 0, u.canPrint ? 1 : 0,
+            u.canDash ? 1 : 0, u.canEntry ? 1 : 0, u.canReports ? 1 : 0, u.canReportsEdit ? 1 : 0, u.canReportsDelete ? 1 : 0, u.canReportsPrint ? 1 : 0,
+            u.canEvents ? 1 : 0, u.canUsers ? 1 : 0, u.canSettings ? 1 : 0, u.createdAt || nowIso()
+          );
+        upsertedCount++;
+      }
+      send(res, 200, { ok: true, syncedUsers: upsertedCount });
+      return;
+    }
+
+    // 6. دفع وتحديث الإعدادات من كمبيوتر المدير إلى السحابة (Push Settings to Cloud)
+    if (method === 'POST' && p === '/api/relay/push-settings') {
+      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const b = await readBody(req);
+      if (b.settings && typeof b.settings === 'object') {
+        for (const [k, v] of Object.entries(b.settings)) {
+          setSetting(orgId, k, v);
+        }
+      }
+      send(res, 200, { ok: true });
+      return;
+    }
+
+    // 7. المزامنة الفورية مع السحابة من واجهة المدير (Trigger Sync Now)
     if (method === 'POST' && p === '/api/relay/sync-now') {
       if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
       try {
@@ -1998,6 +2037,41 @@ async function performCloudRelaySync(targetOrgId) {
     if (pushDevRes.status === 200 && pushDevRes.data) {
       pushedDevices = pushDevRes.data.syncedDevices || 0;
     }
+  }
+
+  // 4. رفع المستخدمين والصلاحيات من الكمبيوتر المحلي إلى السحابة
+  const localUsers = db.prepare("SELECT * FROM users WHERE orgId=?").all(org.id);
+  if (localUsers.length > 0) {
+    await httpJsonRequest(CLOUD_URL + '/api/relay/push-users', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + cloudToken,
+        'X-Org-Code': org.orgCode
+      }
+    }, { users: localUsers }).catch(() => {});
+  }
+
+  // 5. رفع الإعدادات من الكمبيوتر المحلي إلى السحابة
+  const enforceAuth = getSetting(org.id, 'enforceDeviceAuth', '1');
+  const consumeAdd = getSetting(org.id, 'consumeAddAfterSync', '0');
+  await httpJsonRequest(CLOUD_URL + '/api/relay/push-settings', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + cloudToken,
+      'X-Org-Code': org.orgCode
+    }
+  }, { settings: { enforceDeviceAuth: enforceAuth, consumeAddAfterSync: consumeAdd } }).catch(() => {});
+
+  // 6. رفع المهام والتكليفات من الكمبيوتر المحلي إلى السحابة
+  const localEvents = db.prepare("SELECT * FROM events WHERE orgId=? AND isArchived=0").all(org.id);
+  if (localEvents.length > 0) {
+    await httpJsonRequest(CLOUD_URL + '/api/relay/push-events', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + cloudToken,
+        'X-Org-Code': org.orgCode
+      }
+    }, { events: localEvents }).catch(() => {});
   }
 
   return { pulledReports, pulledDevices, pushedDevices };

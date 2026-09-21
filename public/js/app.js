@@ -9,6 +9,7 @@ const DEVICE_ID_KEY = 'codex_mt_device_id_v1';
 const DEVICE_NAME_KEY = 'codex_mt_device_name_v1';
 const CACHED_USER_KEY = 'codex_mt_cached_session_user';
 const OFFLINE_AUTH_KEY = 'codex_mt_offline_auth';
+const DRAFT_KEY = 'codex_mt_local_drafts_v1';
 
 let __me = null;
 
@@ -265,11 +266,13 @@ async function api(pathname, opts = {}) {
   }
 
   if (res.status === 401) {
-    clearSession();
-    if (!location.pathname.endsWith('login.html')) {
-      location.replace('login.html');
+    if (pathname !== '/login') {
+      clearSession();
+      if (!location.pathname.endsWith('login.html')) {
+        location.replace('login.html');
+      }
+      throw new Error((data && data.error) || 'انتهت الجلسة، يرجى إعادة تسجيل الدخول');
     }
-    throw new Error('انتهت الجلسة، يرجى إعادة تسجيل الدخول');
   }
 
   if (!res.ok) throw new Error((data && data.error) || 'حدث خطأ (' + res.status + ')');
