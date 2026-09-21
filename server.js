@@ -390,6 +390,15 @@ function checkDeviceAuth(user, org, req) {
     const initialStatus = enforce ? 'pending' : 'approved';
     db.prepare('INSERT INTO devices(id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(id, user.orgId, deviceId, deviceName, user.id, user.userName, user.fullName, initialStatus, t, t, enforce ? null : t, enforce ? null : 'تلقائي');
+
+    try {
+      db.prepare(`INSERT INTO cloud_relay_queue(id, orgId, itemType, payload, createdAt, status) VALUES(?,?,?,?,?,?)`)
+        .run(uid(), user.orgId, 'device_registration', JSON.stringify({
+          id, orgId: user.orgId, deviceId, deviceName, userId: user.id, userName: user.userName, userFullName: user.fullName,
+          status: initialStatus, registeredAt: t, lastSeenAt: t, approvedAt: enforce ? null : t, approvedBy: enforce ? null : 'تلقائي'
+        }), t, 'pending');
+    } catch(e){}
+
     if (enforce) {
       return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف جديد وقيد المراجعة بانتظار اعتماد مدير الجهة (' + org.orgName + ').' };
     }
@@ -1204,6 +1213,28 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // 4. دفع وتحديث الأجهزة المعتمدة من كمبيوتر المدير إلى السحابة (Push Devices to Cloud)
+    if (method === 'POST' && p === '/api/relay/push-devices') {
+      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const b = await readBody(req);
+      const devices = Array.isArray(b.devices) ? b.devices : [];
+      let upsertedCount = 0;
+      for (const dev of devices) {
+        if (!dev.id || !dev.deviceId) continue;
+        db.prepare(`INSERT OR REPLACE INTO devices(
+          id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(
+            dev.id, orgId, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
+            dev.userFullName || '', dev.status || 'approved', dev.registeredAt || nowIso(), dev.lastSeenAt || nowIso(),
+            dev.approvedAt || nowIso(), dev.approvedBy || me.fullName
+          );
+        upsertedCount++;
+      }
+      send(res, 200, { ok: true, syncedDevices: upsertedCount });
+      return;
+    }
+
     /* ---- إحصائيات لوحة تحكم الجهة ---- */
     if (method === 'GET' && p === '/api/stats') {
       if (!can(me, 'canDash')) { sendError(res, 403, 'غير مصرح'); return; }
@@ -1777,15 +1808,23 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (method === 'POST' && p === '/api/devices/approve-all') {
+      if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
+      const info = db.prepare("UPDATE devices SET status='approved', approvedAt=?, approvedBy=? WHERE orgId=? AND status='pending'")
+        .run(nowIso(), me.fullName, orgId);
+      send(res, 200, { ok: true, count: info.changes, message: `تم اعتماد وتفعيل ${info.changes} أجهزة بنجاح ✔` });
+      return;
+    }
+
     const devApprove = p.match(/^\/api\/devices\/([^/]+)\/(approve|block)$/);
-    if (devApprove && method === 'PUT') {
+    if (devApprove && (method === 'POST' || method === 'PUT')) {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
       const action = devApprove[2];
       const devId = devApprove[1];
       const newStatus = action === 'approve' ? 'approved' : 'blocked';
       db.prepare('UPDATE devices SET status=?, approvedAt=?, approvedBy=? WHERE orgId=? AND id=?')
         .run(newStatus, nowIso(), me.fullName, orgId, devId);
-      send(res, 200, { ok: true, status: newStatus });
+      send(res, 200, { ok: true, status: newStatus, message: newStatus === 'approved' ? 'تم اعتماد الهاتف بنجاح 🟢' : 'تم حظر الهاتف ⛔' });
       return;
     }
 
@@ -1793,7 +1832,7 @@ const server = http.createServer(async (req, res) => {
     if (devDel && method === 'DELETE') {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
       db.prepare('DELETE FROM devices WHERE orgId=? AND id=?').run(orgId, devDel[1]);
-      send(res, 200, { ok: true });
+      send(res, 200, { ok: true, message: 'تم حذف الجهاز من السجل' });
       return;
     }
 

@@ -85,6 +85,25 @@
 
   /* ================= لوحة التحكم ================= */
   let dashStatsData = null;
+  let lastSeenPendingDevices = -1;
+
+  function playNotificationTone() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.36);
+    } catch(e){}
+  }
+
   async function renderDash() {
     try {
       const s = await api('/stats');
@@ -96,6 +115,21 @@
   function updateDashUI(s) {
     if (!s) return;
     const pendingCount = s.devicesPending || 0;
+
+    // تشغيل نغمة وإشعار عند وصول جهاز جديد بانتظار الموافقة
+    if (lastSeenPendingDevices !== -1 && pendingCount > lastSeenPendingDevices) {
+      playNotificationTone();
+      toast(`📱 تنبيه: وصل طلب اقتران هاتف جديد (${pendingCount} بانتظار الاعتماد)`, 'warn');
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('📱 هاتف جديد بانتظار الاعتماد', {
+            body: `يوجد ${pendingCount} جهاز بانتظار موافقة المدير في لوحة التحكم`,
+            icon: 'Image/app_logo.jpg'
+          });
+        } catch(e){}
+      }
+    }
+    lastSeenPendingDevices = pendingCount;
 
     // تحديث بانر إشعار الأجهزة المعلقة في لوحة التحكم
     const banner = $('dashPendingDevicesBanner');
@@ -137,6 +171,12 @@
     if (sideBadge) {
       sideBadge.textContent = pendingCount;
       sideBadge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
+    }
+
+    // تحديث عداد شارة الأجهزة في صفحة المستخدمين
+    if ($('pendingDevicesBadge')) {
+      $('pendingDevicesBadge').textContent = pendingCount + ' بانتظار الاعتماد';
+      $('pendingDevicesBadge').style.display = pendingCount ? 'inline-block' : 'none';
     }
 
     const kpis = [
@@ -202,6 +242,20 @@
     }
   }
   if ($('dashSearch')) $('dashSearch').oninput = () => updateDashUI(dashStatsData);
+
+  // فحص دوري ذكي كل 8 ثوانٍ للأجهزة الجديدة والإشعارات الحية
+  setInterval(() => {
+    if (typeof getToken === 'function' && getToken()) {
+      api('/stats').then(s => {
+        dashStatsData = s;
+        updateDashUI(s);
+        const usersPage = $('usersPage');
+        if (usersPage && usersPage.classList.contains('active') && typeof renderDevices === 'function') {
+          renderDevices();
+        }
+      }).catch(() => {});
+    }
+  }, 8000);
 
   /* ================= التقارير ================= */
   let currentReports = [];

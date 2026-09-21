@@ -2,8 +2,8 @@
    config.js — إعدادات منظومة كودكس للمنظومات والجهات المتعددة
    ========================================================= */
 const APP_CONFIG = {
-  appName: 'منظومة كودكس — الحسابات والتقارير',
+  appName: 'منظومة إدارة الحسابات والتقارير',
   version: '3.0.0',
-  defaultServerUrl: 'https://codex-multitenant-system.onrender.com',
+  defaultServerUrl: '', // يتم تعيينه عند رفع الرابط السحابي
   autoSyncIntervalMs: 15000
 };

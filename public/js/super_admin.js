@@ -1184,6 +1184,154 @@ function togglePassVisibility(inputId, btn) {
 }
 
 /* =========================================================
+   طباعة كافة التقارير المعروضة حسب الفلترة (Bulk Print)
+   ========================================================= */
+function printAllSuperReports() {
+  if (!allSuperReports || allSuperReports.length === 0) {
+    toast('لا توجد تقارير لطباعتها في القائمة الحالية', 'err');
+    return;
+  }
+
+  // جمع بيانات الفلاتر الحالية لعرضها في عنوان الطباعة
+  const orgFilter = document.getElementById('filterSuperReportOrg');
+  const orgName = orgFilter && orgFilter.value ? orgFilter.options[orgFilter.selectedIndex]?.text : 'كافة الفروع';
+  const fromDate = document.getElementById('filterSuperReportFrom')?.value || '';
+  const toDate = document.getElementById('filterSuperReportTo')?.value || '';
+  const query = document.getElementById('filterSuperReportQuery')?.value?.trim() || '';
+
+  let filterDesc = `الفرع: ${orgName}`;
+  if (fromDate) filterDesc += ` | من: ${fromDate}`;
+  if (toDate) filterDesc += ` | إلى: ${toDate}`;
+  if (query) filterDesc += ` | بحث: "${query}"`;
+
+  const reportsHtml = allSuperReports.map((r, idx) => {
+    let imgList = [];
+    try {
+      imgList = typeof r.images === 'string' ? JSON.parse(r.images) : (r.images || []);
+    } catch(e) {}
+
+    const imagesHtml = (Array.isArray(imgList) && imgList.length > 0)
+      ? `<div class="imgs-row">${imgList.map(src => `<img src="${src}" />`).join('')}</div>`
+      : '';
+
+    return `
+      <div class="report-block" style="${idx > 0 ? 'page-break-before:always;' : ''}">
+        <div class="report-header">
+          <div>
+            <div class="report-title">${esc(r.subject || 'بدون موضوع')}</div>
+            <div class="report-branch">🏢 ${esc(r.orgName || 'فرع')} (${esc(r.orgCode || '')})</div>
+          </div>
+          <div style="text-align:left;font-family:monospace">
+            <div style="font-size:16px;font-weight:900">رقم: ${esc(r.reportNumber || '#' + r.id)}</div>
+            <div style="font-size:12px;color:#64748b">${esc(r.reportDate || '')} ${esc(r.reportTime || '')}</div>
+          </div>
+        </div>
+        <div class="meta-grid">
+          <div><b>المدخل:</b> ${esc(r.enteredBy || '—')}</div>
+          <div><b>الجهة المستهدفة:</b> ${esc(r.targetSector || r.location || '—')}</div>
+          <div><b>الموقع:</b> ${esc(r.location || r.targetSector || '—')}</div>
+          <div><b>التاريخ:</b> ${esc(r.reportDate || '—')}</div>
+        </div>
+        <div class="details-box">
+          <div class="section-title">📝 بيان وتفاصيل التقرير:</div>
+          <div class="details-text">${esc(r.details || r.notes || '—')}</div>
+        </div>
+        ${imagesHtml}
+        <div class="footer-line">تم إصدار هذا التقرير عبر منظومة الإدارة المركزية (كودكس للبرمجيات • ${new Date().toLocaleDateString('ar-YE')})</div>
+      </div>
+    `;
+  }).join('');
+
+  const w = window.open('', '_blank', 'width=900,height=900');
+  w.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>تقارير الإدارة المركزية — ${allSuperReports.length} تقرير</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; margin: 0; padding: 24px; direction: rtl; font-size: 13px; }
+  .print-cover { border: 2px solid #0f172a; border-radius: 12px; padding: 20px 28px; margin-bottom: 28px; background: #f8fafc; }
+  .print-cover h1 { font-size: 20px; color: #1e3a8a; margin: 0 0 8px; }
+  .print-cover .meta { font-size: 12px; color: #64748b; line-height: 1.8; }
+  .report-block { margin-bottom: 40px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 22px; background: #fff; }
+  .report-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 14px; gap: 14px; }
+  .report-title { font-size: 16px; font-weight: 800; color: #1e3a8a; }
+  .report-branch { font-size: 12px; color: #0284c7; margin-top: 4px; font-weight: 700; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; margin-bottom: 14px; font-size: 12.5px; }
+  .details-box { background: #fff; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; margin-bottom: 14px; }
+  .section-title { font-weight: 800; color: #1e3a8a; font-size: 13px; margin-bottom: 6px; }
+  .details-text { line-height: 1.9; white-space: pre-wrap; font-size: 13px; }
+  .imgs-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .imgs-row img { max-width: 200px; max-height: 150px; border-radius: 8px; border: 1px solid #cbd5e1; }
+  .footer-line { margin-top: 14px; padding-top: 10px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; }
+  @media print {
+    body { padding: 0; }
+    .report-block { border: 1px solid #000; }
+    .no-print { display: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="no-print" style="text-align:center;margin-bottom:20px">
+    <button onclick="window.print()" style="background:#1e3a8a;color:#fff;border:none;padding:12px 28px;font-size:15px;font-weight:800;border-radius:10px;cursor:pointer;font-family:inherit">🖨️ طباعة الكل</button>
+    <button onclick="window.close()" style="background:#f1f5f9;color:#0f172a;border:1px solid #cbd5e1;padding:12px 20px;font-size:15px;font-weight:800;border-radius:10px;cursor:pointer;margin-right:10px;font-family:inherit">✕ إغلاق</button>
+  </div>
+  <div class="print-cover">
+    <h1>📋 تقارير الإدارة المركزية — المعتمدة حسب الفلترة</h1>
+    <div class="meta">
+      <div>🔢 عدد التقارير: <b>${allSuperReports.length}</b></div>
+      <div>🔍 معايير الفلترة: <b>${esc(filterDesc)}</b></div>
+      <div>📅 تاريخ الاستخراج: <b>${new Date().toLocaleString('ar-YE')}</b></div>
+    </div>
+  </div>
+  ${reportsHtml}
+  <script>window.addEventListener('load', () => setTimeout(() => window.print(), 400));<\/script>
+</body>
+</html>`);
+  w.document.close();
+}
+
+/* =========================================================
+   تصدير التقارير المعروضة حسب الفلترة إلى Excel / CSV
+   ========================================================= */
+function exportSuperReportsCsv() {
+  if (!allSuperReports || allSuperReports.length === 0) {
+    toast('لا توجد تقارير لتصديرها في القائمة الحالية', 'err');
+    return;
+  }
+
+  const headers = ['الفرع', 'رمز_الفرع', 'رقم_التقرير', 'التاريخ', 'الوقت', 'الموضوع', 'الجهة_المستهدفة', 'الموقع', 'مدخل_البيانات', 'التفاصيل'];
+  const rows = allSuperReports.map(r => [
+    r.orgName || '',
+    r.orgCode || '',
+    r.reportNumber || ('#' + r.id),
+    r.reportDate || '',
+    r.reportTime || '',
+    r.subject || '',
+    r.targetSector || '',
+    r.location || '',
+    r.enteredBy || '',
+    (r.details || r.notes || '').replace(/\n/g, ' ').replace(/\r/g, '')
+  ]);
+
+  const csvContent = '\uFEFF' + [headers, ...rows]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const today = new Date().toISOString().slice(0, 10);
+  a.download = `تقارير_الإدارة_المركزية_${today}_${allSuperReports.length}تقرير.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast(`✅ تم تصدير ${allSuperReports.length} تقرير إلى Excel (CSV) بنجاح`);
+}
+
+/* =========================================================
    تصدير قالب إدخال وتوريد بيانات التقارير المعتمد
    ========================================================= */
 function openReportsTemplateModal() {

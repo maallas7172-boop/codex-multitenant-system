@@ -6,23 +6,7 @@
    ========================================================= */
 (async function () {
   let me = null;
-  try {
-    me = await currentMe();
-  } catch (e) {
-    if (e.message && (e.message.includes('بانتظار اعتماد') || e.message.includes('قيد المراجعة') || e.message.includes('حظر'))) {
-      const lockTitle = document.getElementById('lockTitle');
-      const lockDesc = document.getElementById('lockDesc');
-      const lockOut = document.getElementById('lockOut');
-      const entryRoot = document.getElementById('entryRoot');
-      if (lockTitle) lockTitle.textContent = e.message.includes('حظر') ? '🚫 تم حظر هذا الهاتف' : '📱 الهاتف بانتظار اعتماد المدير';
-      if (lockDesc) lockDesc.innerHTML = e.message + '<br/><br/><button class="btn btn-primary" onclick="location.reload()" style="margin-top:10px">🔄 إعادة الفحص الآن</button>';
-      if (lockOut) lockOut.style.display = 'grid';
-      if (entryRoot) entryRoot.style.display = 'none';
-      return;
-    }
-    location.replace('login.html');
-    return;
-  }
+  try { me = await currentMe(); } catch (e) { location.replace('login.html'); return; }
   if (me.settings && me.settings.reportHeaderConfig && typeof updateReportHeaderConfig === 'function') {
     updateReportHeaderConfig(me.settings.reportHeaderConfig);
   }
@@ -126,11 +110,9 @@
     let syncedCount = 0;
     for (const d of pending) {
       try {
-        const raw = { ...d.fields, images: d.photos || [] };
-        const payload = typeof encryptReportData === 'function' ? encryptReportData(raw) : raw;
         const r = await api('/reports', {
           method: 'POST',
-          body: JSON.stringify({ report: payload })
+          body: JSON.stringify({ report: { ...d.fields, images: d.photos || [] } })
         });
         // نجاح المزامنة -> إزالة التقرير من الجهاز
         const updated = loadLocalDrafts().filter(x => x.id !== d.id);
@@ -149,6 +131,19 @@
       $('btnSyncAllNow').disabled = false;
       $('btnSyncAllNow').innerHTML = `⚡ مزامنة كل المعلقات (<span id="pendingBadgeCount">0</span>)`;
     }
+
+    // إشعار نهائي للمستخدم بنجاح المزامنة الكاملة
+    if (syncedCount > 0) {
+      const syncMsg = syncedCount === 1
+        ? `✅ تم مزامنة التقرير المعلق تلقائياً بنجاح وحجز رقمه الرسمي في السيرفر!`
+        : `✅ تم مزامنة كافة التقارير المعلقة تلقائياً بنجاح! (عدد: ${syncedCount}) — تم حجز أرقامها الرسمية`;
+      toast(syncMsg, 'ok');
+      // إشعار نظام إذا كانت الصلاحيات متاحة
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('✅ مزامنة التقارير', { body: syncMsg, icon: 'Image/app_logo.jpg' });
+      }
+    }
+
     renderDrafts();
     checkServerStatusAndPending();
   }
@@ -234,11 +229,9 @@
       if ($('openDraft' + d.id)) $('openDraft' + d.id).onclick = () => openDraft(d.id);
       if ($('syncSingle' + d.id)) $('syncSingle' + d.id).onclick = async () => {
         try {
-          const raw = { ...d.fields, images: d.photos || [] };
-          const payload = typeof encryptReportData === 'function' ? encryptReportData(raw) : raw;
-          const r = await api('/reports', { method: 'POST', body: JSON.stringify({ report: payload }) });
+          const r = await api('/reports', { method: 'POST', body: JSON.stringify({ report: { ...d.fields, images: d.photos || [] } }) });
           saveLocalDrafts(loadLocalDrafts().filter(x => x.id !== d.id));
-          toast(`✅ تمت مزامنة التقرير المشفر بنجاح وحجز رقم رسمي: ${r.reportNumber}`);
+          toast(`✅ تمت مزامنة التقرير وحجز رقم رسمي: ${r.reportNumber}`);
           renderDrafts();
           checkServerStatusAndPending();
         } catch (e) {
@@ -440,18 +433,16 @@
     $('saveDraftBtn').disabled = true;
 
     try {
-      const raw = { ...f, images: photos };
-      const payload = typeof encryptReportData === 'function' ? encryptReportData(raw) : raw;
       const r = await api('/reports', {
         method: 'POST',
-        body: JSON.stringify({ report: payload })
+        body: JSON.stringify({ report: { ...f, images: photos } })
       });
       // نجحت المزامنة المباشرة
       if (currentDraftId) {
         saveLocalDrafts(loadLocalDrafts().filter(x => x.id !== currentDraftId));
       }
-      toast(r.message || '✅ تمت المزامنة بنجاح وحجز رقم التقرير الرسمي (مشفر E2EE ✔)');
-      $('syncMsg').textContent = (r.message || 'تم ترحيل التقرير إلى قاعدة بيانات النظام.') + ' تم تشفير التقرير طرفياً (E2EE) وحفظه بنجاح.';
+      toast(r.message || '✅ تمت المزامنة بنجاح وحجز رقم التقرير الرسمي');
+      $('syncMsg').textContent = (r.message || 'تم ترحيل التقرير إلى قاعدة بيانات النظام.') + ' لا يمكن فتحه من هذا الجهاز مجدداً.';
       setTimeout(() => { location.href = 'entry.html'; }, 2000);
     } catch (err) {
       // تعذر الاتصال بالسيرفر → حفظ التقرير في طابور الانتظار للمزامنة التلقائية

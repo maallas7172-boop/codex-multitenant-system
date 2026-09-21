@@ -1,25 +1,36 @@
-﻿/* =========================================================
-   service-worker.js — دعم التثبيت والعمل أوفلاين (PWA)
+/* =========================================================
+   service-worker.js — دعم التثبيت والعمل أوفلاين (PWA) — كامل الملفات
    ========================================================= */
-const CACHE_NAME = 'reports-app-v2.0';
+const CACHE_NAME = 'reports-app-v3.0';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './login.html',
   './entry.html',
   './admin.html',
+  './super_admin.html',
   './manifest.json',
   './css/styles.css',
+  './js/config.js',
   './js/app.js',
   './js/login.js',
   './js/entry.js',
-  './js/admin.js'
+  './js/admin.js',
+  './js/super_admin.js',
+  './js/report-header.js',
+  './js/qrcode.min.js',
+  './Image/app_logo.jpg',
+  './Image/codex_logo.jpg',
+  './Image/1754379379088.jpg'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+      // استخدام allSettled لضمان استمرار التثبيت حتى لو تعذر تحميل بعض الأصول
+      return Promise.allSettled(
+        STATIC_ASSETS.map(url => cache.add(url).catch(() => {}))
+      );
     }).then(() => self.skipWaiting())
   );
 });

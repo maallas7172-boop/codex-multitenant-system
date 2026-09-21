@@ -112,6 +112,25 @@ async function syncOrgQueue(db, org, cloudToken) {
             ackIds.push(item.id);
             console.log(`[💾 HardDisk Sync] تم تحديث تغذية المهمة (${f.eventId}) على القرص الصلب`);
           } catch(err) {}
+        } else if (item.itemType === 'device_registration' && item.payload) {
+          const dev = item.payload;
+          try {
+            const existing = db.prepare('SELECT id FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
+            if (!existing) {
+              db.prepare(`INSERT INTO devices(
+                id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
+              ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+                .run(
+                  dev.id, org.id, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
+                  dev.userFullName || '', dev.status || 'pending', dev.registeredAt || new Date().toISOString(),
+                  dev.lastSeenAt || new Date().toISOString(), dev.approvedAt || null, dev.approvedBy || ''
+                );
+            }
+            ackIds.push(item.id);
+            console.log(`[📱 Device Sync] تم مزامنة الهاتف الجديد (${dev.deviceName || dev.deviceId}) إلى قاعدة بيانات المدير محلياً ✔`);
+          } catch(err) {
+            console.error('Error saving device to local DB:', err.message);
+          }
         }
       }
 
@@ -139,6 +158,20 @@ async function syncOrgQueue(db, org, cloudToken) {
             'X-Org-Code': org.orgCode
           }
         }, { events: localEvents });
+      }
+    } catch(e){}
+
+    // 4. Push any local approved devices to cloud
+    try {
+      const localDevices = db.prepare("SELECT * FROM devices WHERE orgId=? ORDER BY lastSeenAt DESC LIMIT 50").all(org.id);
+      if (localDevices.length > 0) {
+        await httpRequest(CLOUD_URL + '/api/relay/push-devices', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + cloudToken,
+            'X-Org-Code': org.orgCode
+          }
+        }, { devices: localDevices });
       }
     } catch(e){}
 

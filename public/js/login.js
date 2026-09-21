@@ -43,7 +43,6 @@
   const DEFAULT_TITLE = 'إدارة الحسابات';
   const DEFAULT_SUBTITLE = 'منظومة إدارة الحسابات والتقارير المالية والميدانية';
   const DEFAULT_LOGO = 'Image/app_logo.jpg';
-  const CODEX_LOGO = 'Image/codex_logo.jpg';
 
   // استرجاع رمز الجهة المحفوظ مسبقاً في الهاتف
   const savedOrg = getOrgCode();
@@ -267,7 +266,55 @@
       }
 
     } catch(err) {
-      show(err.message, 'err');
+      // محاولة تسجيل الدخول في وضع عدم الاتصال (Offline Login Fallback)
+      const isOfflineErr = !navigator.onLine ||
+        err.message.includes('Failed to fetch') ||
+        err.message.includes('تعذر الاتصال') ||
+        err.message.includes('NetworkError') ||
+        err.message.includes('Load failed');
+
+      if (isOfflineErr) {
+        try {
+          let passwordHashFallback = null;
+          try { passwordHashFallback = await sha256Hex(document.getElementById('password').value); } catch(e) {}
+          const orgCode = orgCodeInput.value.trim().toUpperCase();
+          const userName = document.getElementById('userName').value.trim();
+          const offAuth = getOfflineAuth();
+
+          if (offAuth &&
+              offAuth.passwordHash &&
+              offAuth.userName &&
+              offAuth.userName.toLowerCase() === userName.toLowerCase() &&
+              offAuth.orgCode === orgCode &&
+              passwordHashFallback &&
+              offAuth.passwordHash === passwordHashFallback) {
+
+            // تسجيل الدخول أوفلاين ناجح
+            setToken(offAuth.token || 'offline-session-token');
+            setOrgCode(offAuth.orgCode);
+            setMe({ user: offAuth.user || offAuth, organization: offAuth.organization, token: offAuth.token || 'offline-session-token' });
+
+            const u = offAuth.user || offAuth;
+            show('✔ تم الدخول بنجاح في وضع عدم الاتصال (أوفلاين) — البيانات محفوظة محلياً', 'ok');
+            setTimeout(() => {
+              if (u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings) {
+                location.href = 'admin.html';
+              } else {
+                location.href = 'entry.html';
+              }
+            }, 600);
+            return;
+          } else if (offAuth && offAuth.passwordHash && passwordHashFallback && offAuth.passwordHash !== passwordHashFallback) {
+            show('❌ كلمة المرور غير صحيحة — وضع عدم الاتصال (أوفلاين)', 'err');
+            btn.disabled = false; btn.textContent = 'تسجيل الدخول';
+            return;
+          }
+        } catch(offlineErr) {}
+
+        show('⚠️ لا يوجد اتصال بالإنترنت ولا توجد بيانات تسجيل محفوظة مسبقاً لهذا الجهاز', 'err');
+      } else {
+        show(err.message, 'err');
+      }
       btn.disabled = false; btn.textContent = 'تسجيل الدخول';
     }
   });
