@@ -170,18 +170,18 @@ function getReportHeaderCSS() {
       flex-direction: column !important;
     }
     .report-header-master .hdr-right {
-      flex: 1 1 35% !important;
-      min-width: 150px !important;
+      flex: 0 0 auto !important;
+      min-width: 220px !important;
       text-align: center !important;
       display: flex !important;
       flex-direction: column !important;
       justify-content: center !important;
       align-items: center !important;
       gap: 2px !important;
-      margin: 0 auto !important;
+      margin: 0 !important;
     }
     .report-header-master .hdr-line-main {
-      font-size: 23px !important;
+      font-size: 22px !important;
       font-weight: 800 !important;
       color: #0f172a !important;
       line-height: 1.35 !important;
@@ -192,7 +192,7 @@ function getReportHeaderCSS() {
       display: block !important;
     }
     .report-header-master .hdr-line-sub {
-      font-size: 14.5px !important;
+      font-size: 13.5px !important;
       font-weight: 700 !important;
       color: #334155 !important;
       line-height: 1.4 !important;
@@ -202,17 +202,17 @@ function getReportHeaderCSS() {
       display: block !important;
     }
     .report-header-master .hdr-center {
-      flex: 0 0 auto !important;
+      flex: 1 1 auto !important;
       text-align: center !important;
       align-items: center !important;
       justify-content: center !important;
-      padding: 0 16px !important;
+      padding: 0 12px !important;
       display: flex !important;
       flex-direction: column !important;
-      margin: 0 auto !important;
+      margin: 0 !important;
     }
     .report-header-master .hdr-basmala {
-      font-size: 16.5px !important;
+      font-size: 16px !important;
       font-weight: 800 !important;
       color: #0f172a !important;
       margin: 0 auto 6px auto !important;
@@ -229,8 +229,8 @@ function getReportHeaderCSS() {
       text-align: center !important;
     }
     .report-header-master .hdr-logo-box img {
-      max-height: 80px !important;
-      max-width: 140px !important;
+      max-height: 75px !important;
+      max-width: 130px !important;
       object-fit: contain !important;
       display: block !important;
       margin: 0 auto !important;
@@ -243,7 +243,7 @@ function getReportHeaderCSS() {
       border: 1px solid #fca5a5 !important;
       border-radius: 10px !important;
       font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
-      font-size: 11.5px !important;
+      font-size: 11px !important;
       font-weight: 800 !important;
       letter-spacing: 0.3px !important;
       margin: 4px auto 0 auto !important;
@@ -252,8 +252,8 @@ function getReportHeaderCSS() {
       text-align: center !important;
     }
     .report-header-master .hdr-left {
-      flex: 1 1 35% !important;
-      min-width: 150px !important;
+      flex: 0 0 auto !important;
+      min-width: 160px !important;
       text-align: left !important;
       font-size: 13px !important;
       color: #1e293b !important;
@@ -261,7 +261,8 @@ function getReportHeaderCSS() {
       flex-direction: column !important;
       justify-content: center !important;
       align-items: flex-end !important;
-      gap: 4px !important;
+      gap: 3px !important;
+      margin: 0 !important;
       font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
     }
     .report-header-master .hdr-info-item {

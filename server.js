@@ -1606,8 +1606,8 @@ const server = http.createServer(async (req, res) => {
         let sql = 'SELECT * FROM events WHERE orgId=?';
         const params = [orgId];
         if (me.role !== 'Admin' && (!me.canEvents || p === '/api/events/mine')) {
-          sql += ' AND (assignedUserId=? OR assignedUserId IS NULL OR assignedUserId="" OR LOWER(assignedUserName)=? OR LOWER(assignedUserName)=?)';
-          params.push(me.id, me.userName.toLowerCase(), me.fullName.toLowerCase());
+          sql += ' AND (assignedUserId=? OR assignedUserId IS NULL OR assignedUserId="" OR assignedUserId="all" OR assignedUserId="0" OR LOWER(assignedUserName)=? OR LOWER(assignedUserName)=? OR assignedUserName="الكل" OR assignedUserName="جميع الموظفين" OR LOWER(assignedUserName) LIKE ?)';
+          params.push(me.id, me.userName.toLowerCase(), me.fullName.toLowerCase(), '%' + me.userName.toLowerCase() + '%');
         }
         sql += ' ORDER BY eventDate DESC, createdDate DESC';
         const events = db.prepare(sql).all(...params);

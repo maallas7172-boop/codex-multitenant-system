@@ -507,12 +507,30 @@
   let currentActiveFeedbackTaskId = null;
   let knownTaskIds = new Set();
   let isFirstTaskLoad = true;
+  let unlockedAudioCtx = null;
+
+  function unlockAudio() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx && !unlockedAudioCtx) {
+        unlockedAudioCtx = new AudioCtx();
+        if (unlockedAudioCtx.state === 'suspended') {
+          unlockedAudioCtx.resume().catch(() => {});
+        }
+      }
+    } catch(e){}
+    document.removeEventListener('click', unlockAudio);
+    document.removeEventListener('touchstart', unlockAudio);
+  }
+  document.addEventListener('click', unlockAudio, { once: true });
+  document.addEventListener('touchstart', unlockAudio, { once: true });
 
   function playTaskNotificationSound() {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        const ctx = new AudioCtx();
+      const ctx = unlockedAudioCtx || (AudioCtx ? new AudioCtx() : null);
+      if (ctx) {
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
@@ -553,8 +571,13 @@
       const newTasks = res.events || [];
       const pendingTasks = newTasks.filter(x => x.status === 'pending');
 
-      // كشف المهام الجديدة القادمة من المدير وتنبيه الموظف فوراً
-      if (!isFirstTaskLoad) {
+      // كشف المهام وتنبيه الموظف فوراً
+      if (isFirstTaskLoad) {
+        if (pendingTasks.length > 0) {
+          playTaskNotificationSound();
+          toast(`🔔 لديك (${pendingTasks.length}) مهمة جديدة بانتظار استلامك من المدير!`, 'ok');
+        }
+      } else {
         const freshlyAdded = pendingTasks.filter(t => !knownTaskIds.has(t.id));
         if (freshlyAdded.length > 0) {
           playTaskNotificationSound();
@@ -581,6 +604,16 @@
       if ($('myTasksAlertCount')) {
         $('myTasksAlertCount').textContent = pendingCount > 0 ? `${pendingCount} جديدة بانتظار الاستلام` : `${myTasksList.length} مهام مسندة`;
         $('myTasksAlertCount').className = pendingCount > 0 ? 'badge warn' : 'badge green';
+      }
+
+      if ($('myTasksAlertBanner')) {
+        if (pendingCount > 0) {
+          $('myTasksAlertBanner').style.background = 'linear-gradient(135deg, #fffbeb, #fef3c7)';
+          $('myTasksAlertBanner').style.borderColor = '#f59e0b';
+        } else {
+          $('myTasksAlertBanner').style.background = 'linear-gradient(135deg, #eff6ff, #dbeafe)';
+          $('myTasksAlertBanner').style.borderColor = '#bfdbfe';
+        }
       }
 
       const container = $('myTasksList');

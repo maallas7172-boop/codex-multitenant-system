@@ -1109,7 +1109,7 @@
       const activeUsers = allUsers.filter(u => u.isActive);
       const opts = activeUsers.map(u => `<option value="${u.id}">${esc(u.fullName)} (${esc(u.userName)})</option>`).join('');
       if ($('rUser')) $('rUser').innerHTML = '<option value="">كل المستخدمين</option>' + opts;
-      if ($('efAssignedUser')) $('efAssignedUser').innerHTML = '<option value="">-- اختر الموظف المكلف --</option>' + opts;
+      if ($('efAssignedUser')) $('efAssignedUser').innerHTML = '<option value="">-- اختر الموظف المكلف --</option><option value="all">📢 تكليف عام (لجميع الموظفين)</option>' + opts;
       if ($('evFilterUser')) $('evFilterUser').innerHTML = '<option value="">كل الموظفين</option>' + opts;
     } catch (err) { toast(err.message, 'err'); }
   }

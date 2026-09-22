@@ -449,17 +449,16 @@ function printSuperReport(reportToPrint) {
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Aref+Ruqaa:wght@400;700&family=Cairo:wght@400;600;700;800;900&display=swap" />
 <style>
   body { font-family: system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; margin: 0; padding: 24px; direction: rtl; font-size: 13.5px; }
-  .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 20px; }
-  .header-right { flex: 1 1 35%; min-width: 150px; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; margin: 0 auto; }
-  .hdr-line-main { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 23px; font-weight: 800; color: #0f172a; line-height: 1.35; letter-spacing: 0.5px; text-align: center; width: 100%; margin: 0 auto 3px auto; display: block; }
-  .hdr-line-sub { font-size: 14px; font-weight: 700; color: #334155; line-height: 1.4; text-align: center; width: 100%; margin: 0 auto; display: block; }
-  .header-center { flex: 0 0 auto; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 16px; margin: 0 auto; }
-  .header-center img { max-height: 80px; max-width: 140px; object-fit: contain; margin-bottom: 4px; display: block; }
-  .header-center .basmala { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 16.5px; font-weight: 800; color: #0f172a; margin-bottom: 6px; letter-spacing: 0.5px; text-align: center; line-height: 1.25; display: block; }
-  .header-left { flex: 1 1 35%; min-width: 150px; text-align: left; font-size: 13px; line-height: 1.7; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 4px; font-family: 'Cairo', sans-serif; }
+  .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; width: 100%; box-sizing: border-box; }
+  .header-right { flex: 0 0 auto; min-width: 220px; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; margin: 0; }
+  .hdr-line-main { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 22px; font-weight: 800; color: #0f172a; line-height: 1.35; letter-spacing: 0.5px; text-align: center; width: 100%; margin: 0 auto 3px auto; display: block; }
+  .hdr-line-sub { font-size: 13.5px; font-weight: 700; color: #334155; line-height: 1.4; text-align: center; width: 100%; margin: 0 auto; display: block; }
+  .header-center { flex: 1 1 auto; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 12px; margin: 0; }
+  .header-center img { max-height: 75px; max-width: 130px; object-fit: contain; margin-bottom: 4px; display: block; }
+  .header-center .basmala { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 6px; letter-spacing: 0.5px; text-align: center; line-height: 1.25; display: block; }
+  .header-left { flex: 0 0 auto; min-width: 160px; text-align: left; font-size: 13px; line-height: 1.8; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 3px; margin: 0; font-family: 'Cairo', sans-serif; }
+  .meta-card { background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; }
   .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px 18px; border-radius: 8px; margin-bottom: 18px; }
-  .meta-item { font-size: 13px; line-height: 1.6; }
-  .meta-item b { color: #1e3a8a; }
   .box { background: #fff; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 18px; }
   .box-title { font-weight: 800; font-size: 14px; color: #1e3a8a; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
   .details-content { line-height: 2; font-size: 13.5px; white-space: pre-wrap; color: #1e293b; }
@@ -490,17 +489,27 @@ function printSuperReport(reportToPrint) {
       ${confidential ? `<div style="font-size:11px;font-weight:800;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;padding:2px 10px;border-radius:10px;margin-top:4px">${esc(confidential)}</div>` : ''}
     </div>
     <div class="header-left">
-      <div><b>الفرع:</b> <span style="color:#0284c7;font-weight:800">${esc(r.orgName || 'فرع')}</span> (${esc(r.orgCode || '')})</div>
-      <div><b>رقم التقرير:</b> <span style="font-family:monospace;font-weight:900;font-size:14px">${esc(r.reportNumber || '#' + r.id)}</span></div>
-      <div><b>التاريخ:</b> ${esc(r.reportDate || '')}</div>
-      <div><b>الوقت:</b> ${esc(r.reportTime || '')}</div>
+      <div><b>التاريخ:</b> <span>${esc(r.reportDate || '')}</span></div>
+      <div><b>الوقت:</b> <span>${esc(r.reportTime || '')}</span></div>
     </div>
   </div>
 
-  <div class="meta-grid">
-    <div class="meta-item"><b>الموظف / مدخل البيانات:</b> ${esc(r.enteredBy || '—')}</div>
-    <div class="meta-item"><b>الجهة المستهدفة / الموقع:</b> ${esc(r.target || r.targetSector || r.location || '—')}</div>
-    <div class="meta-item" style="grid-column: 1 / -1"><b>موضوع التقرير:</b> <span style="font-weight:800;font-size:14px">${esc(r.subject || 'بدون موضوع')}</span></div>
+  <div class="meta-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px dashed #cbd5e1;padding-bottom:10px;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:15.5px;font-weight:900;color:#1e3a8a;display:flex;align-items:center;gap:8px">
+        <span>📌 موضوع التقرير:</span>
+        <span style="color:#0f172a">${esc(r.subject || 'بدون موضوع')}</span>
+      </div>
+      <div style="font-family:monospace;font-size:14px;font-weight:900;background:#1e3a8a;color:#fff;padding:4px 14px;border-radius:6px">
+        رقم التقرير: #${esc(r.reportNumber || r.id)}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+      <div><span style="color:#64748b">🏢 الفرع / المؤسسة:</span> <b style="color:#0284c7">${esc(r.orgName || 'فرع')} (${esc(r.orgCode || '')})</b></div>
+      <div><span style="color:#64748b">👤 محرر التقرير / الموظف:</span> <b>${esc(r.enteredBy || '—')}</b></div>
+      <div><span style="color:#64748b">📍 الجهة المستهدفة / الموقع:</span> <b>${esc(r.target || r.targetSector || r.location || '—')}</b></div>
+      <div><span style="color:#64748b">📅 تاريخ ووقت التحرير:</span> <b>${esc(r.reportDate || '—')} &nbsp; ${esc(r.reportTime || '')}</b></div>
+    </div>
   </div>
 
   <div class="box">
