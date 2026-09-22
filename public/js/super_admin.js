@@ -344,26 +344,75 @@ function showSuperReportDetail(reportId) {
   const detEl = document.getElementById('srdDetails');
   if (detEl) detEl.textContent = r.details || r.notes || 'لا يوجد نص تفصيلي للتقرير.';
 
-  // الصور المرفقة
+  // الصور والوسائط المرفقة
   const gallery = document.getElementById('srdImagesGallery');
   const sec = document.getElementById('srdImagesSection');
   if (gallery && sec) {
     gallery.innerHTML = '';
-    let imgList = [];
-    if (r.images) {
-      try {
-        imgList = typeof r.images === 'string' ? JSON.parse(r.images) : r.images;
-      } catch(e) { imgList = []; }
-    }
+    const rawImages = (r.images && Array.isArray(r.images)) ? r.images : (typeof r.images === 'string' ? JSON.parse(r.images || '[]') : []);
+    const attachments = rawImages.map((item, idx) => {
+      if (typeof normalizeAttachment === 'function') return normalizeAttachment(item, idx);
+      if (typeof item === 'string') return { id: 'att_' + idx, name: `صورة_${idx + 1}.jpg`, type: 'image/jpeg', data: item, size: 0 };
+      return { id: item.id || ('att_' + idx), name: item.name || `مرفق_${idx + 1}`, type: item.type || 'application/octet-stream', data: item.data || '', size: item.size || 0 };
+    });
 
-    if (Array.isArray(imgList) && imgList.length > 0) {
+    if (attachments.length > 0) {
       sec.style.display = 'block';
-      gallery.innerHTML = imgList.map((imgSrc, idx) => {
-        return `
-          <a href="${imgSrc}" target="_blank" rel="noopener noreferrer" style="display:inline-block;border:2px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;box-shadow:var(--shadow-soft)" title="عرض الصورة بالحجم الكامل">
-            <img src="${imgSrc}" alt="مرفق ${idx + 1}" style="width:110px;height:110px;object-fit:cover;display:block" />
-          </a>
-        `;
+      gallery.innerHTML = attachments.map((att, idx) => {
+        const isImg = att.type.startsWith('image/');
+        const isVid = att.type.startsWith('video/');
+        const isAud = att.type.startsWith('audio/');
+        const icon = typeof getAttachmentIcon === 'function' ? getAttachmentIcon(att.type, att.name) : '📎';
+        const sizeStr = typeof formatBytes === 'function' ? formatBytes(att.size) : '';
+
+        if (isImg) {
+          return `
+            <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#f8fafc;display:flex;flex-direction:column;width:150px;box-shadow:var(--shadow-soft)">
+              <a href="${att.data}" target="_blank" download="${esc(att.name)}" style="display:block;height:110px;overflow:hidden;background:#000" title="اضغط للتكبير أو التنزيل">
+                <img src="${att.data}" alt="${esc(att.name)}" style="width:100%;height:100%;object-fit:cover;display:block" />
+              </a>
+              <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;background:#fff">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:85px" title="${esc(att.name)}">${esc(att.name)}</span>
+                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 8px;font-size:11px" title="تنزيل">⬇️</a>
+              </div>
+            </div>`;
+        } else if (isVid) {
+          return `
+            <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0f172a;color:#fff;display:flex;flex-direction:column;width:190px">
+              <video src="${att.data}" controls style="width:100%;height:110px;background:#000;object-fit:contain"></video>
+              <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;background:#1e293b">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:110px" title="${esc(att.name)}">🎬 ${esc(att.name)}</span>
+                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-primary btn-xs" style="padding:2px 8px;font-size:11px" title="تنزيل الفيديو">⬇️</a>
+              </div>
+            </div>`;
+        } else if (isAud) {
+          return `
+            <div style="border:1px solid var(--line);border-radius:10px;padding:8px;background:#f8fafc;display:flex;flex-direction:column;gap:6px;width:190px">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:11.5px">
+                <span style="font-size:16px">🎵</span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px" title="${esc(att.name)}">${esc(att.name)}</span>
+              </div>
+              <audio src="${att.data}" controls style="width:100%;height:28px"></audio>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted)">
+                <span>${sizeStr}</span>
+                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 8px;font-size:11px">⬇️ تنزيل</a>
+              </div>
+            </div>`;
+        } else {
+          return `
+            <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#ffffff;display:flex;flex-direction:column;justify-content:space-between;gap:8px;width:170px;box-shadow:var(--shadow-soft)">
+              <div style="display:flex;align-items:flex-start;gap:8px">
+                <span style="font-size:24px;line-height:1">${icon}</span>
+                <div style="flex:1;overflow:hidden">
+                  <div style="font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(att.name)}">${esc(att.name)}</div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:2px">${sizeStr}</div>
+                </div>
+              </div>
+              <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-sm" style="width:100%;justify-content:center;font-size:11.5px;gap:6px">
+                <span>⬇️ تنزيل الملف</span>
+              </a>
+            </div>`;
+        }
       }).join('');
     } else {
       sec.style.display = 'none';
@@ -398,12 +447,14 @@ function printSuperReport(reportToPrint) {
   const r = reportToPrint || activeSuperReport;
   if (!r) return;
 
-  let imgList = [];
-  if (r.images) {
-    try {
-      imgList = typeof r.images === 'string' ? JSON.parse(r.images) : (r.images || []);
-    } catch(e) { imgList = []; }
-  }
+  const rawImages = (r.images && Array.isArray(r.images)) ? r.images : (typeof r.images === 'string' ? JSON.parse(r.images || '[]') : []);
+  const attachments = rawImages.map((item, idx) => {
+    if (typeof normalizeAttachment === 'function') return normalizeAttachment(item, idx);
+    if (typeof item === 'string') return { id: 'att_' + idx, name: `صورة_${idx + 1}.jpg`, type: 'image/jpeg', data: item, size: 0 };
+    return { id: item.id || ('att_' + idx), name: item.name || `مرفق_${idx + 1}`, type: item.type || 'application/octet-stream', data: item.data || '', size: item.size || 0 };
+  });
+  const imgList = attachments.filter(a => a.type.startsWith('image/'));
+  const otherList = attachments.filter(a => !a.type.startsWith('image/'));
 
   const cfg = currentSuperHeaderConfig || {};
   const lines = (cfg.lines && cfg.lines.length > 0 && cfg.lines.some(Boolean)) ? cfg.lines : [
@@ -431,12 +482,38 @@ function printSuperReport(reportToPrint) {
   const sig3Title = sigs.sig3Title || 'الختم الرسمي للمركز';
   const sig3Name = sigs.sig3Name !== undefined ? sigs.sig3Name : '[....................]';
 
-  const imagesHtml = (Array.isArray(imgList) && imgList.length > 0)
+  const imagesHtml = imgList.length
     ? `<div style="margin-top:20px">
-        <h4 style="border-bottom:1.5px solid #cbd5e1;padding-bottom:6px;color:#1e3a8a;margin-bottom:12px">📷 المرفقات والصور الميدانية:</h4>
+        <h4 style="border-bottom:1.5px solid #cbd5e1;padding-bottom:6px;color:#1e3a8a;margin-bottom:12px">📷 المرفقات والصور الميدانية (${imgList.length}):</h4>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px">
-          ${imgList.map(src => `<div style="border:1px solid #cbd5e1;border-radius:8px;padding:4px;background:#fff"><img src="${src}" style="max-width:240px;max-height:180px;border-radius:6px;display:block" /></div>`).join('')}
+          ${imgList.map(img => `<div style="border:1px solid #cbd5e1;border-radius:8px;padding:4px;background:#fff"><img src="${img.data}" alt="${esc(img.name)}" style="max-width:240px;max-height:180px;border-radius:6px;display:block" /></div>`).join('')}
         </div>
+       </div>`
+    : '';
+
+  const otherDocsHtml = otherList.length
+    ? `<div style="margin-top:20px">
+        <h4 style="border-bottom:1.5px solid #cbd5e1;padding-bottom:6px;color:#1e3a8a;margin-bottom:12px">📎 المستندات والملفات المرفقة (${otherList.length}):</h4>
+        <table style="width:100%;margin-bottom:14px;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f1f5f9">
+              <th style="width:40px;text-align:center;border:1px solid #cbd5e1;padding:6px">#</th>
+              <th style="border:1px solid #cbd5e1;padding:6px">اسم الملف</th>
+              <th style="width:120px;text-align:center;border:1px solid #cbd5e1;padding:6px">نوع الملف</th>
+              <th style="width:100px;text-align:center;border:1px solid #cbd5e1;padding:6px">الحجم</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${otherList.map((doc, idx) => `
+              <tr>
+                <td style="text-align:center;border:1px solid #cbd5e1;padding:6px">${idx + 1}</td>
+                <td style="border:1px solid #cbd5e1;padding:6px"><b>${typeof getAttachmentIcon === 'function' ? getAttachmentIcon(doc.type, doc.name) : '📎'} ${esc(doc.name)}</b></td>
+                <td style="text-align:center;border:1px solid #cbd5e1;padding:6px">${esc(doc.type.split('/')[1] || doc.type)}</td>
+                <td style="text-align:center;border:1px solid #cbd5e1;padding:6px">${typeof formatBytes === 'function' ? formatBytes(doc.size) : ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
        </div>`
     : '';
 
@@ -518,6 +595,7 @@ function printSuperReport(reportToPrint) {
   </div>
 
   ${imagesHtml}
+  ${otherDocsHtml}
 
   <div class="signatures-grid">
     <div>
@@ -1318,13 +1396,16 @@ function printAllSuperReports() {
   if (query) filterDesc += ` | بحث: "${query}"`;
 
   const reportsHtml = allSuperReports.map((r, idx) => {
-    let imgList = [];
-    try {
-      imgList = typeof r.images === 'string' ? JSON.parse(r.images) : (r.images || []);
-    } catch(e) {}
+    const rawImages = (r.images && Array.isArray(r.images)) ? r.images : (typeof r.images === 'string' ? JSON.parse(r.images || '[]') : []);
+    const attachments = rawImages.map((item, idx) => {
+      if (typeof normalizeAttachment === 'function') return normalizeAttachment(item, idx);
+      if (typeof item === 'string') return { id: 'att_' + idx, name: `صورة_${idx + 1}.jpg`, type: 'image/jpeg', data: item, size: 0 };
+      return { id: item.id || ('att_' + idx), name: item.name || `مرفق_${idx + 1}`, type: item.type || 'application/octet-stream', data: item.data || '', size: item.size || 0 };
+    });
+    const imgList = attachments.filter(a => a.type.startsWith('image/'));
 
-    const imagesHtml = (Array.isArray(imgList) && imgList.length > 0)
-      ? `<div class="imgs-row">${imgList.map(src => `<img src="${src}" />`).join('')}</div>`
+    const imagesHtml = imgList.length > 0
+      ? `<div class="imgs-row">${imgList.map(img => `<img src="${img.data}" alt="${esc(img.name)}" />`).join('')}</div>`
       : '';
 
     return `
