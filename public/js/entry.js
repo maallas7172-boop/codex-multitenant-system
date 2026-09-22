@@ -503,9 +503,18 @@
   }
 
   /* ================= مهام وتكليفات الموظف (My Tasks & Events) ================= */
+  const TASKS_CACHE_KEY = 'codex_my_tasks_cache_v1';
   let myTasksList = [];
+  try {
+    const cachedTasks = JSON.parse(localStorage.getItem(TASKS_CACHE_KEY) || '[]');
+    if (Array.isArray(cachedTasks) && cachedTasks.length) {
+      myTasksList = cachedTasks;
+      knownTaskIds = new Set(cachedTasks.map(t => t.id));
+    }
+  } catch(e){}
+
   let currentActiveFeedbackTaskId = null;
-  let knownTaskIds = new Set();
+  let knownTaskIds = new Set(myTasksList.map(t => t.id));
   let isFirstTaskLoad = true;
   let unlockedAudioCtx = null;
 
@@ -545,7 +554,7 @@
       }
     } catch (e) {}
     try {
-      if (navigator.vibrate) navigator.vibrate([250, 100, 250]);
+      if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
     } catch(e) {}
   }
 
@@ -570,6 +579,9 @@
       const res = await api('/events/mine');
       const newTasks = res.events || [];
       const pendingTasks = newTasks.filter(x => x.status === 'pending');
+
+      // حفظ نسخة احتياطية محلية للمهام للعمل بدون إنترنت
+      try { localStorage.setItem(TASKS_CACHE_KEY, JSON.stringify(newTasks)); } catch(e){}
 
       // كشف المهام وتنبيه الموظف فوراً
       if (isFirstTaskLoad) {
@@ -610,9 +622,11 @@
         if (pendingCount > 0) {
           $('myTasksAlertBanner').style.background = 'linear-gradient(135deg, #fffbeb, #fef3c7)';
           $('myTasksAlertBanner').style.borderColor = '#f59e0b';
+          $('myTasksAlertBanner').style.boxShadow = '0 0 12px rgba(245, 158, 11, 0.25)';
         } else {
           $('myTasksAlertBanner').style.background = 'linear-gradient(135deg, #eff6ff, #dbeafe)';
           $('myTasksAlertBanner').style.borderColor = '#bfdbfe';
+          $('myTasksAlertBanner').style.boxShadow = 'none';
         }
       }
 
@@ -820,6 +834,13 @@
 
   if ($('eNavMyTasks')) $('eNavMyTasks').onclick = showTasksView;
   if ($('btnToggleTasksView')) $('btnToggleTasksView').onclick = showTasksView;
+  if ($('myTasksAlertBanner')) {
+    $('myTasksAlertBanner').style.cursor = 'pointer';
+    $('myTasksAlertBanner').onclick = (e) => {
+      if (e.target && e.target.id === 'btnToggleTasksView') return;
+      showTasksView();
+    };
+  }
   if ($('eNavEntry')) $('eNavEntry').onclick = showReportsView;
   if ($('btnBackToReportsFromTasks')) $('btnBackToReportsFromTasks').onclick = showReportsView;
   if ($('btnRefreshMyTasks')) $('btnRefreshMyTasks').onclick = loadMyTasks;
