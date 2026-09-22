@@ -1416,8 +1416,21 @@
   async function renderUsers() {
     try {
       const d = await api('/users');
-      allOrgUsers = d.users || [];
-      const list = allOrgUsers.filter(u => u.userName.toLowerCase().includes(($('userSearch').value || '').trim().toLowerCase()));
+      const rawUsers = d.users || [];
+      // منع وعلاج أي تكرار محتمل في الواجهة
+      const seen = new Set();
+      const uniqueUsers = [];
+      for (const u of rawUsers) {
+        const key = (u.fullName || u.userName || '').trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueUsers.push(u);
+        }
+      }
+      allOrgUsers = uniqueUsers;
+
+      const q = ($('userSearch').value || '').trim().toLowerCase();
+      const list = allOrgUsers.filter(u => !q || (u.fullName || '').toLowerCase().includes(q) || (u.userName || '').toLowerCase().includes(q));
       $('userTableBody').innerHTML = list.map(u => {
         const curPw = u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456');
         if (u.role === 'Admin') {
@@ -1622,25 +1635,53 @@
 
   $('newUserBtn').onclick = () => openUserEditor(null);
 
-  function checkUserNameDuplicate() {
-    const input = $('ufUserName');
-    const errBox = $('ufUserNameError');
-    if (!input || !errBox) return false;
+  function checkFullNameDuplicate() {
+    const input = $('ufFullName');
+    const errBox = $('ufFullNameError');
+    if (!input) return false;
     const currentId = $('userForm')?.dataset.id || '';
     const val = input.value.trim().toLowerCase();
     if (!val) {
-      errBox.style.display = 'none';
+      if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+      input.style.borderColor = '';
+      return false;
+    }
+    const isDup = allOrgUsers.some(u => String(u.id) !== String(currentId) && (u.fullName || '').trim().toLowerCase() === val);
+    if (isDup) {
+      if (errBox) {
+        errBox.style.display = 'block';
+        errBox.textContent = `⚠️ اسم مدخل البيانات (الاسم الكامل) «${input.value.trim()}» مسجل مسبقاً لموظف آخر، يرجى كتابة اسم مختلف.`;
+      }
+      input.style.borderColor = '#dc2626';
+      return true;
+    } else {
+      if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+      input.style.borderColor = '';
+      return false;
+    }
+  }
+
+  function checkUserNameDuplicate() {
+    const input = $('ufUserName');
+    const errBox = $('ufUserNameError');
+    if (!input) return false;
+    const currentId = $('userForm')?.dataset.id || '';
+    const val = input.value.trim().toLowerCase();
+    if (!val) {
+      if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
       input.style.borderColor = '';
       return false;
     }
     const isDup = allOrgUsers.some(u => String(u.id) !== String(currentId) && (u.userName || '').trim().toLowerCase() === val);
     if (isDup) {
-      errBox.style.display = 'block';
-      errBox.textContent = `⚠️ اسم المستخدم «${input.value.trim()}» مسجل مسبقاً لموظف آخر، يرجى اختيار اسم فريد.`;
+      if (errBox) {
+        errBox.style.display = 'block';
+        errBox.textContent = `⚠️ اسم المستخدم للدخول «${input.value.trim()}» مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر.`;
+      }
       input.style.borderColor = '#dc2626';
       return true;
     } else {
-      errBox.style.display = 'none';
+      if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
       input.style.borderColor = '';
       return false;
     }
@@ -1652,12 +1693,25 @@
     $('ufUserName').readOnly = false;
     $('ufFullName').value = u ? u.fullName : '';
 
-    const errBox = $('ufUserNameError');
-    if (errBox) {
-      errBox.style.display = 'none';
-      errBox.textContent = '';
+    const errBoxU = $('ufUserNameError');
+    if (errBoxU) {
+      errBoxU.style.display = 'none';
+      errBoxU.textContent = '';
     }
     $('ufUserName').style.borderColor = '';
+
+    const errBoxF = $('ufFullNameError');
+    if (errBoxF) {
+      errBoxF.style.display = 'none';
+      errBoxF.textContent = '';
+    }
+    $('ufFullName').style.borderColor = '';
+
+    if (!$('ufFullName')._boundDupCheck) {
+      $('ufFullName')._boundDupCheck = true;
+      $('ufFullName').addEventListener('input', checkFullNameDuplicate);
+      $('ufFullName').addEventListener('blur', checkFullNameDuplicate);
+    }
 
     if (!$('ufUserName')._boundDupCheck) {
       $('ufUserName')._boundDupCheck = true;
@@ -1715,8 +1769,14 @@
     const fullName = $('ufFullName').value.trim();
     if (!userName || !fullName) { toast('الاسم واسم المستخدم مطلوبان', 'err'); return; }
 
+    if (checkFullNameDuplicate()) {
+      toast(`اسم مدخل البيانات (${fullName}) مسجل مسبقاً في هذا الفرع، يرجى كتابة اسم مختلف`, 'err');
+      $('ufFullName').focus();
+      return;
+    }
+
     if (checkUserNameDuplicate()) {
-      toast(`اسم مدخل البيانات (${userName}) مسجل مسبقاً، يرجى اختيار اسم فريد`, 'err');
+      toast(`اسم المستخدم للدخول (${userName}) مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر`, 'err');
       $('ufUserName').focus();
       return;
     }

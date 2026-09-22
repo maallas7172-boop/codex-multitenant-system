@@ -173,6 +173,33 @@ try { db.exec("ALTER TABLE reports ADD COLUMN isEncrypted INTEGER DEFAULT 0;"); 
 try { db.exec("ALTER TABLE reports ADD COLUMN encryptedPayload TEXT;"); } catch(e){}
 try { db.exec("ALTER TABLE reports ADD COLUMN encryptedIv TEXT;"); } catch(e){}
 
+// حذف وتنظيف تكرار المستخدمين تلقائياً في قاعدة البيانات وضمان بقاء سجل واحد لكل مستخدم
+try {
+  // 1. حذف التكرار للمستخدمين بناءً على (orgId, fullName)
+  db.exec(`
+    DELETE FROM users 
+    WHERE orgId IS NOT NULL AND rowid NOT IN (
+      SELECT MIN(rowid) FROM users WHERE orgId IS NOT NULL GROUP BY orgId, LOWER(TRIM(fullName))
+    );
+  `);
+  // 2. حذف التكرار للمستخدمين بناءً على (orgId, userName)
+  db.exec(`
+    DELETE FROM users 
+    WHERE orgId IS NOT NULL AND rowid NOT IN (
+      SELECT MIN(rowid) FROM users WHERE orgId IS NOT NULL GROUP BY orgId, LOWER(TRIM(userName))
+    );
+  `);
+  // 3. حذف التكرار لحسابات الإدارة المركزية
+  db.exec(`
+    DELETE FROM users 
+    WHERE orgId IS NULL AND rowid NOT IN (
+      SELECT MIN(rowid) FROM users WHERE orgId IS NULL GROUP BY LOWER(TRIM(userName))
+    );
+  `);
+} catch(e) {
+  console.warn('Users deduplication cleanup notice:', e.message);
+}
+
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -289,7 +316,7 @@ function setSetting(orgId, key, value) {
     demoOrgId = demoOrg.id;
   }
 
-  const demoAdmin = db.prepare("SELECT * FROM users WHERE orgId=? AND userName='admin'").get(demoOrgId);
+  const demoAdmin = db.prepare("SELECT * FROM users WHERE orgId=? AND (userName='admin' OR fullName='مدير الجهة النموذجية')").get(demoOrgId);
   if (!demoAdmin) {
     const aId = uid();
     db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
@@ -298,7 +325,7 @@ function setSetting(orgId, key, value) {
       .run(aId, demoOrgId, hashHex('Admin@123'), nowIso());
   }
 
-  const demoUser = db.prepare("SELECT * FROM users WHERE orgId=? AND userName='ahmed'").get(demoOrgId);
+  const demoUser = db.prepare("SELECT * FROM users WHERE orgId=? AND (userName='ahmed' OR fullName LIKE '%أحمد محمد%')").get(demoOrgId);
   if (!demoUser) {
     const uId = uid();
     db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
@@ -1298,7 +1325,17 @@ const server = http.createServer(async (req, res) => {
       const users = Array.isArray(b.users) ? b.users : [];
       let upsertedCount = 0;
       for (const u of users) {
-        if (!u.id || !u.userName) continue;
+        if (!u.userName && !u.fullName) continue;
+        const uName = String(u.userName || '').trim();
+        const fName = String(u.fullName || uName).trim();
+        if (!uName || !fName) continue;
+
+        const existing = db.prepare(`
+          SELECT id FROM users 
+          WHERE orgId=? AND (id=? OR LOWER(TRIM(userName))=LOWER(TRIM(?)) OR LOWER(TRIM(fullName))=LOWER(TRIM(?)))
+        `).get(orgId, u.id || '', uName, fName);
+
+        const targetId = existing ? existing.id : (u.id || uid());
         db.prepare(`INSERT OR REPLACE INTO users(
           id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
           canOpen, canAdd, canDelete, canEdit, canPrint,
@@ -1306,7 +1343,7 @@ const server = http.createServer(async (req, res) => {
           canEvents, canUsers, canSettings, createdAt
         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
-            u.id, orgId, u.userName, u.fullName || u.userName, u.passwordHash, u.plainPassword || '', u.role || 'EntryUser', u.isActive ? 1 : 0,
+            targetId, orgId, uName, fName, u.passwordHash, u.plainPassword || '', u.role || 'EntryUser', u.isActive ? 1 : 0,
             u.canOpen ? 1 : 0, u.canAdd ? 1 : 0, u.canDelete ? 1 : 0, u.canEdit ? 1 : 0, u.canPrint ? 1 : 0,
             u.canDash ? 1 : 0, u.canEntry ? 1 : 0, u.canReports ? 1 : 0, u.canReportsEdit ? 1 : 0, u.canReportsDelete ? 1 : 0, u.canReportsPrint ? 1 : 0,
             u.canEvents ? 1 : 0, u.canUsers ? 1 : 0, u.canSettings ? 1 : 0, u.createdAt || nowIso()
@@ -1363,8 +1400,19 @@ const server = http.createServer(async (req, res) => {
         const fullName = String(b.fullName || '').trim();
         if (!userName || !fullName) { sendError(res, 400, 'اسم المستخدم والاسم الكامل مطلوبان'); return; }
 
-        const exists = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?)').get(orgId, userName);
-        if (exists) { sendError(res, 409, `اسم مدخل البيانات (${userName}) مسجل مسبقاً في هذا الفرع، يرجى اختيار اسم فريد`); return; }
+        // التحقق من عدم تكرار الاسم الكامل (اسم مدخل البيانات) داخل نفس الجهة
+        const existsFullName = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(TRIM(fullName))=LOWER(TRIM(?))').get(orgId, fullName);
+        if (existsFullName) { 
+          sendError(res, 409, `اسم مدخل البيانات (${fullName}) مسجل مسبقاً في هذا الفرع، يرجى كتابة اسم مختلف`); 
+          return; 
+        }
+
+        // التحقق من اسم المستخدم للدخول
+        const existsUser = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(TRIM(userName))=LOWER(TRIM(?))').get(orgId, userName);
+        if (existsUser) { 
+          sendError(res, 409, `اسم المستخدم للدخول (${userName}) مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر`); 
+          return; 
+        }
 
         const pPlain = String(b.plainPassword || b.password || '123456').trim();
         const pHash = hashHex(pPlain);
@@ -1396,11 +1444,26 @@ const server = http.createServer(async (req, res) => {
 
       if (method === 'PUT') {
         const b = await readBody(req);
-        if (b.userName) {
-          const newU = String(b.userName).trim();
-          if (newU && newU.toLowerCase() !== user.userName.toLowerCase()) {
-            const dup = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?) AND id<>?').get(orgId, newU, user.id);
-            if (dup) { sendError(res, 409, `اسم مدخل البيانات (${newU}) مسجل مسبقاً في هذا الفرع، يرجى اختيار اسم فريد`); return; }
+        if (b.fullName !== undefined) {
+          const newFN = String(b.fullName || '').trim();
+          if (!newFN) { sendError(res, 400, 'الاسم الكامل مطلوب'); return; }
+          if (newFN.toLowerCase() !== (user.fullName || '').trim().toLowerCase()) {
+            const dupFN = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(TRIM(fullName))=LOWER(TRIM(?)) AND id<>?').get(orgId, newFN, user.id);
+            if (dupFN) { 
+              sendError(res, 409, `اسم مدخل البيانات (${newFN}) مسجل مسبقاً في هذا الفرع، يرجى كتابة اسم مختلف`); 
+              return; 
+            }
+          }
+        }
+        if (b.userName !== undefined) {
+          const newU = String(b.userName || '').trim();
+          if (!newU) { sendError(res, 400, 'اسم المستخدم للدخول مطلوب'); return; }
+          if (newU.toLowerCase() !== (user.userName || '').trim().toLowerCase()) {
+            const dupU = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(TRIM(userName))=LOWER(TRIM(?)) AND id<>?').get(orgId, newU, user.id);
+            if (dupU) { 
+              sendError(res, 409, `اسم المستخدم للدخول (${newU}) مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر`); 
+              return; 
+            }
             db.prepare('UPDATE users SET userName=? WHERE id=?').run(newU, user.id);
           }
         }
