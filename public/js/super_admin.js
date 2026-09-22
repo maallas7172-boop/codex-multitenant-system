@@ -320,109 +320,119 @@ async function loadSuperReports() {
   }
 }
 
-// عرض تفاصيل التقرير في نافذة منبثقة
+// عرض تفاصيل التقرير في نافذة منبثقة للمركز الرئيسي
 function showSuperReportDetail(reportId) {
   const r = allSuperReports.find(x => String(x.id) === String(reportId) || String(x.reportNumber) === String(reportId));
   if (!r) return alert('لم يتم العثور على التقرير المطلوب.');
 
   activeSuperReport = r;
 
-  const titleEl = document.getElementById('srdTitle');
-  if (titleEl) titleEl.textContent = `📄 تفاصيل التقرير (${r.reportNumber || '#' + r.id})`;
-  const orgNameEl = document.getElementById('srdOrgName');
-  if (orgNameEl) orgNameEl.textContent = `${r.orgName || 'فرع'} (${r.orgCode || ''})`;
-  const repNumEl = document.getElementById('srdReportNumber');
-  if (repNumEl) repNumEl.textContent = r.reportNumber || '#' + r.id;
-  const dtEl = document.getElementById('srdDateTime');
-  if (dtEl) dtEl.textContent = `${r.reportDate || ''} ${r.reportTime || ''}`.trim() || '—';
-  const entEl = document.getElementById('srdEnteredBy');
-  if (entEl) entEl.textContent = r.enteredBy || '—';
-  const targetEl = document.getElementById('srdTarget');
-  if (targetEl) targetEl.textContent = r.target || r.targetSector || r.location || '—';
-  const subjEl = document.getElementById('srdSubject');
-  if (subjEl) subjEl.textContent = r.subject || 'بدون موضوع';
-  const detEl = document.getElementById('srdDetails');
-  if (detEl) detEl.textContent = r.details || r.notes || 'لا يوجد نص تفصيلي للتقرير.';
+  const headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML(r) : '';
+  const rawImages = (r.images && Array.isArray(r.images)) ? r.images : (typeof r.images === 'string' ? JSON.parse(r.images || '[]') : []);
+  const attachments = rawImages.map(normalizeAttachment);
 
-  // الصور والوسائط المرفقة
-  const gallery = document.getElementById('srdImagesGallery');
-  const sec = document.getElementById('srdImagesSection');
-  if (gallery && sec) {
-    gallery.innerHTML = '';
-    const rawImages = (r.images && Array.isArray(r.images)) ? r.images : (typeof r.images === 'string' ? JSON.parse(r.images || '[]') : []);
-    const attachments = rawImages.map((item, idx) => {
-      if (typeof normalizeAttachment === 'function') return normalizeAttachment(item, idx);
-      if (typeof item === 'string') return { id: 'att_' + idx, name: `صورة_${idx + 1}.jpg`, type: 'image/jpeg', data: item, size: 0 };
-      return { id: item.id || ('att_' + idx), name: item.name || `مرفق_${idx + 1}`, type: item.type || 'application/octet-stream', data: item.data || '', size: item.size || 0 };
-    });
+  let attHtml = '';
+  if (attachments.length) {
+    attHtml = `
+      <h3 style="margin:20px 0 12px;font-size:15px;display:flex;align-items:center;gap:6px">
+        <span>📎 المرفقات والوسائط المتعددة (${attachments.length})</span>
+      </h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:14px">
+        ${attachments.map((att, idx) => {
+          const isImg = att.type.startsWith('image/');
+          const isVid = att.type.startsWith('video/');
+          const isAud = att.type.startsWith('audio/');
+          const icon = typeof getAttachmentIcon === 'function' ? getAttachmentIcon(att.type, att.name) : '📎';
+          const sizeStr = typeof formatBytes === 'function' ? formatBytes(att.size) : '';
 
-    if (attachments.length > 0) {
-      sec.style.display = 'block';
-      gallery.innerHTML = attachments.map((att, idx) => {
-        const isImg = att.type.startsWith('image/');
-        const isVid = att.type.startsWith('video/');
-        const isAud = att.type.startsWith('audio/');
-        const icon = typeof getAttachmentIcon === 'function' ? getAttachmentIcon(att.type, att.name) : '📎';
-        const sizeStr = typeof formatBytes === 'function' ? formatBytes(att.size) : '';
-
-        if (isImg) {
-          return `
-            <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#f8fafc;display:flex;flex-direction:column;width:150px;box-shadow:var(--shadow-soft)">
-              <a href="${att.data}" target="_blank" download="${esc(att.name)}" style="display:block;height:110px;overflow:hidden;background:#000" title="اضغط للتكبير أو التنزيل">
-                <img src="${att.data}" alt="${esc(att.name)}" style="width:100%;height:100%;object-fit:cover;display:block" />
-              </a>
-              <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;background:#fff">
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:85px" title="${esc(att.name)}">${esc(att.name)}</span>
-                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 8px;font-size:11px" title="تنزيل">⬇️</a>
-              </div>
-            </div>`;
-        } else if (isVid) {
-          return `
-            <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0f172a;color:#fff;display:flex;flex-direction:column;width:190px">
-              <video src="${att.data}" controls style="width:100%;height:110px;background:#000;object-fit:contain"></video>
-              <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;background:#1e293b">
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:110px" title="${esc(att.name)}">🎬 ${esc(att.name)}</span>
-                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-primary btn-xs" style="padding:2px 8px;font-size:11px" title="تنزيل الفيديو">⬇️</a>
-              </div>
-            </div>`;
-        } else if (isAud) {
-          return `
-            <div style="border:1px solid var(--line);border-radius:10px;padding:8px;background:#f8fafc;display:flex;flex-direction:column;gap:6px;width:190px">
-              <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:11.5px">
-                <span style="font-size:16px">🎵</span>
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px" title="${esc(att.name)}">${esc(att.name)}</span>
-              </div>
-              <audio src="${att.data}" controls style="width:100%;height:28px"></audio>
-              <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted)">
-                <span>${sizeStr}</span>
-                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 8px;font-size:11px">⬇️ تنزيل</a>
-              </div>
-            </div>`;
-        } else {
-          return `
-            <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#ffffff;display:flex;flex-direction:column;justify-content:space-between;gap:8px;width:170px;box-shadow:var(--shadow-soft)">
-              <div style="display:flex;align-items:flex-start;gap:8px">
-                <span style="font-size:24px;line-height:1">${icon}</span>
-                <div style="flex:1;overflow:hidden">
-                  <div style="font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(att.name)}">${esc(att.name)}</div>
-                  <div style="font-size:11px;color:var(--muted);margin-top:2px">${sizeStr}</div>
+          if (isImg) {
+            return `
+              <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#f8fafc;display:flex;flex-direction:column">
+                <a href="${att.data}" target="_blank" download="${esc(att.name)}" style="display:block;height:120px;overflow:hidden;background:#000" title="اضغط للتكبير أو التنزيل">
+                  <img src="${att.data}" alt="${esc(att.name)}" style="width:100%;height:100%;object-fit:cover" />
+                </a>
+                <div style="padding:8px 10px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;background:#fff">
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:110px" title="${esc(att.name)}">${esc(att.name)}</span>
+                  <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 8px;font-size:11px" title="تنزيل">⬇️</a>
                 </div>
-              </div>
-              <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-sm" style="width:100%;justify-content:center;font-size:11.5px;gap:6px">
-                <span>⬇️ تنزيل الملف</span>
-              </a>
-            </div>`;
-        }
-      }).join('');
-    } else {
-      sec.style.display = 'none';
-    }
+              </div>`;
+          } else if (isVid) {
+            return `
+              <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0f172a;color:#fff;display:flex;flex-direction:column">
+                <video src="${att.data}" controls style="width:100%;height:120px;background:#000;object-fit:contain"></video>
+                <div style="padding:8px 10px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;background:#1e293b">
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:110px" title="${esc(att.name)}">🎬 ${esc(att.name)}</span>
+                  <a href="${att.data}" download="${esc(att.name)}" class="btn btn-primary btn-xs" style="padding:2px 8px;font-size:11px" title="تنزيل الفيديو">⬇️</a>
+                </div>
+              </div>`;
+          } else if (isAud) {
+            return `
+              <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#f8fafc;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px">
+                  <span style="font-size:18px">🎵</span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px" title="${esc(att.name)}">${esc(att.name)}</span>
+                </div>
+                <audio src="${att.data}" controls style="width:100%;height:32px"></audio>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted)">
+                  <span>${sizeStr}</span>
+                  <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 8px;font-size:11px">⬇️ تنزيل</a>
+                </div>
+              </div>`;
+          } else {
+            return `
+              <div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:#ffffff;display:flex;flex-direction:column;justify-content:space-between;gap:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <span style="font-size:28px;line-height:1">${icon}</span>
+                  <div style="flex:1;overflow:hidden">
+                    <div style="font-size:12.5px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(att.name)}">${esc(att.name)}</div>
+                    <div style="font-size:11px;color:var(--muted);margin-top:2px">${sizeStr}</div>
+                  </div>
+                </div>
+                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-sm" style="width:100%;justify-content:center;font-size:12px;gap:6px">
+                  <span>⬇️ تنزيل الملف</span>
+                </a>
+              </div>`;
+          }
+        }).join('')}
+      </div>`;
+  }
+
+  const secNotice = (r._wasEncrypted || r.isEncrypted) ? `
+    <div style="background:#ecfdf5;border:1px solid #10b981;color:#065f46;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px">🔒</span>
+      <span><b>تم استلام هذا التقرير مشفراً بنجاح (E2EE):</b> تم فك التشفير وعرض المحتوى الأصلي بأمان على خادم الإدارة المركزية.</span>
+    </div>` : '';
+
+  const modalBody = document.getElementById('srdModalBody');
+  if (modalBody) {
+    modalBody.innerHTML = `
+      ${headerHtml}
+      ${secNotice}
+      <div style="background:#f1f5f9;padding:12px 14px;border-radius:10px;border:1px solid var(--line);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div><span style="color:var(--muted);font-size:12px">🏢 الفرع / الجهة المصدرة:</span> <b style="color:#0284c7;font-size:14px">${esc(r.orgName || 'فرع')} (${esc(r.orgCode || '')})</b></div>
+        <div><span style="color:var(--muted);font-size:12px">🔢 رقم التقرير:</span> <b style="font-family:monospace;font-size:14px;color:#0f172a">${esc(r.reportNumber || '#' + r.id)}</b></div>
+      </div>
+      <table class="recent-table" style="margin-bottom:6px;width:100%">
+        <tr><th style="width:180px">رقم التقرير</th><td><b>${esc(r.reportNumber || '—')}</b></td></tr>
+        <tr><th>موضوع التقرير</th><td><b>${esc(r.subject || '—')}</b></td></tr>
+        <tr><th>الجهة المستهدفة / الشخص</th><td>${esc(r.target || r.targetSector || '—')}</td></tr>
+        <tr><th>الموقع / المكان</th><td>${esc(r.location || '—')}</td></tr>
+        <tr><th>التاريخ والوقت</th><td>${esc(r.reportDate || '—')} ${r.reportTime ? '— ' + esc(r.reportTime) : ''}</td></tr>
+        <tr><th>تقييم التقرير</th><td>${typeof badgeStatus === 'function' ? badgeStatus(r.rating || 'غير مقيم') : esc(r.rating || '—')}</td></tr>
+      </table>
+      <h3 style="margin:18px 0 10px;font-size:15px">التقرير التفصيلي</h3>
+      <div style="background:var(--surface-soft, #f8fafc);border:1px solid var(--line);border-radius:var(--r-md, 10px);padding:16px;line-height:2;white-space:pre-wrap;color:#334155">${esc(r.details || r.notes || '—')}</div>
+      ${attHtml}
+      <div style="font-size:12px;color:var(--muted);margin-top:14px;border-top:1px dashed var(--line);padding-top:10px">
+        مُدخل التقرير: <b>${esc(r.enteredBy || '—')}</b>
+      </div>
+    `;
   }
 
   const modal = document.getElementById('superReportDetailModal');
   if (modal) {
     modal.classList.add('show');
-    modal.style.display = 'flex';
+    modal.style.display = 'grid';
   }
 }
 
