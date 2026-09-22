@@ -1851,6 +1851,69 @@
   if ($('hFontSel')) $('hFontSel').onchange = renderHeaderPreview;
   if ($('hShowBasmala')) $('hShowBasmala').onchange = renderHeaderPreview;
 
+  /* ================= تخصيص شعار الجهة (الدخول واللوحة) ================= */
+  let orgLogoBase64 = '';
+  if ($('orgLogoSelect')) {
+    $('orgLogoSelect').onchange = function () {
+      if (this.value === 'custom') {
+        $('orgLogoFileInput').click();
+      } else {
+        orgLogoBase64 = '';
+        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = 'Image/app_logo.jpg';
+        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = 'الشعار الجمهوري الرسمي (الافتراضي)';
+      }
+    };
+  }
+  if ($('orgLogoFileInput')) {
+    $('orgLogoFileInput').onchange = function () {
+      const file = this.files[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { toast('حجم الصورة كبير، اختر صورة أقل من 2 ميجابايت', 'err'); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        orgLogoBase64 = reader.result;
+        if ($('orgLogoSelect')) $('orgLogoSelect').value = 'custom';
+        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = orgLogoBase64;
+        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = '✔ تم اختيار شعار مخصص (اضغط حفظ للتثبيت)';
+        toast('تم اختيار شعار الجهة بنجاح ✔ — اضغط «حفظ وتعيين شعار الجهة» لتثبيته');
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+  if ($('btnSaveOrgLogo')) {
+    $('btnSaveOrgLogo').onclick = async () => {
+      const isCustom = $('orgLogoSelect') && $('orgLogoSelect').value === 'custom' && orgLogoBase64;
+      const logoToSave = isCustom ? orgLogoBase64 : 'Image/app_logo.jpg';
+      try {
+        await api('/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ orgLogo: logoToSave })
+        });
+        if ($('sidebarOrgLogo')) $('sidebarOrgLogo').src = logoToSave;
+        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = isCustom ? '✔ شعار مخصص معتمد للجهة' : 'الشعار الجمهوري الرسمي (الافتراضي)';
+        toast('تم حفظ وتعيين شعار الجهة لواجهة الدخول واللوحة بنجاح ✔');
+      } catch (err) { toast(err.message, 'err'); }
+    };
+  }
+  if ($('btnResetOrgLogo')) {
+    $('btnResetOrgLogo').onclick = async () => {
+      if (!confirm('هل تريد استعادة شعار الطير الجمهوري الافتراضي لشاشة الدخول واللوحة؟')) return;
+      orgLogoBase64 = '';
+      try {
+        await api('/settings', {
+          method: 'PUT',
+          body: JSON.stringify({ orgLogo: 'Image/app_logo.jpg' })
+        });
+        if ($('orgLogoSelect')) $('orgLogoSelect').value = 'default';
+        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = 'Image/app_logo.jpg';
+        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = 'الشعار الجمهوري الرسمي (الافتراضي)';
+        if ($('sidebarOrgLogo')) $('sidebarOrgLogo').src = 'Image/app_logo.jpg';
+        toast('تم استعادة الشعار الجمهوري الافتراضي بنجاح ✔');
+      } catch (err) { toast(err.message, 'err'); }
+    };
+  }
+
+  /* ================= الإعدادات وتخصيص الترويسة ================= */
   if ($('hLogoSel')) {
     $('hLogoSel').onchange = function () {
       if (this.value === 'custom') {
@@ -1874,7 +1937,7 @@
         if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'flex';
         if ($('hCustomLogoThumb')) $('hCustomLogoThumb').src = customLogoBase64;
         renderHeaderPreview();
-        toast('تم اختيار الشعار بنجاح ✔ — اضغط «حفظ الترويسة والتوقيعات والشعار» لتثبيته في النظام');
+        toast('تم اختيار شعار الترويسة بنجاح ✔ — اضغط «حفظ الترويسة والتوقيعات» لتثبيته');
       };
       reader.readAsDataURL(file);
     };
@@ -1883,29 +1946,21 @@
   if ($('hSaveBtn')) {
     $('hSaveBtn').onclick = async () => {
       const cfg = getHeaderFormConfig();
-      const isCustomLogo = $('hLogoSel') && $('hLogoSel').value === 'custom' && customLogoBase64;
-      const logoToSave = isCustomLogo ? customLogoBase64 : null;
       try {
         await api('/settings', {
           method: 'PUT',
-          body: JSON.stringify({
-            reportHeaderConfig: cfg,
-            orgLogo: logoToSave
-          })
+          body: JSON.stringify({ reportHeaderConfig: cfg })
         });
         updateReportHeaderConfig(cfg);
-        if ($('sidebarOrgLogo')) {
-          $('sidebarOrgLogo').src = logoToSave || 'Image/app_logo.jpg';
-        }
         renderHeaderPreview();
-        toast('تم حفظ وتطبيق الترويسة والتوقيعات والشعار بنجاح ✔');
+        toast('تم حفظ وتطبيق الترويسة والتوقيعات على جميع التقارير بنجاح ✔');
       } catch (err) { toast(err.message, 'err'); }
     };
   }
 
   if ($('hResetBtn')) {
     $('hResetBtn').onclick = async () => {
-      if (!confirm('هل أنت متأكد من استعادة الإعدادات الافتراضية للترويسة والتوقيعات والشعار؟')) return;
+      if (!confirm('هل أنت متأكد من استعادة الإعدادات الافتراضية للترويسة والتوقيعات؟')) return;
       const defaultCfg = {
         line1: "الجمهورية اليمنية",
         line2: "وزارة النقل",
@@ -1935,18 +1990,12 @@
       try {
         await api('/settings', {
           method: 'PUT',
-          body: JSON.stringify({
-            reportHeaderConfig: defaultCfg,
-            orgLogo: null
-          })
+          body: JSON.stringify({ reportHeaderConfig: defaultCfg })
         });
         updateReportHeaderConfig(defaultCfg);
-        if ($('sidebarOrgLogo')) {
-          $('sidebarOrgLogo').src = 'Image/app_logo.jpg';
-        }
         if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'none';
         renderSettings();
-        toast('تم استعادة الإعدادات الافتراضية بنجاح ✔');
+        toast('تم استعادة الإعدادات الافتراضية للترويسة بنجاح ✔');
       } catch (err) { toast(err.message, 'err'); }
     };
   }
@@ -1956,6 +2005,22 @@
       const d = await api('/settings');
       const s = d.settings;
       if ($('netInfo')) $('netInfo').textContent = 'عنوان الخادم للشبكة: ' + s.baseUrl + ' — تعمل على نفس شبكة (واي فاي) المدير.';
+      
+      // تعبئة بيانات شعار الجهة المخصص المنفصل
+      if (s.orgLogo && s.orgLogo !== 'Image/app_logo.jpg' && s.orgLogo !== 'Image/1754379379088.jpg' && s.orgLogo !== 'Image/codex_logo.jpg') {
+        orgLogoBase64 = s.orgLogo;
+        if ($('orgLogoSelect')) $('orgLogoSelect').value = 'custom';
+        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = orgLogoBase64;
+        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = '✔ شعار مخصص معتمد للجهة';
+        if ($('sidebarOrgLogo')) $('sidebarOrgLogo').src = orgLogoBase64;
+      } else {
+        orgLogoBase64 = '';
+        if ($('orgLogoSelect')) $('orgLogoSelect').value = 'default';
+        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = 'Image/app_logo.jpg';
+        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = 'الشعار الجمهوري الرسمي (الافتراضي)';
+        if ($('sidebarOrgLogo')) $('sidebarOrgLogo').src = 'Image/app_logo.jpg';
+      }
+
       if (s.reportHeaderConfig) {
         updateReportHeaderConfig(s.reportHeaderConfig);
       }

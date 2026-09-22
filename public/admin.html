@@ -14,8 +14,8 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
-      <div class="logo" id="sidebarOrgLogoBox" style="width:36px;height:36px;border-radius:10px;background:#ffffff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;padding:2px;border:1px solid rgba(255,255,255,0.25);box-shadow:0 2px 6px rgba(0,0,0,0.12)">
-        <img id="sidebarOrgLogo" src="Image/app_logo.jpg" alt="Logo" style="width:100%;height:100%;object-fit:contain" />
+      <div id="sidebarOrgLogoBox" style="width:42px;height:42px;border-radius:12px;background:#ffffff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;padding:2px;box-shadow:0 4px 10px rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2)">
+        <img id="sidebarOrgLogo" src="Image/app_logo.jpg" alt="Logo" style="width:100%;height:100%;object-fit:contain;display:block" />
       </div>
       <div class="t"><span id="orgBrandTitle">إدارة الحسابات</span><small id="orgBrandSubtitle">لوحة مدير النظام</small></div>
     </div>
@@ -501,6 +501,42 @@
         </div>
       </div>
 
+      <!-- ==================== تخصيص شعار الجهة (واجهة الدخول واللوحة) ==================== -->
+      <div class="card" style="margin-top:18px">
+        <div class="page-head" style="margin-bottom:12px">
+          <div>
+            <h3 style="font-size:16px;font-weight:900;color:var(--primary-dark)">🖼️ تخصيص شعار الجهة (واجهة الدخول ولوحة التحكم)</h3>
+            <p style="color:var(--muted);font-size:13px;margin-top:2px">
+              الأساس الافتراضي في النظام هو شعار الجمهورية اليمنية الرسمي، ويمكنك رفع شعار خاص بجهتك ليظهر في شاشة تسجيل الدخول وأعلى القائمة الجانبية بشكل مستقل.
+            </p>
+          </div>
+        </div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:14px;align-items:center">
+          <div class="field">
+            <span>اختر مصدر الشعار</span>
+            <select id="orgLogoSelect" style="font-weight:700;color:var(--primary-dark)">
+              <option value="default">شعار الجمهورية اليمنية الرسمي (الأساس الافتراضي)</option>
+              <option value="custom">📤 رفع وتعيين شعار خاص بالجهة من جهازك...</option>
+            </select>
+            <input type="file" id="orgLogoFileInput" accept="image/*" style="display:none;margin-top:8px" />
+          </div>
+          <div class="field">
+            <span>معاينة الشعار المعتمد:</span>
+            <div id="orgLogoPreviewBox" style="display:flex;align-items:center;gap:12px;background:#f8fafc;padding:8px 14px;border-radius:10px;border:1px solid var(--line)">
+              <img id="orgLogoCurrentPreview" src="Image/app_logo.jpg" alt="شعار الجهة" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:8px;padding:2px;border:1px solid var(--line)" />
+              <div style="font-size:12.5px">
+                <div id="orgLogoStatusText" style="font-weight:800;color:var(--text)">الشعار الجمهوري الرسمي (الافتراضي)</div>
+                <div style="color:var(--muted);font-size:11px">يظهر في شاشة الدخول وأعلى اللوحة</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:14px;gap:10px">
+          <button type="button" class="btn btn-primary" id="btnSaveOrgLogo" style="padding:9px 20px;font-weight:800">💾 حفظ وتعيين شعار الجهة</button>
+          <button type="button" class="btn btn-outline" id="btnResetOrgLogo" style="padding:9px 16px;font-weight:700">🔄 استعادة شعار الطير الجمهوري</button>
+        </div>
+      </div>
+
       <!-- ==================== تخصيص ترويسة التقارير ==================== -->
       <div class="card" style="margin-top:18px">
         <div class="page-head" style="margin-bottom:14px">
@@ -811,10 +847,10 @@
 </div>
 
 <script src="js/crypto-js.js"></script>
-<script src="js/config.js?v=20260922-102"></script>
-<script src="js/app.js?v=20260922-102"></script>
+<script src="js/config.js?v=20260922-103"></script>
+<script src="js/app.js?v=20260922-103"></script>
 <script src="js/qrcode.min.js"></script>
-<script src="js/report-header.js?v=20260922-102"></script>
-<script src="js/admin.js?v=20260922-102"></script>
+<script src="js/report-header.js?v=20260922-103"></script>
+<script src="js/admin.js?v=20260922-103"></script>
 </body>
 </html>

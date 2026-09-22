@@ -281,7 +281,7 @@ function setSetting(orgId, key, value) {
     demoOrgId = uid();
     const demoEncKey = crypto.randomBytes(32).toString('hex');
     db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
-      VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/codex_logo.jpg', '783745550', 'active', 50, 1, ?, ?)`)
+      VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/app_logo.jpg', '783745550', 'active', 50, 1, ?, ?)`)
       .run(demoOrgId, demoEncKey, nowIso());
     setSetting(demoOrgId, 'enforceDeviceAuth', '1');
     console.log('✓ Created Demo Organization: DEMO with E2EE key');
@@ -307,8 +307,9 @@ function setSetting(orgId, key, value) {
       .run(uId, demoOrgId, hashHex('123456'), nowIso());
   }
 
-  // ضمان توليد مفتاح تشفير طرفي وتفعيل اعتماد الأجهزة لجميع الجهات القائمة
+  // تصحيح شعار المؤسسات القائمة ليكون الشعار الجمهوري الافتراضي وضمان توليد مفاتيح التشفير
   try {
+    db.exec("UPDATE organizations SET logoUrl='Image/app_logo.jpg' WHERE logoUrl='Image/codex_logo.jpg' OR logoUrl IS NULL;");
     const allOrgs = db.prepare('SELECT id, encKey FROM organizations').all();
     for (const o of allOrgs) {
       if (!o.encKey) {
@@ -488,7 +489,7 @@ function buildMe(user) {
       id: org.id,
       orgCode: org.orgCode,
       orgName: org.orgName,
-      logoUrl: org.logoUrl || null,
+      logoUrl: org.logoUrl || 'Image/app_logo.jpg',
       phone: org.phone,
       status: org.status,
       encKey: org.encKey || ''
@@ -659,7 +660,7 @@ const server = http.createServer(async (req, res) => {
       if (!code) { send(res, 200, { found: false, error: 'رمز الجهة مطلوب' }); return; }
       const masterCode = getSetting('GLOBAL', 'masterOrgCode', 'CODEX').toUpperCase();
       if (code === 'CODEX' || code === 'SUPER' || code === masterCode) {
-        send(res, 200, { found: true, isSuper: true, org: { orgCode: masterCode, orgName: 'الإدارة المركزية (Super Admin)' } });
+        send(res, 200, { found: true, isSuper: true, org: { orgCode: masterCode, orgName: 'الإدارة المركزية (Super Admin)', logoUrl: 'Image/app_logo.jpg' } });
         return;
       }
       const org = db.prepare('SELECT id, orgCode, orgName, logoUrl, status FROM organizations WHERE orgCode=?').get(code);
@@ -668,6 +669,7 @@ const server = http.createServer(async (req, res) => {
         send(res, 200, { found: true, suspended: true, org, error: 'حساب هذه الجهة موقف حالياً. يرجى مراجعة إدارة كودكس.' });
         return;
       }
+      org.logoUrl = org.logoUrl || 'Image/app_logo.jpg';
       send(res, 200, { found: true, org });
       return;
     }
