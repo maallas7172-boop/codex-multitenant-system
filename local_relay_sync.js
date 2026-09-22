@@ -69,6 +69,28 @@ async function loginToCloud(orgCode, userName, password) {
   return null;
 }
 
+function getNextReportNumber(db, orgId) {
+  try {
+    const rows = db.prepare('SELECT reportNumber FROM reports WHERE orgId=?').all(orgId);
+    let maxNum = 0;
+    for (const r of rows) {
+      if (!r || !r.reportNumber) continue;
+      const str = String(r.reportNumber).trim();
+      if (str.includes('مسودة') || str.toLowerCase().includes('draft') || str.startsWith('#')) continue;
+      const match = str.match(/\d+/g);
+      if (match) {
+        const lastNum = parseInt(match[match.length - 1], 10);
+        if (!isNaN(lastNum) && lastNum > maxNum && lastNum < 100000000) {
+          maxNum = lastNum;
+        }
+      }
+    }
+    return String(maxNum > 0 ? maxNum + 1 : 1);
+  } catch(e) {
+    return String(Date.now().toString().slice(-4));
+  }
+}
+
 async function syncOrgQueue(db, org, cloudToken) {
   try {
     // 1. Pull queued items from cloud
@@ -88,19 +110,24 @@ async function syncOrgQueue(db, org, cloudToken) {
         if (item.itemType === 'report' && item.payload) {
           const r = item.payload;
           try {
+            let repNum = String(r.reportNumber || '').trim();
+            if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#')) {
+              repNum = getNextReportNumber(db, org.id);
+            }
             db.prepare(`INSERT OR REPLACE INTO reports(
               id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
               enteredBy, enteredByUserId, rating, logoId, createdAt, updatedAt, syncedAt
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
               .run(
-                r.id, org.id, r.reportNumber, r.subject || '', r.target || '',
+                r.id, org.id, repNum, r.subject || '', r.target || '',
                 r.reportDate || '', r.reportTime || '', r.location || '', r.details || '',
-                JSON.stringify(r.images || []), r.enteredBy || '', r.enteredByUserId || null,
+                typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
+                r.enteredBy || '', r.enteredByUserId || null,
                 r.rating || 'عادي', r.logoId || 'logo1', r.createdAt || new Date().toISOString(),
                 r.updatedAt || new Date().toISOString(), new Date().toISOString()
               );
             ackIds.push(item.id);
-            console.log(`[💾 HardDisk Sync] تم حفظ التقرير (${r.reportNumber} - ${r.subject}) بنجاح على القرص الصلب للجهة (${org.orgName})`);
+            console.log(`[💾 HardDisk Sync] تم حفظ التقرير (${repNum} - ${r.subject}) بنجاح على القرص الصلب للجهة (${org.orgName})`);
           } catch(err) {
             console.error('Error saving report to local DB:', err.message);
           }

@@ -373,7 +373,7 @@ function showSuperReportDetail(reportId) {
   const modal = document.getElementById('superReportDetailModal');
   if (modal) {
     modal.classList.add('show');
-    modal.style.display = 'grid';
+    modal.style.display = 'flex';
   }
 }
 
@@ -413,7 +413,11 @@ function printSuperReport(reportToPrint) {
     'الإدارة العامة للعمليات والمتابعة',
     'المركز الرئيسي'
   ];
-  const headerLinesHtml = lines.filter(Boolean).map(l => `<div>${esc(l)}</div>`).join('');
+  const headerLinesHtml = lines.filter(Boolean).map((l, idx) => {
+    return idx === 0 
+      ? `<div class="hdr-line-main">${esc(l)}</div>` 
+      : `<div class="hdr-line-sub">${esc(l)}</div>`;
+  }).join('');
   const logoUrl = cfg.logoUrl || 'Image/1754379379088.jpg';
   const showBasmala = cfg.showBasmala !== false;
   const basmalaText = cfg.basmalaText || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
@@ -442,14 +446,17 @@ function printSuperReport(reportToPrint) {
 <head>
 <meta charset="UTF-8" />
 <title>تقرير — ${esc(r.subject || r.reportNumber || 'تقرير')}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Aref+Ruqaa:wght@400;700&family=Cairo:wght@400;600;700;800;900&display=swap" />
 <style>
   body { font-family: system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; margin: 0; padding: 24px; direction: rtl; font-size: 13.5px; }
   .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 20px; }
-  .header-right { text-align: right; font-size: 13px; line-height: 1.6; font-weight: 700; color: #0f172a; }
-  .header-center { text-align: center; }
-  .header-center img { width: 68px; height: 68px; object-fit: contain; margin-bottom: 4px; }
-  .header-center .basmala { font-size: 13px; font-weight: 800; color: #334155; margin-bottom: 4px; }
-  .header-left { text-align: left; font-size: 12.5px; line-height: 1.7; }
+  .header-right { flex: 1 1 35%; min-width: 150px; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; margin: 0 auto; }
+  .hdr-line-main { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 23px; font-weight: 800; color: #0f172a; line-height: 1.35; letter-spacing: 0.5px; text-align: center; width: 100%; margin: 0 auto 3px auto; display: block; }
+  .hdr-line-sub { font-size: 14px; font-weight: 700; color: #334155; line-height: 1.4; text-align: center; width: 100%; margin: 0 auto; display: block; }
+  .header-center { flex: 0 0 auto; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 16px; margin: 0 auto; }
+  .header-center img { max-height: 80px; max-width: 140px; object-fit: contain; margin-bottom: 4px; display: block; }
+  .header-center .basmala { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 16.5px; font-weight: 800; color: #0f172a; margin-bottom: 6px; letter-spacing: 0.5px; text-align: center; line-height: 1.25; display: block; }
+  .header-left { flex: 1 1 35%; min-width: 150px; text-align: left; font-size: 13px; line-height: 1.7; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 4px; font-family: 'Cairo', sans-serif; }
   .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px 18px; border-radius: 8px; margin-bottom: 18px; }
   .meta-item { font-size: 13px; line-height: 1.6; }
   .meta-item b { color: #1e3a8a; }
@@ -480,7 +487,7 @@ function printSuperReport(reportToPrint) {
     <div class="header-center">
       ${showBasmala ? `<div class="basmala">${esc(basmalaText)}</div>` : ''}
       <img src="${logoUrl}" alt="شعار" />
-      ${confidential ? `<div style="font-size:11px;font-weight:800;color:#b91c1c;margin-top:2px">${esc(confidential)}</div>` : ''}
+      ${confidential ? `<div style="font-size:11px;font-weight:800;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;padding:2px 10px;border-radius:10px;margin-top:4px">${esc(confidential)}</div>` : ''}
     </div>
     <div class="header-left">
       <div><b>الفرع:</b> <span style="color:#0284c7;font-weight:800">${esc(r.orgName || 'فرع')}</span> (${esc(r.orgCode || '')})</div>

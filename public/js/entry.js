@@ -259,8 +259,9 @@
     currentDraftId = null;
     edits = {};
     photos = [];
-    // رقم التقرير مؤقت للمسودة وسيتم إنشاء الرقم المتسلسل الرسمي تلقائياً عند المزامنة للسيرفر
-    $('fReportNumber').value = 'مسودة مؤقتة #' + Math.floor(100 + Math.random() * 900);
+    // رقم التقرير يُترك فارغاً للمسودة ليتم حجز الرقم المتسلسل الرسمي تلقائياً (آخر رقم + 1)
+    $('fReportNumber').value = '';
+    $('fReportNumber').placeholder = 'تلقائي (رقم التقرير الأخير + 1)';
     $('fSubject').value = '';
     $('fTarget').value = '';
     $('fDate').value = todayStr();
@@ -406,7 +407,9 @@
   /* ---------- حفظ كمسودة ---------- */
   $('saveDraftBtn').onclick = () => {
     const f = readFields();
-    if (!f.reportNumber) { toast('رقم التقرير مطلوب', 'err'); return; }
+    if (!f.reportNumber) {
+      f.reportNumber = 'مسودة #' + (loadLocalDrafts().length + 1);
+    }
     if (!f.subject) { toast('موضوع التقرير مطلوب', 'err'); return; }
     let list = loadLocalDrafts();
     if (currentDraftId) {
@@ -431,7 +434,6 @@
   $('syncBtn').onclick = async () => {
     if (busy) return;
     const f = readFields();
-    if (!f.reportNumber) { toast('رقم التقرير مطلوب', 'err'); return; }
     if (!f.subject) { toast('موضوع التقرير مطلوب', 'err'); return; }
     busy = true;
     $('syncBtn').disabled = true;
@@ -792,4 +794,9 @@
   bindPhotoAdd();
   renderDrafts();
   loadMyTasks();
+
+  // فحص ومزامنة دورية لمهام وتكليفات المدير في الخلفية كل 8 ثوانٍ
+  setInterval(() => {
+    loadMyTasks().catch(() => {});
+  }, 8000);
 })();

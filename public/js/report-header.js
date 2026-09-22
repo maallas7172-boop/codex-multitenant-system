@@ -66,7 +66,7 @@ function renderReportHeaderHTML(report, customOpts = {}) {
   else if (cfg.fontFamily === 'cairo') fontClass = 'font-cairo';
   else if (cfg.fontFamily === 'default') fontClass = 'font-sans';
 
-  // توليد أسطر الجهة على اليمين بحيث تكون متوسطة فوق بعضها بشكل منظم
+  // توليد أسطر الجهة على اليمين بحيث تكون متوسطة فوق بعضها بشكل منظم ومتناسق تماماً
   let rightHtml = '';
   let lines = cfg.rightLines;
   if (typeof lines === 'string') {
@@ -87,7 +87,7 @@ function renderReportHeaderHTML(report, customOpts = {}) {
   // الشعار
   let logoHtml = '';
   if (cfg.logoSrc) {
-    logoHtml = `<img src="${esc(cfg.logoSrc)}" alt="الشعار الرسمي" style="max-height:82px; max-width:140px; object-fit:contain; display:block; margin:0 auto;" />`;
+    logoHtml = `<img src="${esc(cfg.logoSrc)}" alt="الشعار الرسمي" style="max-height:80px; max-width:140px; object-fit:contain; display:block; margin:0 auto;" />`;
   } else if (cfg.logoHtml) {
     logoHtml = cfg.logoHtml;
   }
@@ -97,6 +97,7 @@ function renderReportHeaderHTML(report, customOpts = {}) {
     `<div class="hdr-basmala">${esc(cfg.basmalaText)}</div>` : '';
 
   return `
+    <style>${getReportHeaderCSS()}</style>
     <div class="report-header-master ${fontClass}">
       <div class="hdr-col hdr-right">
         ${rightHtml}
@@ -125,149 +126,160 @@ function getReportHeaderCSS() {
     @import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Aref+Ruqaa:wght@400;700&family=Cairo:wght@400;600;700;800;900&display=swap');
 
     .report-header-master {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 16px;
-      background: #ffffff;
-      border-radius: 8px;
-      direction: rtl;
+      display: flex !important;
+      flex-direction: row !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      padding: 10px 16px !important;
+      background: #ffffff !important;
+      border-radius: 8px !important;
+      direction: rtl !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
     }
-    .report-header-master.font-diwani {
-      font-family: 'Diwani Letter', 'Aref Ruqaa', 'Traditional Arabic', 'Amiri', serif;
-    }
-    .report-header-master.font-diwani .hdr-line-main {
-      font-size: 23px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      text-align: center;
-    }
-    .report-header-master.font-diwani .hdr-line-sub {
-      font-size: 15.5px;
-      font-weight: 700;
-      text-align: center;
-    }
+    .report-header-master.font-diwani,
+    .report-header-master.font-diwani .hdr-line-main,
+    .report-header-master.font-diwani .hdr-line-sub,
     .report-header-master.font-diwani .hdr-basmala {
-      font-size: 18px;
-      font-weight: 700;
-      text-align: center;
+      font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', 'Simplified Arabic', serif !important;
     }
-    .report-header-master.font-amiri {
-      font-family: 'Amiri', 'Traditional Arabic', 'Times New Roman', serif;
+    .report-header-master.font-amiri,
+    .report-header-master.font-amiri .hdr-line-main,
+    .report-header-master.font-amiri .hdr-line-sub,
+    .report-header-master.font-amiri .hdr-basmala {
+      font-family: 'Amiri', 'Traditional Arabic', 'Times New Roman', serif !important;
     }
-    .report-header-master.font-ruqaa {
-      font-family: 'Aref Ruqaa', 'Traditional Arabic', serif;
+    .report-header-master.font-ruqaa,
+    .report-header-master.font-ruqaa .hdr-line-main,
+    .report-header-master.font-ruqaa .hdr-line-sub,
+    .report-header-master.font-ruqaa .hdr-basmala {
+      font-family: 'Aref Ruqaa', 'Traditional Arabic', serif !important;
     }
-    .report-header-master.font-cairo {
-      font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+    .report-header-master.font-cairo,
+    .report-header-master.font-cairo .hdr-line-main,
+    .report-header-master.font-cairo .hdr-line-sub,
+    .report-header-master.font-cairo .hdr-basmala {
+      font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif !important;
     }
     .report-header-master.font-sans {
-      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif !important;
     }
 
-    .hdr-col {
-      display: flex;
-      flex-direction: column;
+    .report-header-master .hdr-col {
+      display: flex !important;
+      flex-direction: column !important;
     }
-    .hdr-right {
-      flex: 1 1 0%;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      gap: 2px;
+    .report-header-master .hdr-right {
+      flex: 1 1 35% !important;
+      min-width: 150px !important;
+      text-align: center !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: center !important;
+      align-items: center !important;
+      gap: 2px !important;
+      margin: 0 auto !important;
     }
-    .hdr-line-main {
-      font-size: 21px;
-      font-weight: 800;
-      color: #0f172a;
-      line-height: 1.35;
-      letter-spacing: 0.3px;
-      text-align: center;
-      width: 100%;
-      margin: 0 auto 2px auto;
+    .report-header-master .hdr-line-main {
+      font-size: 23px !important;
+      font-weight: 800 !important;
+      color: #0f172a !important;
+      line-height: 1.35 !important;
+      letter-spacing: 0.5px !important;
+      text-align: center !important;
+      width: 100% !important;
+      margin: 0 auto 3px auto !important;
+      display: block !important;
     }
-    .hdr-line-sub {
-      font-size: 14.5px;
-      font-weight: 700;
-      color: #334155;
-      line-height: 1.35;
-      text-align: center;
-      width: 100%;
-      margin: 0 auto;
-    }
-    .hdr-center {
-      flex: 0 0 auto;
-      text-align: center;
-      align-items: center;
-      justify-content: center;
-      padding: 0 16px;
-    }
-    .hdr-basmala {
-      font-size: 16px;
-      font-weight: 700;
-      color: #0f172a;
-      margin-bottom: 5px;
-      letter-spacing: 0.5px;
-      text-align: center;
-      line-height: 1.2;
-    }
-    .hdr-logo-box {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin: 0 auto 4px auto;
-      text-align: center;
-    }
-    .hdr-logo-box img {
-      max-height: 82px;
-      max-width: 140px;
-      object-fit: contain;
-      display: block;
-      margin: 0 auto;
-    }
-    .hdr-confidential-tag {
-      display: inline-block;
-      padding: 3px 12px;
-      background: #fef2f2;
-      color: #dc2626;
-      border: 1px solid #fca5a5;
-      border-radius: 12px;
-      font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
-      font-size: 12px !important;
+    .report-header-master .hdr-line-sub {
+      font-size: 14.5px !important;
       font-weight: 700 !important;
-      letter-spacing: 0.3px;
-      margin: 4px auto 0 auto;
-      line-height: 1.35;
+      color: #334155 !important;
+      line-height: 1.4 !important;
+      text-align: center !important;
+      width: 100% !important;
+      margin: 0 auto !important;
+      display: block !important;
+    }
+    .report-header-master .hdr-center {
+      flex: 0 0 auto !important;
+      text-align: center !important;
+      align-items: center !important;
+      justify-content: center !important;
+      padding: 0 16px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      margin: 0 auto !important;
+    }
+    .report-header-master .hdr-basmala {
+      font-size: 16.5px !important;
+      font-weight: 800 !important;
+      color: #0f172a !important;
+      margin: 0 auto 6px auto !important;
+      letter-spacing: 0.5px !important;
+      text-align: center !important;
+      line-height: 1.25 !important;
+      display: block !important;
+    }
+    .report-header-master .hdr-logo-box {
+      display: flex !important;
+      justify-content: center !important;
+      align-items: center !important;
+      margin: 0 auto 4px auto !important;
+      text-align: center !important;
+    }
+    .report-header-master .hdr-logo-box img {
+      max-height: 80px !important;
+      max-width: 140px !important;
+      object-fit: contain !important;
+      display: block !important;
+      margin: 0 auto !important;
+    }
+    .report-header-master .hdr-confidential-tag {
+      display: inline-block !important;
+      padding: 2px 10px !important;
+      background: #fef2f2 !important;
+      color: #dc2626 !important;
+      border: 1px solid #fca5a5 !important;
+      border-radius: 10px !important;
+      font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
+      font-size: 11.5px !important;
+      font-weight: 800 !important;
+      letter-spacing: 0.3px !important;
+      margin: 4px auto 0 auto !important;
+      line-height: 1.35 !important;
       text-shadow: none !important;
+      text-align: center !important;
     }
-    .hdr-left {
-      flex: 1 1 0%;
-      text-align: left;
-      font-size: 13.5px;
-      color: #1e293b;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 4px;
+    .report-header-master .hdr-left {
+      flex: 1 1 35% !important;
+      min-width: 150px !important;
+      text-align: left !important;
+      font-size: 13px !important;
+      color: #1e293b !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: center !important;
+      align-items: flex-end !important;
+      gap: 4px !important;
       font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
     }
-    .hdr-info-item {
-      display: flex;
-      justify-content: flex-end;
-      gap: 6px;
+    .report-header-master .hdr-info-item {
+      display: flex !important;
+      justify-content: flex-end !important;
+      align-items: center !important;
+      gap: 6px !important;
       font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
     }
-    .hdr-info-item b {
-      color: #64748b;
-      font-weight: 700;
+    .report-header-master .hdr-info-item b {
+      color: #64748b !important;
+      font-weight: 700 !important;
     }
     .report-header-line {
-      height: 3px;
-      background: linear-gradient(90deg, #1e293b, #2563eb, #0d9488);
-      margin: 12px 0 20px 0;
-      border-radius: 2px;
+      height: 3px !important;
+      background: linear-gradient(90deg, #1e293b, #2563eb, #0d9488) !important;
+      margin: 10px 0 18px 0 !important;
+      border-radius: 2px !important;
     }
   `;
 }

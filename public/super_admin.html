@@ -830,6 +830,52 @@
   </div>
 </div>
 
+<!-- نافذة تفاصيل التقرير للإدارة المركزية -->
+<div class="modal-back" id="superReportDetailModal" style="display:none;align-items:center;justify-content:center;overflow-y:auto;padding:16px;z-index:9999">
+  <div class="modal card" style="max-width:760px;width:95%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;margin:auto;box-shadow:0 25px 60px rgba(0,0,0,0.35);border-radius:16px">
+    <div class="modal-head" style="flex-shrink:0;padding:16px 22px;background:linear-gradient(180deg,#f8fafc,#f1f5f9);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between">
+      <h3 id="srdTitle" style="font-size:16.5px;font-weight:900;margin:0;color:#0f172a;display:flex;align-items:center;gap:8px">
+        <span>📄</span> <span>تفاصيل وبيان التقرير</span>
+      </h3>
+      <button type="button" class="x-btn" onclick="closeSuperReportDetailModal()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:22px 24px;overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch">
+      <!-- شبكة بيانات التقرير والفرع -->
+      <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 18px;margin-bottom:18px;display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;font-size:13px">
+        <div><span style="color:#64748b">🏢 الفرع / الجهة:</span> <b id="srdOrgName" style="color:#0284c7">—</b></div>
+        <div><span style="color:#64748b">🔢 رقم التقرير:</span> <b id="srdReportNumber" style="font-family:monospace;color:#1e3a8a">—</b></div>
+        <div><span style="color:#64748b">📅 التاريخ والوقت:</span> <b id="srdDateTime">—</b></div>
+        <div><span style="color:#64748b">👤 المحرر / المدخل:</span> <b id="srdEnteredBy">—</b></div>
+        <div style="grid-column:1/-1"><span style="color:#64748b">📍 الجهة المستهدفة / الموقع:</span> <b id="srdTarget">—</b></div>
+      </div>
+
+      <!-- موضوع التقرير -->
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-weight:800;font-size:13.5px;color:#1e3a8a;margin-bottom:6px">📝 موضوع التقرير:</label>
+        <div id="srdSubject" style="font-size:15px;font-weight:800;color:#0f172a;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px"></div>
+      </div>
+
+      <!-- بيان وتفاصيل التقرير -->
+      <div style="margin-bottom:18px">
+        <label style="display:block;font-weight:800;font-size:13.5px;color:#1e3a8a;margin-bottom:6px">📋 بيان وتفاصيل التقرير الكاملة:</label>
+        <div id="srdDetails" style="font-size:13.5px;line-height:1.9;white-space:pre-wrap;color:#334155;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:14px 16px;min-height:90px"></div>
+      </div>
+
+      <!-- الصور والمرفقات الميدانية -->
+      <div id="srdImagesSection" style="display:none;margin-bottom:14px">
+        <label style="display:block;font-weight:800;font-size:13.5px;color:#1e3a8a;margin-bottom:8px">📷 المرفقات والصور الميدانية:</label>
+        <div id="srdImagesGallery" style="display:flex;flex-wrap:wrap;gap:10px"></div>
+      </div>
+    </div>
+    <div class="modal-foot" style="flex-shrink:0;padding:14px 22px;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border-top:1px solid var(--line)">
+      <button type="button" class="btn btn-outline" onclick="closeSuperReportDetailModal()">إغلاق</button>
+      <button type="button" class="btn btn-primary" onclick="printSuperReport(activeSuperReport)" style="padding:10px 24px;font-weight:800;background:#0284c7;border-color:#0284c7">
+        🖨️ طباعة التقرير (رسمي)
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- فوتر الواجهة مع حقوق الملكية الرسمية لكودكس للبرمجيات ورقم الهاتف -->
 <footer style="text-align:center;padding:24px 20px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);margin-top:36px;background:#fff">
   <div style="font-weight:800;color:var(--text);font-size:13px">
@@ -844,10 +890,11 @@
 </footer>
 
 <script src="js/crypto-js.js"></script>
-<script src="js/config.js"></script>
-<script src="js/app.js"></script>
+<script src="js/config.js?v=20260922-2"></script>
+<script src="js/app.js?v=20260922-2"></script>
 <script src="js/qrcode.min.js"></script>
-<script src="js/super_admin.js"></script>
+<script src="js/report-header.js?v=20260922-2"></script>
+<script src="js/super_admin.js?v=20260922-2"></script>
 </body>
 </html>
 

@@ -196,6 +196,60 @@ function uid() { return crypto.randomUUID(); }
 function nowIso() { return new Date().toISOString(); }
 function hashHex(str) { return crypto.createHash('sha256').update(SALT + str).digest('hex'); }
 
+/**
+ * حساب الرقم المتسلسل الرسمي الحقيقي التالي لتقارير الفرع (آخر رقم + 1)
+ */
+function getNextReportNumber(orgId) {
+  try {
+    const rows = db.prepare('SELECT reportNumber FROM reports WHERE orgId=?').all(orgId);
+    let maxNum = 0;
+    for (const r of rows) {
+      if (!r || !r.reportNumber) continue;
+      const str = String(r.reportNumber).trim();
+      // استبعاد نصوص المسودات المؤقتة
+      if (str.includes('مسودة') || str.toLowerCase().includes('draft') || str.startsWith('#')) continue;
+      const match = str.match(/\d+/g);
+      if (match) {
+        const lastNum = parseInt(match[match.length - 1], 10);
+        if (!isNaN(lastNum) && lastNum > maxNum && lastNum < 100000000) {
+          maxNum = lastNum;
+        }
+      }
+    }
+    return String(maxNum > 0 ? maxNum + 1 : 1);
+  } catch(e) {
+    return String(Date.now().toString().slice(-4));
+  }
+}
+
+/**
+ * تصحيح وإعادة ترقيم أي تقارير قديمة في قاعدة البيانات كانت محفوظة بأرقام مسودات مؤقتة
+ */
+function repairExistingDraftReportNumbers() {
+  try {
+    const orgs = db.prepare('SELECT id FROM organizations').all();
+    for (const org of orgs) {
+      const badReports = db.prepare(`
+        SELECT id, reportNumber, createdAt 
+        FROM reports 
+        WHERE orgId=? AND (reportNumber LIKE '%مسودة%' OR reportNumber LIKE '%draft%' OR reportNumber IS NULL OR reportNumber = '')
+        ORDER BY createdAt ASC
+      `).all(org.id);
+
+      if (badReports && badReports.length > 0) {
+        for (const rep of badReports) {
+          const nextNum = getNextReportNumber(org.id);
+          db.prepare('UPDATE reports SET reportNumber=? WHERE id=?').run(nextNum, rep.id);
+          console.log(`[Auto-Repair] تم تصحيح رقم التقرير (${rep.reportNumber}) إلى الرقم الرسمي #${nextNum}`);
+        }
+      }
+    }
+  } catch(e) {
+    console.warn('Draft report number auto-repair notice:', e.message);
+  }
+}
+setTimeout(repairExistingDraftReportNumbers, 1500);
+
 function getSetting(orgId, key, fallback = '') {
   if (!orgId) return fallback;
   try {
@@ -1397,7 +1451,11 @@ const server = http.createServer(async (req, res) => {
         const repData = b.report || b;
         const id = repData.id || uid();
         const t = nowIso();
-        const repNum = String(repData.reportNumber || Date.now().toString().slice(-6));
+        
+        let repNum = String(repData.reportNumber || '').trim();
+        if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#') || repNum === 'undefined' || repNum === 'null') {
+          repNum = getNextReportNumber(orgId);
+        }
         const isEnc = repData.isEncrypted ? 1 : 0;
         const encPayload = String(repData.encryptedPayload || '');
         const encIv = String(repData.encryptedIv || '');
@@ -1427,7 +1485,7 @@ const server = http.createServer(async (req, res) => {
           report: fullReport,
           reportNumber: repNum,
           queueId: queueId,
-          message: 'تم ترحيل وحفظ التقرير بنجاح ✔'
+          message: `تم ترحيل وحفظ التقرير بنجاح برقم رسمي (#${repNum}) ✔`
         });
         return;
       }
@@ -1462,7 +1520,10 @@ const server = http.createServer(async (req, res) => {
         if (!subject) continue;
 
         const id = (r.id && String(r.id).trim()) || uid();
-        const repNum = String(r.reportNumber || Date.now().toString().slice(-6));
+        let repNum = String(r.reportNumber || '').trim();
+        if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#')) {
+          repNum = getNextReportNumber(orgId);
+        }
         const target = String(r.target || '');
         const repDate = String(r.reportDate || t.slice(0, 10));
         const repTime = String(r.reportTime || t.slice(11, 16));
@@ -1973,12 +2034,16 @@ async function performCloudRelaySync(targetOrgId) {
       if (item.itemType === 'report' && item.payload) {
         const r = item.payload;
         try {
+          let repNum = String(r.reportNumber || '').trim();
+          if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#')) {
+            repNum = getNextReportNumber(org.id);
+          }
           db.prepare(`INSERT OR REPLACE INTO reports(
             id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
             enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt, syncedAt
           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
             .run(
-              r.id, org.id, r.reportNumber, r.subject || '', r.target || '',
+              r.id, org.id, repNum, r.subject || '', r.target || '',
               r.reportDate || '', r.reportTime || '', r.location || '', r.details || '',
               typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
               r.enteredBy || '', r.enteredByUserId || null,
@@ -1988,7 +2053,7 @@ async function performCloudRelaySync(targetOrgId) {
             );
           ackIds.push(item.id);
           pulledReports++;
-          console.log(`[💾 HardDisk Sync] تم حفظ التقرير (${r.reportNumber} - ${r.subject}) بنجاح على القرص الصلب`);
+          console.log(`[💾 HardDisk Sync] تم حفظ التقرير (${repNum} - ${r.subject}) بنجاح على القرص الصلب`);
         } catch(e){}
       } else if (item.itemType === 'device_registration' && item.payload) {
         const dev = item.payload;
