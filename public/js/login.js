@@ -51,6 +51,8 @@
     checkOrgInfo(savedOrg, false);
   }
 
+  let checkTimer = null;
+
   // فحص معلومات الجهة وتحديث عنوان وشعار الشاشة
   async function checkOrgInfo(code, showFeedback = true) {
     if (!code) {
@@ -84,15 +86,20 @@
           return;
         }
 
-        // عند نجاح الاقتران: تظهر رسالة تم الاقتران بنجاح دون ذكر اسم الجهة لضمان الخصوصية وسرية المؤسسة
+        const orgName = (data.org && data.org.orgName) ? data.org.orgName : DEFAULT_TITLE;
+        mainTitle.textContent = orgName;
+        subTitle.textContent = 'منظومة إدارة الحسابات والتقارير الميدانية';
+        
+        // عرض شعار الجهة الخاص إذا كان مسجلاً وإلا يظل الطير الجمهوري هو الأساس
+        if (loginTopLogo) {
+          loginTopLogo.src = (data.org && data.org.logoUrl) ? data.org.logoUrl : DEFAULT_LOGO;
+        }
+
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#10b981';
-        orgStatusText.textContent = '✔ تم الاقتران بنجاح';
-        mainTitle.textContent = DEFAULT_TITLE;
-        subTitle.textContent = DEFAULT_SUBTITLE;
-        if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
+        orgStatusText.textContent = '✔ تم الاقتران بنجاح: ' + orgName;
         setOrgCode(code);
-        if (showFeedback) show('تم الاقتران بنجاح ✔', 'ok');
+        if (showFeedback) show('تم الاقتران بنجاح مع ' + orgName + ' ✔', 'ok');
       } else {
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#ef4444';
@@ -109,6 +116,7 @@
 
   if (btnCheckOrg) {
     btnCheckOrg.onclick = () => {
+      clearTimeout(checkTimer);
       const code = orgCodeInput.value.trim().toUpperCase();
       if (!code) return show('يرجى كتابة رمز الجهة أولاً', 'err');
       checkOrgInfo(code, true);
@@ -116,15 +124,22 @@
   }
 
   orgCodeInput.addEventListener('input', () => {
+    clearTimeout(checkTimer);
     const val = orgCodeInput.value.trim().toUpperCase();
     if (!val) {
       checkOrgInfo('', false);
     } else if (val === 'CODEX' || val === 'SUPER') {
       checkOrgInfo(val, false);
+    } else {
+      // فحص تلقائي سريع بعد التوقف عن الكتابة
+      checkTimer = setTimeout(() => {
+        checkOrgInfo(val, false);
+      }, 350);
     }
   });
 
   orgCodeInput.addEventListener('blur', () => {
+    clearTimeout(checkTimer);
     const code = orgCodeInput.value.trim().toUpperCase();
     if (code) checkOrgInfo(code, false);
   });

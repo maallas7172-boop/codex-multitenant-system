@@ -11,13 +11,37 @@
   .login-msg.err { color:var(--danger); }
   .login-msg.ok { color:var(--success); }
   .org-code-box { display:flex; gap:6px; }
+  .login-logo-card {
+    width: 106px;
+    height: 106px;
+    margin: 0 auto 16px;
+    background: #ffffff;
+    border-radius: 24px;
+    padding: 6px;
+    box-shadow: 0 10px 25px rgba(37, 99, 235, 0.16), 0 2px 8px rgba(0, 0, 0, 0.04);
+    border: 2px solid #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+  }
+  .login-logo-card img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+  }
 </style>
 </head>
 <body>
 <main class="login-wrap">
   <div class="login-card">
-    <div style="text-align:center;margin-bottom:14px">
-      <img id="loginTopLogo" class="login-logo" src="Image/app_logo.jpg" alt="نظام إدارة الحسابات" style="width:80px;height:80px;object-fit:cover;border-radius:20px;box-shadow:0 10px 24px rgba(37,99,235,0.25);border:2px solid #ffffff;cursor:pointer" title="انقر 3 مرات لضبط السيرفر" />
+    <div style="text-align:center">
+      <div class="login-logo-card">
+        <img id="loginTopLogo" class="login-logo" src="Image/app_logo.jpg" alt="شعار النظام" title="انقر 3 مرات لضبط السيرفر" style="cursor:pointer" />
+      </div>
     </div>
     <h1 id="loginMainTitle">إدارة الحسابات</h1>
     <p class="sub" id="loginSubTitle">منظومة إدارة الحسابات والتقارير المالية والميدانية</p>
@@ -68,8 +92,8 @@
   </div>
 </main>
 
-<script src="js/config.js"></script>
-<script src="js/app.js"></script>
-<script src="js/login.js"></script>
+<script src="js/config.js?v=20260922-102"></script>
+<script src="js/app.js?v=20260922-102"></script>
+<script src="js/login.js?v=20260922-102"></script>
 </body>
 </html>

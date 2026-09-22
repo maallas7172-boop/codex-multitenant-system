@@ -14,7 +14,9 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
-      <div class="logo">🧮</div>
+      <div class="logo" id="sidebarOrgLogoBox" style="width:36px;height:36px;border-radius:10px;background:#ffffff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;padding:2px;border:1px solid rgba(255,255,255,0.25);box-shadow:0 2px 6px rgba(0,0,0,0.12)">
+        <img id="sidebarOrgLogo" src="Image/app_logo.jpg" alt="Logo" style="width:100%;height:100%;object-fit:contain" />
+      </div>
       <div class="t"><span id="orgBrandTitle">إدارة الحسابات</span><small id="orgBrandSubtitle">لوحة مدير النظام</small></div>
     </div>
     <nav class="nav">
@@ -549,12 +551,16 @@
           <textarea id="hRightLines" style="display:none"></textarea>
 
           <div class="field">
-            <span>الشعار المعتمد في الترويسة</span>
+            <span>الشعار المعتمد في الواجهة والترويسة</span>
             <select id="hLogoSel" style="font-weight:700;color:var(--primary-dark)">
-              <option value="Image/1754379379088.jpg">شعار الجمهورية اليمنية الرسمي</option>
-              <option value="custom">📤 رفع صورة شعار جديدة من جهازك...</option>
+              <option value="Image/1754379379088.jpg">شعار الجمهورية اليمنية الرسمي (الأساس الافتراضي)</option>
+              <option value="custom">📤 رفع شعار خاص بالجهة من جهازك...</option>
             </select>
             <input type="file" id="hLogoFile" accept="image/*" style="display:none;margin-top:8px" />
+            <div id="hCustomLogoPreviewWrap" style="display:none;margin-top:10px;align-items:center;gap:10px;background:#f8fafc;padding:8px 12px;border-radius:8px;border:1px solid var(--line)">
+              <img id="hCustomLogoThumb" src="" alt="شعار الجهة" style="width:48px;height:48px;object-fit:contain;background:#fff;border-radius:8px;border:1px solid var(--line);padding:2px" />
+              <div style="font-size:12px;color:#047857;font-weight:700">✔ تم تحميل الشعار الخاص بالجهة بنجاح</div>
+            </div>
           </div>
 
           <div class="field">
@@ -805,10 +811,10 @@
 </div>
 
 <script src="js/crypto-js.js"></script>
-<script src="js/config.js?v=20260901-8"></script>
-<script src="js/app.js?v=20260901-8"></script>
+<script src="js/config.js?v=20260922-102"></script>
+<script src="js/app.js?v=20260922-102"></script>
 <script src="js/qrcode.min.js"></script>
-<script src="js/report-header.js?v=20260901-8"></script>
-<script src="js/admin.js?v=20260901-8"></script>
+<script src="js/report-header.js?v=20260922-102"></script>
+<script src="js/admin.js?v=20260922-102"></script>
 </body>
 </html>

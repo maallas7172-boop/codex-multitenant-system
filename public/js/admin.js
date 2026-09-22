@@ -10,6 +10,9 @@
     if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = org.orgName || 'إدارة المنظومة';
     if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الجهة: ' + (org.orgCode || '');
     if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = org.orgName + ' (' + org.orgCode + ')';
+    if (document.getElementById('sidebarOrgLogo')) {
+      document.getElementById('sidebarOrgLogo').src = org.logoUrl || 'Image/app_logo.jpg';
+    }
   }
   const canAccessAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings;
   if (!canAccessAdmin) {
@@ -1854,6 +1857,7 @@
         $('hLogoFile').click();
       } else {
         customLogoBase64 = '';
+        if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'none';
         renderHeaderPreview();
       }
     };
@@ -1866,8 +1870,11 @@
       const reader = new FileReader();
       reader.onload = () => {
         customLogoBase64 = reader.result;
+        if ($('hLogoSel')) $('hLogoSel').value = 'custom';
+        if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'flex';
+        if ($('hCustomLogoThumb')) $('hCustomLogoThumb').src = customLogoBase64;
         renderHeaderPreview();
-        toast('تم اختيار الصورة بنجاح ✔ — اضغط «حفظ الترويسة والتوقيعات» لتثبيتها');
+        toast('تم اختيار الشعار بنجاح ✔ — اضغط «حفظ الترويسة والتوقيعات والشعار» لتثبيته في النظام');
       };
       reader.readAsDataURL(file);
     };
@@ -1876,21 +1883,29 @@
   if ($('hSaveBtn')) {
     $('hSaveBtn').onclick = async () => {
       const cfg = getHeaderFormConfig();
+      const isCustomLogo = $('hLogoSel') && $('hLogoSel').value === 'custom' && customLogoBase64;
+      const logoToSave = isCustomLogo ? customLogoBase64 : null;
       try {
         await api('/settings', {
           method: 'PUT',
-          body: JSON.stringify({ reportHeaderConfig: cfg })
+          body: JSON.stringify({
+            reportHeaderConfig: cfg,
+            orgLogo: logoToSave
+          })
         });
         updateReportHeaderConfig(cfg);
+        if ($('sidebarOrgLogo')) {
+          $('sidebarOrgLogo').src = logoToSave || 'Image/app_logo.jpg';
+        }
         renderHeaderPreview();
-        toast('تم حفظ وتطبيق الترويسة والتوقيعات على جميع التقارير بنجاح ✔');
+        toast('تم حفظ وتطبيق الترويسة والتوقيعات والشعار بنجاح ✔');
       } catch (err) { toast(err.message, 'err'); }
     };
   }
 
   if ($('hResetBtn')) {
     $('hResetBtn').onclick = async () => {
-      if (!confirm('هل أنت متأكد من استعادة الإعدادات الافتراضية للترويسة والتوقيعات؟')) return;
+      if (!confirm('هل أنت متأكد من استعادة الإعدادات الافتراضية للترويسة والتوقيعات والشعار؟')) return;
       const defaultCfg = {
         line1: "الجمهورية اليمنية",
         line2: "وزارة النقل",
@@ -1920,9 +1935,16 @@
       try {
         await api('/settings', {
           method: 'PUT',
-          body: JSON.stringify({ reportHeaderConfig: defaultCfg })
+          body: JSON.stringify({
+            reportHeaderConfig: defaultCfg,
+            orgLogo: null
+          })
         });
         updateReportHeaderConfig(defaultCfg);
+        if ($('sidebarOrgLogo')) {
+          $('sidebarOrgLogo').src = 'Image/app_logo.jpg';
+        }
+        if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'none';
         renderSettings();
         toast('تم استعادة الإعدادات الافتراضية بنجاح ✔');
       } catch (err) { toast(err.message, 'err'); }
@@ -1969,13 +1991,15 @@
 
       if ($('hLogoSel')) {
         const currentSrc = cfg.logoSrc || '';
-        if (currentSrc === 'Image/1754379379088.jpg') {
-          $('hLogoSel').value = currentSrc;
-        } else if (currentSrc) {
+        if (currentSrc && currentSrc !== 'Image/1754379379088.jpg' && currentSrc !== 'Image/app_logo.jpg') {
           $('hLogoSel').value = 'custom';
           customLogoBase64 = currentSrc;
+          if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'flex';
+          if ($('hCustomLogoThumb')) $('hCustomLogoThumb').src = customLogoBase64;
         } else {
           $('hLogoSel').value = 'Image/1754379379088.jpg';
+          customLogoBase64 = '';
+          if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'none';
         }
       }
       renderHeaderPreview();

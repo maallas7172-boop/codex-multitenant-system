@@ -488,7 +488,7 @@ function buildMe(user) {
       id: org.id,
       orgCode: org.orgCode,
       orgName: org.orgName,
-      logoUrl: org.logoUrl || 'Image/codex_logo.jpg',
+      logoUrl: org.logoUrl || null,
       phone: org.phone,
       status: org.status,
       encKey: org.encKey || ''
@@ -1748,11 +1748,13 @@ const server = http.createServer(async (req, res) => {
           const rawHdr = getSetting(orgId, 'reportHeaderConfig', '');
           if (rawHdr) hdrCfg = JSON.parse(rawHdr);
         } catch(e){}
+        const orgRow = orgId ? db.prepare('SELECT logoUrl FROM organizations WHERE id=?').get(orgId) : null;
         const settings = {
           baseUrl: (req.headers['host'] ? ('http://' + req.headers['host']) : ('http://localhost:' + PORT)),
           enforceDeviceAuth: getSetting(orgId, 'enforceDeviceAuth', '1') === '1',
           consumeAddAfterSync: getSetting(orgId, 'consumeAddAfterSync', '0') === '1',
-          reportHeaderConfig: hdrCfg
+          reportHeaderConfig: hdrCfg,
+          orgLogo: orgRow ? orgRow.logoUrl : null
         };
         send(res, 200, { ok: true, settings });
         return;
@@ -1761,6 +1763,19 @@ const server = http.createServer(async (req, res) => {
         const b = await readBody(req);
         if (b.reportHeaderConfig !== undefined) {
           setSetting(orgId, 'reportHeaderConfig', JSON.stringify(b.reportHeaderConfig));
+          if (b.reportHeaderConfig && b.reportHeaderConfig.logoSrc && orgId) {
+            const lSrc = b.reportHeaderConfig.logoSrc;
+            if (lSrc && lSrc !== 'Image/1754379379088.jpg' && lSrc !== 'Image/app_logo.jpg') {
+              try { db.prepare('UPDATE organizations SET logoUrl=? WHERE id=?').run(lSrc, orgId); } catch(e){}
+            } else if (lSrc === 'Image/1754379379088.jpg' || lSrc === 'Image/app_logo.jpg') {
+              try { db.prepare('UPDATE organizations SET logoUrl=NULL WHERE id=?').run(orgId); } catch(e){}
+            }
+          }
+        }
+        if (b.orgLogo !== undefined && orgId) {
+          try {
+            db.prepare('UPDATE organizations SET logoUrl=? WHERE id=?').run(b.orgLogo || null, orgId);
+          } catch(e){}
         }
         if (b.enforceDeviceAuth !== undefined) {
           setSetting(orgId, 'enforceDeviceAuth', b.enforceDeviceAuth ? '1' : '0');
