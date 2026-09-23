@@ -92,7 +92,8 @@
         
         // عرض شعار الجهة الخاص إذا كان مسجلاً وإلا يظل الطير الجمهوري هو الأساس
         if (loginTopLogo) {
-          loginTopLogo.src = (data.org && data.org.logoUrl) ? data.org.logoUrl : DEFAULT_LOGO;
+          const lUrl = (data.org && data.org.logoUrl) ? data.org.logoUrl : '';
+          loginTopLogo.src = (lUrl && lUrl !== 'Image/codex_logo.jpg') ? lUrl : DEFAULT_LOGO;
         }
 
         orgStatusText.style.display = 'block';

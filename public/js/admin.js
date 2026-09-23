@@ -2246,9 +2246,9 @@
 <body>
 <div class="card">
   <div class="header">
-    <img src="Image/codex_logo.jpg" alt="Codex" />
+    <img src="Image/app_logo.jpg" alt="الشعار الجمهوري" />
     <div>
-      <h2 style="margin:0">منظومة كودكس السحابية لإدارة التقارير</h2>
+      <h2 style="margin:0">منظومة إدارة التقارير الرسمية</h2>
       <small style="color:#64748b">بطاقة ربط واعتماد الهواتف الميدانية</small>
     </div>
   </div>

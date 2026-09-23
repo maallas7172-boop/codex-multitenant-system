@@ -17,8 +17,14 @@ const os = require('node:os');
 const { DatabaseSync } = require('node:sqlite');
 
 const ROOT = __dirname;
-const PUBLIC = path.join(ROOT, 'public');
-const DATA_DIR = path.join(ROOT, 'data');
+let PUBLIC = path.join(ROOT, 'public');
+if (!fs.existsSync(PUBLIC) && fs.existsSync(path.join(ROOT, '..', 'public'))) {
+  PUBLIC = path.join(ROOT, '..', 'public');
+}
+let DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
+if (!process.env.DATA_DIR && !fs.existsSync(DATA_DIR) && fs.existsSync(path.join(ROOT, '..', 'data'))) {
+  DATA_DIR = path.join(ROOT, '..', 'data');
+}
 const DB_PATH = path.join(DATA_DIR, 'multitenant.db');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
@@ -696,7 +702,9 @@ const server = http.createServer(async (req, res) => {
         send(res, 200, { found: true, suspended: true, org, error: 'حساب هذه الجهة موقف حالياً. يرجى مراجعة إدارة كودكس.' });
         return;
       }
-      org.logoUrl = org.logoUrl || 'Image/app_logo.jpg';
+      if (!org.logoUrl || org.logoUrl === 'Image/codex_logo.jpg') {
+        org.logoUrl = 'Image/app_logo.jpg';
+      }
       send(res, 200, { found: true, org });
       return;
     }
@@ -856,9 +864,10 @@ const server = http.createServer(async (req, res) => {
         const allowHqAccess = b.allowHqAccess !== undefined ? (b.allowHqAccess ? 1 : 0) : 1;
         const encKey = crypto.randomBytes(32).toString('hex');
         const orgId = uid();
+        const initialLogo = (b.logoUrl && b.logoUrl !== 'Image/codex_logo.jpg') ? b.logoUrl : 'Image/app_logo.jpg';
         db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
           VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`)
-          .run(orgId, orgCode, orgName, b.logoUrl || 'Image/codex_logo.jpg', b.phone || '', b.maxUsers || 50, allowHqAccess, encKey, nowIso());
+          .run(orgId, orgCode, orgName, initialLogo, b.phone || '', b.maxUsers || 50, allowHqAccess, encKey, nowIso());
 
         setSetting(orgId, 'enforceDeviceAuth', '1');
 
