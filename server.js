@@ -1623,39 +1623,54 @@ const server = http.createServer(async (req, res) => {
     /* ---- إدارة المهام والتكليفات داخل الجهة ---- */
     if (p === '/api/events' || p === '/api/events/mine') {
       if (method === 'GET') {
-        if (!can(me, 'canEvents') && !can(me, 'canEntry')) { sendError(res, 403, 'غير مصرح'); return; }
-        let sql = 'SELECT * FROM events WHERE orgId=?';
-        const params = [orgId];
-        if (me.role !== 'Admin' && (!me.canEvents || p === '/api/events/mine')) {
-          sql += ` AND (
-            assignedUserId = ? 
-            OR assignedUserId IS NULL 
-            OR assignedUserId = "" 
-            OR assignedUserId = "all" 
-            OR assignedUserId = "0" 
-            OR LOWER(assignedUserId) = LOWER(?)
-            OR assignedUserId IN (SELECT id FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?))
-            OR LOWER(assignedUserName) = LOWER(?) 
-            OR LOWER(assignedUserName) = LOWER(?) 
-            OR assignedUserName = "الكل" 
-            OR assignedUserName = "جميع الموظفين" 
-            OR LOWER(assignedUserName) LIKE ?
-            OR LOWER(?) LIKE '%' || LOWER(assignedUserName) || '%'
-          )`;
-          params.push(
-            me.id,
-            me.userName.toLowerCase(),
-            orgId,
-            me.userName.toLowerCase(),
-            me.userName.toLowerCase(),
-            me.fullName.toLowerCase(),
-            '%' + me.userName.toLowerCase() + '%',
-            me.fullName.toLowerCase()
-          );
+        const isMineOnly = p === '/api/events/mine';
+        if (!isMineOnly && !can(me, 'canEvents') && !can(me, 'canEntry')) {
+          sendError(res, 403, 'غير مصرح');
+          return;
         }
-        sql += ' ORDER BY eventDate DESC, createdDate DESC';
-        const events = db.prepare(sql).all(...params);
-        send(res, 200, { ok: true, events });
+
+        const allEvents = db.prepare('SELECT * FROM events WHERE orgId=? ORDER BY eventDate DESC, createdDate DESC').all(orgId);
+
+        let filteredEvents = allEvents;
+        if (me.role !== 'Admin' && (!me.canEvents || isMineOnly)) {
+          const myId = String(me.id || '').toLowerCase().trim();
+          const myUser = String(me.userName || '').toLowerCase().trim();
+          const myFull = String(me.fullName || '').toLowerCase().trim();
+
+          filteredEvents = allEvents.filter(e => {
+            if (e.isArchived) return false;
+            const aId = String(e.assignedUserId || '').toLowerCase().trim();
+            const aName = String(e.assignedUserName || '').toLowerCase().trim();
+
+            // مهمة عامة موجهة للجميع
+            if (!aId || aId === 'all' || aId === '0' || aId === 'null' || !aName || aName === 'الكل' || aName === 'جميع الموظفين' || aName === 'all') {
+              return true;
+            }
+            // مطابقة مباشرة بالمعرف أو اسم المستخدم أو الاسم الكامل
+            if (aId === myId || aId === myUser || aName === myUser || aName === myFull) {
+              return true;
+            }
+            // مطابقة جزئية بالاسم
+            if (myFull && aName && (aName.includes(myFull) || myFull.includes(aName))) {
+              return true;
+            }
+            if (myUser && aName && aName.includes(myUser)) {
+              return true;
+            }
+            // إذا كان المعرف يطابق مستخدم في نفس الفرع يحمل نفس اسم المستخدم
+            try {
+              const uRow = db.prepare('SELECT userName, fullName FROM users WHERE orgId=? AND id=?').get(orgId, e.assignedUserId);
+              if (uRow) {
+                if (String(uRow.userName || '').toLowerCase().trim() === myUser) return true;
+                if (String(uRow.fullName || '').toLowerCase().trim() === myFull) return true;
+              }
+            } catch(err){}
+
+            return false;
+          });
+        }
+
+        send(res, 200, { ok: true, events: filteredEvents });
         return;
       }
       if (method === 'POST') {
@@ -1665,10 +1680,10 @@ const server = http.createServer(async (req, res) => {
         const t = nowIso();
         const assignedUserId = b.assignedUserId ? String(b.assignedUserId) : me.id;
         let assignedUser = null;
-        if (assignedUserId) {
+        if (assignedUserId && assignedUserId !== 'all') {
           try { assignedUser = db.prepare('SELECT * FROM users WHERE orgId=? AND id=?').get(orgId, assignedUserId); } catch(e){}
         }
-        const assignedUserName = assignedUser ? assignedUser.fullName : (b.assignedUserName || me.fullName);
+        const assignedUserName = assignedUser ? assignedUser.fullName : (assignedUserId === 'all' ? 'جميع الموظفين' : (b.assignedUserName || me.fullName));
         db.prepare(`INSERT INTO events(
           id, orgId, title, eventType, notes, eventDate, eventTime, location,
           assignedUserId, assignedUserName, createdBy, createdById, createdDate, status
@@ -1682,7 +1697,7 @@ const server = http.createServer(async (req, res) => {
 
         // دفع التكليفات فوراً إلى السحابة إن كنا محلياً
         if (!process.env.RENDER && typeof performCloudRelaySync === 'function') {
-          setTimeout(() => performCloudRelaySync().catch(() => {}), 100);
+          setTimeout(() => performCloudRelaySync(orgId).catch(() => {}), 100);
         }
 
         send(res, 200, { ok: true, message: 'تم إرسال وتكليف المهمة بنجاح ✔', event: db.prepare('SELECT * FROM events WHERE id=?').get(id) });
