@@ -182,31 +182,31 @@ function formatServerUrl(raw) {
   return url.replace(/\/+$/, '');
 }
 
+function isNativeMobileApp() {
+  return typeof window !== 'undefined' && (
+    (typeof window.Capacitor !== 'undefined' && (window.Capacitor.isNativePlatform ? window.Capacitor.isNativePlatform() : true)) ||
+    location.protocol === 'capacitor:' ||
+    location.protocol === 'file:'
+  );
+}
+
 function getServerBaseUrl() {
   const custom = (localStorage.getItem(SERVER_URL_KEY) || '').trim();
   if (custom) return formatServerUrl(custom);
 
-  // إذا كان التطبيق يعمل داخل بيئة أندرويد / Capacitor / WebView أو ملف محلي
-  const isCapacitorOrMobileApp = (
-    typeof window !== 'undefined' && (
-      !!window.Capacitor ||
-      location.protocol === 'capacitor:' ||
-      location.protocol === 'file:' ||
-      (location.hostname === 'localhost' && (!location.port || location.port === '80' || location.port === '443'))
-    )
-  );
-
-  if (isCapacitorOrMobileApp && typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) {
+  // إذا كان التطبيق يعمل داخل تطبيق الهواتف الأصلي (Android App / Capacitor)
+  if (isNativeMobileApp() && typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) {
     return formatServerUrl(APP_CONFIG.defaultServerUrl);
   }
 
-  if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) {
-    if (location.protocol === 'file:' || location.port === '5500' || (!location.origin.includes('localhost') && !location.origin.includes('127.0.0.1'))) {
-      return formatServerUrl(APP_CONFIG.defaultServerUrl);
+  // إذا كان المتصفح يعمل على localhost أو السيرفر الحالي
+  if (typeof location !== 'undefined' && location.origin && (location.protocol === 'http:' || location.protocol === 'https:')) {
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.port === '80' || location.port === '8080') {
+      return '';
     }
   }
 
-  return formatServerUrl((typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) || '');
+  return (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) ? formatServerUrl(APP_CONFIG.defaultServerUrl) : '';
 }
 
 function setCustomServerUrl(url) {

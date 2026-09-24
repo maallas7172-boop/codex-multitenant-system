@@ -258,6 +258,22 @@ function getSetting(orgId, key, fallback = '') {
   } catch(e) { return fallback; }
 }
 
+function cleanupDuplicateUsers() {
+  try {
+    db.exec(`
+      DELETE FROM users 
+      WHERE rowid NOT IN (
+        SELECT MIN(rowid) 
+        FROM users 
+        GROUP BY COALESCE(orgId, '__GLOBAL__'), LOWER(userName)
+      );
+    `);
+  } catch(e) {
+    console.warn('User deduplication notice:', e.message);
+  }
+}
+setTimeout(cleanupDuplicateUsers, 1000);
+
 function setSetting(orgId, key, value) {
   if (!orgId) return;
   db.prepare('INSERT OR REPLACE INTO settings(orgId, key, value) VALUES(?,?,?)').run(orgId, key, String(value));
@@ -1351,7 +1367,12 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/users') {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
       if (method === 'GET') {
-        const users = db.prepare('SELECT * FROM users WHERE orgId=? ORDER BY role DESC, fullName ASC').all(orgId).map(publicUser);
+        const users = db.prepare(`
+          SELECT * FROM users 
+          WHERE orgId=? 
+          GROUP BY LOWER(userName)
+          ORDER BY role DESC, fullName ASC
+        `).all(orgId).map(publicUser);
         send(res, 200, { users });
         return;
       }
@@ -1606,8 +1627,31 @@ const server = http.createServer(async (req, res) => {
         let sql = 'SELECT * FROM events WHERE orgId=?';
         const params = [orgId];
         if (me.role !== 'Admin' && (!me.canEvents || p === '/api/events/mine')) {
-          sql += ' AND (assignedUserId=? OR assignedUserId IS NULL OR assignedUserId="" OR assignedUserId="all" OR assignedUserId="0" OR LOWER(assignedUserName)=? OR LOWER(assignedUserName)=? OR assignedUserName="الكل" OR assignedUserName="جميع الموظفين" OR LOWER(assignedUserName) LIKE ?)';
-          params.push(me.id, me.userName.toLowerCase(), me.fullName.toLowerCase(), '%' + me.userName.toLowerCase() + '%');
+          sql += ` AND (
+            assignedUserId = ? 
+            OR assignedUserId IS NULL 
+            OR assignedUserId = "" 
+            OR assignedUserId = "all" 
+            OR assignedUserId = "0" 
+            OR LOWER(assignedUserId) = LOWER(?)
+            OR assignedUserId IN (SELECT id FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?))
+            OR LOWER(assignedUserName) = LOWER(?) 
+            OR LOWER(assignedUserName) = LOWER(?) 
+            OR assignedUserName = "الكل" 
+            OR assignedUserName = "جميع الموظفين" 
+            OR LOWER(assignedUserName) LIKE ?
+            OR LOWER(?) LIKE '%' || LOWER(assignedUserName) || '%'
+          )`;
+          params.push(
+            me.id,
+            me.userName.toLowerCase(),
+            orgId,
+            me.userName.toLowerCase(),
+            me.userName.toLowerCase(),
+            me.fullName.toLowerCase(),
+            '%' + me.userName.toLowerCase() + '%',
+            me.fullName.toLowerCase()
+          );
         }
         sql += ' ORDER BY eventDate DESC, createdDate DESC';
         const events = db.prepare(sql).all(...params);

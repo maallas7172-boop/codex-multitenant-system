@@ -202,6 +202,20 @@ async function syncOrgQueue(db, org, cloudToken) {
       }
     } catch(e){}
 
+    // 5. Push local users & permissions to cloud
+    try {
+      const localUsers = db.prepare("SELECT * FROM users WHERE orgId=?").all(org.id);
+      if (localUsers.length > 0) {
+        await httpRequest(CLOUD_URL + '/api/relay/push-users', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + cloudToken,
+            'X-Org-Code': org.orgCode
+          }
+        }, { users: localUsers });
+      }
+    } catch(e){}
+
   } catch(err) {
     // offline or timeout
   }

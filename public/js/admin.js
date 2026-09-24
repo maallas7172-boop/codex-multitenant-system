@@ -1105,8 +1105,15 @@
   async function loadUserSelects() {
     try {
       const d = await api('/users');
-      const allUsers = d.users || [];
-      const activeUsers = allUsers.filter(u => u.isActive);
+      const rawUsers = d.users || [];
+      const seen = new Set();
+      const activeUsers = rawUsers.filter(u => {
+        if (!u.isActive) return false;
+        const key = (u.userName || u.id || '').toLowerCase().trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
       const opts = activeUsers.map(u => `<option value="${u.id}">${esc(u.fullName)} (${esc(u.userName)})</option>`).join('');
       if ($('rUser')) $('rUser').innerHTML = '<option value="">كل المستخدمين</option>' + opts;
       if ($('efAssignedUser')) $('efAssignedUser').innerHTML = '<option value="">-- اختر الموظف المكلف --</option><option value="all">📢 تكليف عام (لجميع الموظفين)</option>' + opts;
@@ -1413,7 +1420,14 @@
   async function renderUsers() {
     try {
       const d = await api('/users');
-      allOrgUsers = d.users || [];
+      const rawUsers = d.users || [];
+      const seen = new Set();
+      allOrgUsers = rawUsers.filter(u => {
+        const key = (u.userName || u.id || '').toLowerCase().trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
       const list = allOrgUsers.filter(u => u.userName.toLowerCase().includes(($('userSearch').value || '').trim().toLowerCase()));
       $('userTableBody').innerHTML = list.map(u => {
         const curPw = u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456');
