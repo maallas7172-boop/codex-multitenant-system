@@ -24,8 +24,8 @@
         location.replace('super_admin.html');
         return;
       }
-      const isOrgAdmin = u.role === 'Admin';
-      location.replace(isOrgAdmin ? 'admin.html' : 'entry.html');
+      const hasAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings;
+      location.replace(hasAdmin ? 'admin.html' : 'entry.html');
     } catch (e) {
       location.replace('login.html');
     }

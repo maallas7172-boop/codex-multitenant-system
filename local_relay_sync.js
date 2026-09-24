@@ -176,7 +176,7 @@ async function syncOrgQueue(db, org, cloudToken) {
 
     // 3. Push any local events to cloud
     try {
-      const localEvents = db.prepare("SELECT * FROM events WHERE orgId=? AND isArchived=0 ORDER BY createdDate DESC LIMIT 100").all(org.id);
+      const localEvents = db.prepare("SELECT * FROM events WHERE orgId=? ORDER BY createdDate DESC LIMIT 50").all(org.id);
       if (localEvents.length > 0) {
         await httpRequest(CLOUD_URL + '/api/relay/push-events', {
           method: 'POST',
@@ -188,23 +188,9 @@ async function syncOrgQueue(db, org, cloudToken) {
       }
     } catch(e){}
 
-    // 4. Push any local users & permissions to cloud
+    // 4. Push any local approved devices to cloud
     try {
-      const localUsers = db.prepare("SELECT * FROM users WHERE orgId=?").all(org.id);
-      if (localUsers.length > 0) {
-        await httpRequest(CLOUD_URL + '/api/relay/push-users', {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + cloudToken,
-            'X-Org-Code': org.orgCode
-          }
-        }, { users: localUsers });
-      }
-    } catch(e){}
-
-    // 5. Push any local approved devices to cloud
-    try {
-      const localDevices = db.prepare("SELECT * FROM devices WHERE orgId=? ORDER BY lastSeenAt DESC LIMIT 100").all(org.id);
+      const localDevices = db.prepare("SELECT * FROM devices WHERE orgId=? ORDER BY lastSeenAt DESC LIMIT 50").all(org.id);
       if (localDevices.length > 0) {
         await httpRequest(CLOUD_URL + '/api/relay/push-devices', {
           method: 'POST',

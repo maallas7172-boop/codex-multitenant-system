@@ -11,25 +11,13 @@
   .login-msg.err { color:var(--danger); }
   .login-msg.ok { color:var(--success); }
   .org-code-box { display:flex; gap:6px; }
-  .login-logo {
-    width: 105px;
-    height: 105px;
-    object-fit: contain;
-    cursor: pointer;
-    display: inline-block;
-    filter: drop-shadow(0 6px 14px rgba(0,0,0,0.12));
-    transition: all 0.25s ease;
-  }
-  .login-logo:hover {
-    transform: scale(1.03);
-  }
 </style>
 </head>
 <body>
 <main class="login-wrap">
   <div class="login-card">
-    <div style="text-align:center;margin-bottom:12px">
-      <img id="loginTopLogo" class="login-logo" src="Image/app_logo.jpg" alt="شعار النظام" title="انقر 3 مرات لضبط السيرفر" />
+    <div style="text-align:center;margin-bottom:14px">
+      <img id="loginTopLogo" class="login-logo" src="Image/app_logo.jpg" alt="نظام إدارة الحسابات" style="width:80px;height:80px;object-fit:cover;border-radius:20px;box-shadow:0 10px 24px rgba(37,99,235,0.25);border:2px solid #ffffff;cursor:pointer" title="انقر 3 مرات لضبط السيرفر" />
     </div>
     <h1 id="loginMainTitle">إدارة الحسابات</h1>
     <p class="sub" id="loginSubTitle">منظومة إدارة الحسابات والتقارير المالية والميدانية</p>
@@ -80,9 +68,8 @@
   </div>
 </main>
 
-<script src="js/config.js?v=20260924-107"></script>
-<script src="js/app.js?v=20260924-107"></script>
-<script src="js/crypto-js.js?v=20260924-107"></script>
-<script src="js/login.js?v=20260924-107"></script>
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+<script src="js/login.js"></script>
 </body>
 </html>

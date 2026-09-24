@@ -10,12 +10,10 @@
     if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = org.orgName || 'إدارة المنظومة';
     if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الجهة: ' + (org.orgCode || '');
     if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = org.orgName + ' (' + org.orgCode + ')';
-    if (document.getElementById('sidebarOrgLogo')) {
-      document.getElementById('sidebarOrgLogo').src = org.logoUrl || 'Image/app_logo.jpg';
-    }
   }
-  if (u.role !== 'Admin' && u.role !== 'SuperAdmin') {
-    location.replace('entry.html');
+  const canAccessAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings;
+  if (!canAccessAdmin) {
+    location.href = 'entry.html';
     return;
   }
   if (me.settings && me.settings.reportHeaderConfig && typeof updateReportHeaderConfig === 'function') {
@@ -1415,21 +1413,8 @@
   async function renderUsers() {
     try {
       const d = await api('/users');
-      const rawUsers = d.users || [];
-      // منع وعلاج أي تكرار محتمل في الواجهة
-      const seen = new Set();
-      const uniqueUsers = [];
-      for (const u of rawUsers) {
-        const key = (u.fullName || u.userName || '').trim().toLowerCase();
-        if (!seen.has(key)) {
-          seen.add(key);
-          uniqueUsers.push(u);
-        }
-      }
-      allOrgUsers = uniqueUsers;
-
-      const q = ($('userSearch').value || '').trim().toLowerCase();
-      const list = allOrgUsers.filter(u => !q || (u.fullName || '').toLowerCase().includes(q) || (u.userName || '').toLowerCase().includes(q));
+      allOrgUsers = d.users || [];
+      const list = allOrgUsers.filter(u => u.userName.toLowerCase().includes(($('userSearch').value || '').trim().toLowerCase()));
       $('userTableBody').innerHTML = list.map(u => {
         const curPw = u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456');
         if (u.role === 'Admin') {
@@ -1634,53 +1619,25 @@
 
   $('newUserBtn').onclick = () => openUserEditor(null);
 
-  function checkFullNameDuplicate() {
-    const input = $('ufFullName');
-    const errBox = $('ufFullNameError');
-    if (!input) return false;
-    const currentId = $('userForm')?.dataset.id || '';
-    const val = input.value.trim().toLowerCase();
-    if (!val) {
-      if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
-      input.style.borderColor = '';
-      return false;
-    }
-    const isDup = allOrgUsers.some(u => String(u.id) !== String(currentId) && (u.fullName || '').trim().toLowerCase() === val);
-    if (isDup) {
-      if (errBox) {
-        errBox.style.display = 'block';
-        errBox.textContent = `⚠️ اسم مدخل البيانات (الاسم الكامل) «${input.value.trim()}» مسجل مسبقاً لموظف آخر، يرجى كتابة اسم مختلف.`;
-      }
-      input.style.borderColor = '#dc2626';
-      return true;
-    } else {
-      if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
-      input.style.borderColor = '';
-      return false;
-    }
-  }
-
   function checkUserNameDuplicate() {
     const input = $('ufUserName');
     const errBox = $('ufUserNameError');
-    if (!input) return false;
+    if (!input || !errBox) return false;
     const currentId = $('userForm')?.dataset.id || '';
     const val = input.value.trim().toLowerCase();
     if (!val) {
-      if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+      errBox.style.display = 'none';
       input.style.borderColor = '';
       return false;
     }
     const isDup = allOrgUsers.some(u => String(u.id) !== String(currentId) && (u.userName || '').trim().toLowerCase() === val);
     if (isDup) {
-      if (errBox) {
-        errBox.style.display = 'block';
-        errBox.textContent = `⚠️ اسم المستخدم للدخول «${input.value.trim()}» مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر.`;
-      }
+      errBox.style.display = 'block';
+      errBox.textContent = `⚠️ اسم المستخدم «${input.value.trim()}» مسجل مسبقاً لموظف آخر، يرجى اختيار اسم فريد.`;
       input.style.borderColor = '#dc2626';
       return true;
     } else {
-      if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+      errBox.style.display = 'none';
       input.style.borderColor = '';
       return false;
     }
@@ -1692,25 +1649,12 @@
     $('ufUserName').readOnly = false;
     $('ufFullName').value = u ? u.fullName : '';
 
-    const errBoxU = $('ufUserNameError');
-    if (errBoxU) {
-      errBoxU.style.display = 'none';
-      errBoxU.textContent = '';
+    const errBox = $('ufUserNameError');
+    if (errBox) {
+      errBox.style.display = 'none';
+      errBox.textContent = '';
     }
     $('ufUserName').style.borderColor = '';
-
-    const errBoxF = $('ufFullNameError');
-    if (errBoxF) {
-      errBoxF.style.display = 'none';
-      errBoxF.textContent = '';
-    }
-    $('ufFullName').style.borderColor = '';
-
-    if (!$('ufFullName')._boundDupCheck) {
-      $('ufFullName')._boundDupCheck = true;
-      $('ufFullName').addEventListener('input', checkFullNameDuplicate);
-      $('ufFullName').addEventListener('blur', checkFullNameDuplicate);
-    }
 
     if (!$('ufUserName')._boundDupCheck) {
       $('ufUserName')._boundDupCheck = true;
@@ -1768,14 +1712,8 @@
     const fullName = $('ufFullName').value.trim();
     if (!userName || !fullName) { toast('الاسم واسم المستخدم مطلوبان', 'err'); return; }
 
-    if (checkFullNameDuplicate()) {
-      toast(`اسم مدخل البيانات (${fullName}) مسجل مسبقاً في هذا الفرع، يرجى كتابة اسم مختلف`, 'err');
-      $('ufFullName').focus();
-      return;
-    }
-
     if (checkUserNameDuplicate()) {
-      toast(`اسم المستخدم للدخول (${userName}) مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر`, 'err');
+      toast(`اسم مدخل البيانات (${userName}) مسجل مسبقاً، يرجى اختيار اسم فريد`, 'err');
       $('ufUserName').focus();
       return;
     }
@@ -1910,76 +1848,12 @@
   if ($('hFontSel')) $('hFontSel').onchange = renderHeaderPreview;
   if ($('hShowBasmala')) $('hShowBasmala').onchange = renderHeaderPreview;
 
-  /* ================= تخصيص شعار الجهة (الدخول واللوحة) ================= */
-  let orgLogoBase64 = '';
-  if ($('orgLogoSelect')) {
-    $('orgLogoSelect').onchange = function () {
-      if (this.value === 'custom') {
-        $('orgLogoFileInput').click();
-      } else {
-        orgLogoBase64 = '';
-        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = 'Image/app_logo.jpg';
-        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = 'الشعار الجمهوري الرسمي (الافتراضي)';
-      }
-    };
-  }
-  if ($('orgLogoFileInput')) {
-    $('orgLogoFileInput').onchange = function () {
-      const file = this.files[0];
-      if (!file) return;
-      if (file.size > 2 * 1024 * 1024) { toast('حجم الصورة كبير، اختر صورة أقل من 2 ميجابايت', 'err'); return; }
-      const reader = new FileReader();
-      reader.onload = () => {
-        orgLogoBase64 = reader.result;
-        if ($('orgLogoSelect')) $('orgLogoSelect').value = 'custom';
-        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = orgLogoBase64;
-        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = '✔ تم اختيار شعار مخصص (اضغط حفظ للتثبيت)';
-        toast('تم اختيار شعار الجهة بنجاح ✔ — اضغط «حفظ وتعيين شعار الجهة» لتثبيته');
-      };
-      reader.readAsDataURL(file);
-    };
-  }
-  if ($('btnSaveOrgLogo')) {
-    $('btnSaveOrgLogo').onclick = async () => {
-      const isCustom = $('orgLogoSelect') && $('orgLogoSelect').value === 'custom' && orgLogoBase64;
-      const logoToSave = isCustom ? orgLogoBase64 : 'Image/app_logo.jpg';
-      try {
-        await api('/settings', {
-          method: 'PUT',
-          body: JSON.stringify({ orgLogo: logoToSave })
-        });
-        if ($('sidebarOrgLogo')) $('sidebarOrgLogo').src = logoToSave;
-        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = isCustom ? '✔ شعار مخصص معتمد للجهة' : 'الشعار الجمهوري الرسمي (الافتراضي)';
-        toast('تم حفظ وتعيين شعار الجهة لواجهة الدخول واللوحة بنجاح ✔');
-      } catch (err) { toast(err.message, 'err'); }
-    };
-  }
-  if ($('btnResetOrgLogo')) {
-    $('btnResetOrgLogo').onclick = async () => {
-      if (!confirm('هل تريد استعادة شعار الطير الجمهوري الافتراضي لشاشة الدخول واللوحة؟')) return;
-      orgLogoBase64 = '';
-      try {
-        await api('/settings', {
-          method: 'PUT',
-          body: JSON.stringify({ orgLogo: 'Image/app_logo.jpg' })
-        });
-        if ($('orgLogoSelect')) $('orgLogoSelect').value = 'default';
-        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = 'Image/app_logo.jpg';
-        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = 'الشعار الجمهوري الرسمي (الافتراضي)';
-        if ($('sidebarOrgLogo')) $('sidebarOrgLogo').src = 'Image/app_logo.jpg';
-        toast('تم استعادة الشعار الجمهوري الافتراضي بنجاح ✔');
-      } catch (err) { toast(err.message, 'err'); }
-    };
-  }
-
-  /* ================= الإعدادات وتخصيص الترويسة ================= */
   if ($('hLogoSel')) {
     $('hLogoSel').onchange = function () {
       if (this.value === 'custom') {
         $('hLogoFile').click();
       } else {
         customLogoBase64 = '';
-        if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'none';
         renderHeaderPreview();
       }
     };
@@ -1992,11 +1866,8 @@
       const reader = new FileReader();
       reader.onload = () => {
         customLogoBase64 = reader.result;
-        if ($('hLogoSel')) $('hLogoSel').value = 'custom';
-        if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'flex';
-        if ($('hCustomLogoThumb')) $('hCustomLogoThumb').src = customLogoBase64;
         renderHeaderPreview();
-        toast('تم اختيار شعار الترويسة بنجاح ✔ — اضغط «حفظ الترويسة والتوقيعات» لتثبيته');
+        toast('تم اختيار الصورة بنجاح ✔ — اضغط «حفظ الترويسة والتوقيعات» لتثبيتها');
       };
       reader.readAsDataURL(file);
     };
@@ -2052,9 +1923,8 @@
           body: JSON.stringify({ reportHeaderConfig: defaultCfg })
         });
         updateReportHeaderConfig(defaultCfg);
-        if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'none';
         renderSettings();
-        toast('تم استعادة الإعدادات الافتراضية للترويسة بنجاح ✔');
+        toast('تم استعادة الإعدادات الافتراضية بنجاح ✔');
       } catch (err) { toast(err.message, 'err'); }
     };
   }
@@ -2064,22 +1934,6 @@
       const d = await api('/settings');
       const s = d.settings;
       if ($('netInfo')) $('netInfo').textContent = 'عنوان الخادم للشبكة: ' + s.baseUrl + ' — تعمل على نفس شبكة (واي فاي) المدير.';
-      
-      // تعبئة بيانات شعار الجهة المخصص المنفصل
-      if (s.orgLogo && s.orgLogo !== 'Image/app_logo.jpg' && s.orgLogo !== 'Image/1754379379088.jpg' && s.orgLogo !== 'Image/codex_logo.jpg') {
-        orgLogoBase64 = s.orgLogo;
-        if ($('orgLogoSelect')) $('orgLogoSelect').value = 'custom';
-        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = orgLogoBase64;
-        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = '✔ شعار مخصص معتمد للجهة';
-        if ($('sidebarOrgLogo')) $('sidebarOrgLogo').src = orgLogoBase64;
-      } else {
-        orgLogoBase64 = '';
-        if ($('orgLogoSelect')) $('orgLogoSelect').value = 'default';
-        if ($('orgLogoCurrentPreview')) $('orgLogoCurrentPreview').src = 'Image/app_logo.jpg';
-        if ($('orgLogoStatusText')) $('orgLogoStatusText').textContent = 'الشعار الجمهوري الرسمي (الافتراضي)';
-        if ($('sidebarOrgLogo')) $('sidebarOrgLogo').src = 'Image/app_logo.jpg';
-      }
-
       if (s.reportHeaderConfig) {
         updateReportHeaderConfig(s.reportHeaderConfig);
       }
@@ -2115,15 +1969,13 @@
 
       if ($('hLogoSel')) {
         const currentSrc = cfg.logoSrc || '';
-        if (currentSrc && currentSrc !== 'Image/1754379379088.jpg' && currentSrc !== 'Image/app_logo.jpg') {
+        if (currentSrc === 'Image/1754379379088.jpg') {
+          $('hLogoSel').value = currentSrc;
+        } else if (currentSrc) {
           $('hLogoSel').value = 'custom';
           customLogoBase64 = currentSrc;
-          if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'flex';
-          if ($('hCustomLogoThumb')) $('hCustomLogoThumb').src = customLogoBase64;
         } else {
           $('hLogoSel').value = 'Image/1754379379088.jpg';
-          customLogoBase64 = '';
-          if ($('hCustomLogoPreviewWrap')) $('hCustomLogoPreviewWrap').style.display = 'none';
         }
       }
       renderHeaderPreview();
@@ -2245,9 +2097,9 @@
 <body>
 <div class="card">
   <div class="header">
-    <img src="Image/app_logo.jpg" alt="الشعار الجمهوري" />
+    <img src="Image/codex_logo.jpg" alt="Codex" />
     <div>
-      <h2 style="margin:0">منظومة إدارة التقارير الرسمية</h2>
+      <h2 style="margin:0">منظومة كودكس السحابية لإدارة التقارير</h2>
       <small style="color:#64748b">بطاقة ربط واعتماد الهواتف الميدانية</small>
     </div>
   </div>

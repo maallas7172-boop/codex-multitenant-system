@@ -17,14 +17,8 @@ const os = require('node:os');
 const { DatabaseSync } = require('node:sqlite');
 
 const ROOT = __dirname;
-let PUBLIC = path.join(ROOT, 'public');
-if (!fs.existsSync(PUBLIC) && fs.existsSync(path.join(ROOT, '..', 'public'))) {
-  PUBLIC = path.join(ROOT, '..', 'public');
-}
-let DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
-if (!process.env.DATA_DIR && !fs.existsSync(DATA_DIR) && fs.existsSync(path.join(ROOT, '..', 'data'))) {
-  DATA_DIR = path.join(ROOT, '..', 'data');
-}
+const PUBLIC = path.join(ROOT, 'public');
+const DATA_DIR = path.join(ROOT, 'data');
 const DB_PATH = path.join(DATA_DIR, 'multitenant.db');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
@@ -179,33 +173,6 @@ try { db.exec("ALTER TABLE reports ADD COLUMN isEncrypted INTEGER DEFAULT 0;"); 
 try { db.exec("ALTER TABLE reports ADD COLUMN encryptedPayload TEXT;"); } catch(e){}
 try { db.exec("ALTER TABLE reports ADD COLUMN encryptedIv TEXT;"); } catch(e){}
 
-// حذف وتنظيف تكرار المستخدمين تلقائياً في قاعدة البيانات وضمان بقاء سجل واحد لكل مستخدم
-try {
-  // 1. حذف التكرار للمستخدمين بناءً على (orgId, fullName)
-  db.exec(`
-    DELETE FROM users 
-    WHERE orgId IS NOT NULL AND rowid NOT IN (
-      SELECT MIN(rowid) FROM users WHERE orgId IS NOT NULL GROUP BY orgId, LOWER(TRIM(fullName))
-    );
-  `);
-  // 2. حذف التكرار للمستخدمين بناءً على (orgId, userName)
-  db.exec(`
-    DELETE FROM users 
-    WHERE orgId IS NOT NULL AND rowid NOT IN (
-      SELECT MIN(rowid) FROM users WHERE orgId IS NOT NULL GROUP BY orgId, LOWER(TRIM(userName))
-    );
-  `);
-  // 3. حذف التكرار لحسابات الإدارة المركزية
-  db.exec(`
-    DELETE FROM users 
-    WHERE orgId IS NULL AND rowid NOT IN (
-      SELECT MIN(rowid) FROM users WHERE orgId IS NULL GROUP BY LOWER(TRIM(userName))
-    );
-  `);
-} catch(e) {
-  console.warn('Users deduplication cleanup notice:', e.message);
-}
-
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -314,7 +281,7 @@ function setSetting(orgId, key, value) {
     demoOrgId = uid();
     const demoEncKey = crypto.randomBytes(32).toString('hex');
     db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
-      VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/app_logo.jpg', '783745550', 'active', 50, 1, ?, ?)`)
+      VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/codex_logo.jpg', '783745550', 'active', 50, 1, ?, ?)`)
       .run(demoOrgId, demoEncKey, nowIso());
     setSetting(demoOrgId, 'enforceDeviceAuth', '1');
     console.log('✓ Created Demo Organization: DEMO with E2EE key');
@@ -322,7 +289,7 @@ function setSetting(orgId, key, value) {
     demoOrgId = demoOrg.id;
   }
 
-  const demoAdmin = db.prepare("SELECT * FROM users WHERE orgId=? AND (userName='admin' OR fullName='مدير الجهة النموذجية')").get(demoOrgId);
+  const demoAdmin = db.prepare("SELECT * FROM users WHERE orgId=? AND userName='admin'").get(demoOrgId);
   if (!demoAdmin) {
     const aId = uid();
     db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
@@ -331,7 +298,7 @@ function setSetting(orgId, key, value) {
       .run(aId, demoOrgId, hashHex('Admin@123'), nowIso());
   }
 
-  const demoUser = db.prepare("SELECT * FROM users WHERE orgId=? AND (userName='ahmed' OR fullName LIKE '%أحمد محمد%')").get(demoOrgId);
+  const demoUser = db.prepare("SELECT * FROM users WHERE orgId=? AND userName='ahmed'").get(demoOrgId);
   if (!demoUser) {
     const uId = uid();
     db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
@@ -340,9 +307,8 @@ function setSetting(orgId, key, value) {
       .run(uId, demoOrgId, hashHex('123456'), nowIso());
   }
 
-  // تصحيح شعار المؤسسات القائمة ليكون الشعار الجمهوري الافتراضي وضمان توليد مفاتيح التشفير
+  // ضمان توليد مفتاح تشفير طرفي وتفعيل اعتماد الأجهزة لجميع الجهات القائمة
   try {
-    db.exec("UPDATE organizations SET logoUrl='Image/app_logo.jpg' WHERE logoUrl='Image/codex_logo.jpg' OR logoUrl IS NULL;");
     const allOrgs = db.prepare('SELECT id, encKey FROM organizations').all();
     for (const o of allOrgs) {
       if (!o.encKey) {
@@ -367,8 +333,8 @@ function publicUser(u) {
     role: u.role,
     plainPassword: u.plainPassword || '',
     isActive: !!u.isActive,
-    canOpen: isAdminUser || !!u.canOpen || !!u.canEntry || !!u.canReports,
-    canAdd: isAdminUser || !!u.canAdd || !!u.canEntry,
+    canOpen: isAdminUser || !!u.canOpen || !!u.canReports || !!u.canEntry,
+    canAdd: isAdminUser || !!u.canAdd,
     canDelete: isAdminUser || !!u.canDelete || !!u.canReportsDelete,
     canEdit: isAdminUser || !!u.canEdit || !!u.canReportsEdit,
     canPrint: isAdminUser || !!u.canPrint || !!u.canReportsPrint,
@@ -378,7 +344,7 @@ function publicUser(u) {
     canReportsEdit: isAdminUser || !!u.canReportsEdit || !!u.canEdit,
     canReportsDelete: isAdminUser || !!u.canReportsDelete || !!u.canDelete,
     canReportsPrint: isAdminUser || !!u.canReportsPrint || !!u.canPrint,
-    canEvents: isAdminUser || !!u.canEvents,
+    canEvents: isAdminUser || !!u.canEvents || !!u.canDash || !!u.canReports,
     canUsers: isAdminUser || !!u.canUsers,
     canSettings: isAdminUser || !!u.canSettings,
     createdAt: u.createdAt
@@ -522,7 +488,7 @@ function buildMe(user) {
       id: org.id,
       orgCode: org.orgCode,
       orgName: org.orgName,
-      logoUrl: org.logoUrl || 'Image/app_logo.jpg',
+      logoUrl: org.logoUrl || 'Image/codex_logo.jpg',
       phone: org.phone,
       status: org.status,
       encKey: org.encKey || ''
@@ -693,7 +659,7 @@ const server = http.createServer(async (req, res) => {
       if (!code) { send(res, 200, { found: false, error: 'رمز الجهة مطلوب' }); return; }
       const masterCode = getSetting('GLOBAL', 'masterOrgCode', 'CODEX').toUpperCase();
       if (code === 'CODEX' || code === 'SUPER' || code === masterCode) {
-        send(res, 200, { found: true, isSuper: true, org: { orgCode: masterCode, orgName: 'الإدارة المركزية (Super Admin)', logoUrl: 'Image/app_logo.jpg' } });
+        send(res, 200, { found: true, isSuper: true, org: { orgCode: masterCode, orgName: 'الإدارة المركزية (Super Admin)' } });
         return;
       }
       const org = db.prepare('SELECT id, orgCode, orgName, logoUrl, status FROM organizations WHERE orgCode=?').get(code);
@@ -701,9 +667,6 @@ const server = http.createServer(async (req, res) => {
       if (org.status === 'suspended') {
         send(res, 200, { found: true, suspended: true, org, error: 'حساب هذه الجهة موقف حالياً. يرجى مراجعة إدارة كودكس.' });
         return;
-      }
-      if (!org.logoUrl || org.logoUrl === 'Image/codex_logo.jpg') {
-        org.logoUrl = 'Image/app_logo.jpg';
       }
       send(res, 200, { found: true, org });
       return;
@@ -864,10 +827,9 @@ const server = http.createServer(async (req, res) => {
         const allowHqAccess = b.allowHqAccess !== undefined ? (b.allowHqAccess ? 1 : 0) : 1;
         const encKey = crypto.randomBytes(32).toString('hex');
         const orgId = uid();
-        const initialLogo = (b.logoUrl && b.logoUrl !== 'Image/codex_logo.jpg') ? b.logoUrl : 'Image/app_logo.jpg';
         db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
           VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`)
-          .run(orgId, orgCode, orgName, initialLogo, b.phone || '', b.maxUsers || 50, allowHqAccess, encKey, nowIso());
+          .run(orgId, orgCode, orgName, b.logoUrl || 'Image/codex_logo.jpg', b.phone || '', b.maxUsers || 50, allowHqAccess, encKey, nowIso());
 
         setSetting(orgId, 'enforceDeviceAuth', '1');
 
@@ -1264,7 +1226,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // 2. تأكيد استلام وحفظ التقارير على القرص الصلب وتفريغها نهائياً من السحابة (Acknowledge & Clear Transit Data)
+    // 2. تأكيد استلام وحفظ التقارير على القرص الصلب وتفريغها من السحابة (Acknowledge & Clear)
     if (method === 'POST' && p === '/api/relay/ack') {
       if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
       const b = await readBody(req);
@@ -1272,20 +1234,11 @@ const server = http.createServer(async (req, res) => {
       let deletedCount = 0;
       for (const id of itemIds) {
         try {
-          const row = db.prepare('SELECT payload FROM cloud_relay_queue WHERE orgId=? AND id=?').get(orgId, id);
-          if (row && row.payload) {
-            try {
-              const rep = JSON.parse(row.payload);
-              if (rep && rep.id) {
-                db.prepare('DELETE FROM reports WHERE orgId=? AND id=?').run(orgId, rep.id);
-              }
-            } catch(err){}
-          }
           db.prepare('DELETE FROM cloud_relay_queue WHERE orgId=? AND id=?').run(orgId, id);
           deletedCount++;
         } catch(e){}
       }
-      send(res, 200, { ok: true, clearedCount: deletedCount, message: 'تم تأكيد الحفظ على جهاز المدير وتفريغ البيانات تماماً من السحابة ✔' });
+      send(res, 200, { ok: true, clearedCount: deletedCount, message: 'تم تأكيد الحفظ وتفريغ الطابور السحابي بنجاح ✔' });
       return;
     }
 
@@ -1343,17 +1296,7 @@ const server = http.createServer(async (req, res) => {
       const users = Array.isArray(b.users) ? b.users : [];
       let upsertedCount = 0;
       for (const u of users) {
-        if (!u.userName && !u.fullName) continue;
-        const uName = String(u.userName || '').trim();
-        const fName = String(u.fullName || uName).trim();
-        if (!uName || !fName) continue;
-
-        const existing = db.prepare(`
-          SELECT id FROM users 
-          WHERE orgId=? AND (id=? OR LOWER(TRIM(userName))=LOWER(TRIM(?)) OR LOWER(TRIM(fullName))=LOWER(TRIM(?)))
-        `).get(orgId, u.id || '', uName, fName);
-
-        const targetId = existing ? existing.id : (u.id || uid());
+        if (!u.id || !u.userName) continue;
         db.prepare(`INSERT OR REPLACE INTO users(
           id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
           canOpen, canAdd, canDelete, canEdit, canPrint,
@@ -1361,7 +1304,7 @@ const server = http.createServer(async (req, res) => {
           canEvents, canUsers, canSettings, createdAt
         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
-            targetId, orgId, uName, fName, u.passwordHash, u.plainPassword || '', u.role || 'EntryUser', u.isActive ? 1 : 0,
+            u.id, orgId, u.userName, u.fullName || u.userName, u.passwordHash, u.plainPassword || '', u.role || 'EntryUser', u.isActive ? 1 : 0,
             u.canOpen ? 1 : 0, u.canAdd ? 1 : 0, u.canDelete ? 1 : 0, u.canEdit ? 1 : 0, u.canPrint ? 1 : 0,
             u.canDash ? 1 : 0, u.canEntry ? 1 : 0, u.canReports ? 1 : 0, u.canReportsEdit ? 1 : 0, u.canReportsDelete ? 1 : 0, u.canReportsPrint ? 1 : 0,
             u.canEvents ? 1 : 0, u.canUsers ? 1 : 0, u.canSettings ? 1 : 0, u.createdAt || nowIso()
@@ -1418,19 +1361,8 @@ const server = http.createServer(async (req, res) => {
         const fullName = String(b.fullName || '').trim();
         if (!userName || !fullName) { sendError(res, 400, 'اسم المستخدم والاسم الكامل مطلوبان'); return; }
 
-        // التحقق من عدم تكرار الاسم الكامل (اسم مدخل البيانات) داخل نفس الجهة
-        const existsFullName = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(TRIM(fullName))=LOWER(TRIM(?))').get(orgId, fullName);
-        if (existsFullName) { 
-          sendError(res, 409, `اسم مدخل البيانات (${fullName}) مسجل مسبقاً في هذا الفرع، يرجى كتابة اسم مختلف`); 
-          return; 
-        }
-
-        // التحقق من اسم المستخدم للدخول
-        const existsUser = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(TRIM(userName))=LOWER(TRIM(?))').get(orgId, userName);
-        if (existsUser) { 
-          sendError(res, 409, `اسم المستخدم للدخول (${userName}) مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر`); 
-          return; 
-        }
+        const exists = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?)').get(orgId, userName);
+        if (exists) { sendError(res, 409, `اسم مدخل البيانات (${userName}) مسجل مسبقاً في هذا الفرع، يرجى اختيار اسم فريد`); return; }
 
         const pPlain = String(b.plainPassword || b.password || '123456').trim();
         const pHash = hashHex(pPlain);
@@ -1462,26 +1394,11 @@ const server = http.createServer(async (req, res) => {
 
       if (method === 'PUT') {
         const b = await readBody(req);
-        if (b.fullName !== undefined) {
-          const newFN = String(b.fullName || '').trim();
-          if (!newFN) { sendError(res, 400, 'الاسم الكامل مطلوب'); return; }
-          if (newFN.toLowerCase() !== (user.fullName || '').trim().toLowerCase()) {
-            const dupFN = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(TRIM(fullName))=LOWER(TRIM(?)) AND id<>?').get(orgId, newFN, user.id);
-            if (dupFN) { 
-              sendError(res, 409, `اسم مدخل البيانات (${newFN}) مسجل مسبقاً في هذا الفرع، يرجى كتابة اسم مختلف`); 
-              return; 
-            }
-          }
-        }
-        if (b.userName !== undefined) {
-          const newU = String(b.userName || '').trim();
-          if (!newU) { sendError(res, 400, 'اسم المستخدم للدخول مطلوب'); return; }
-          if (newU.toLowerCase() !== (user.userName || '').trim().toLowerCase()) {
-            const dupU = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(TRIM(userName))=LOWER(TRIM(?)) AND id<>?').get(orgId, newU, user.id);
-            if (dupU) { 
-              sendError(res, 409, `اسم المستخدم للدخول (${newU}) مسجل مسبقاً، يرجى اختيار اسم مستخدم آخر`); 
-              return; 
-            }
+        if (b.userName) {
+          const newU = String(b.userName).trim();
+          if (newU && newU.toLowerCase() !== user.userName.toLowerCase()) {
+            const dup = db.prepare('SELECT id FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?) AND id<>?').get(orgId, newU, user.id);
+            if (dup) { sendError(res, 409, `اسم مدخل البيانات (${newU}) مسجل مسبقاً في هذا الفرع، يرجى اختيار اسم فريد`); return; }
             db.prepare('UPDATE users SET userName=? WHERE id=?').run(newU, user.id);
           }
         }
@@ -1685,64 +1602,13 @@ const server = http.createServer(async (req, res) => {
     /* ---- إدارة المهام والتكليفات داخل الجهة ---- */
     if (p === '/api/events' || p === '/api/events/mine') {
       if (method === 'GET') {
-        if (p === '/api/events' && !can(me, 'canEvents') && !isOrgAdmin(me)) {
-          sendError(res, 403, 'غير مصرح');
-          return;
-        }
-
-        if (p === '/api/events/mine') {
-          // جلب كافة المهام غير المؤرشفة للجهة ثم تصفيتها بدقة فائقة
-          const allOrgEvents = db.prepare('SELECT * FROM events WHERE orgId=? AND isArchived=0 ORDER BY eventDate DESC, createdDate DESC').all(orgId);
-
-          const norm = (s) => (s || '').toLowerCase()
-            .replace(/[أإآ]/g, 'ا')
-            .replace(/ة/g, 'ه')
-            .replace(/ى/g, 'ي')
-            .replace(/[^\u0621-\u064A\w]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          const myId = String(me.id || '').trim();
-          const myUserNorm = norm(me.userName);
-          const myFullNorm = norm(me.fullName);
-
-          const myEvents = allOrgEvents.filter(ev => {
-            const evUserId = String(ev.assignedUserId || '').trim();
-            const evNameNorm = norm(ev.assignedUserName);
-
-            // 1. تكليف عام لجميع الموظفين
-            if (!evUserId || evUserId === 'all' || evUserId === '0' || evUserId === 'null' || evUserId === 'undefined') return true;
-            if (!evNameNorm || evNameNorm === 'الكل' || evNameNorm === 'جميع الموظفين' || evNameNorm === 'all') return true;
-
-            // 2. مطابقة المعرف المباشر
-            if (evUserId === myId) return true;
-
-            // 3. مطابقة اسم المستخدم أو الاسم الكامل بالتقارب الذكي
-            if (myUserNorm && (evNameNorm === myUserNorm || evNameNorm.includes(myUserNorm) || myUserNorm.includes(evNameNorm))) return true;
-            if (myFullNorm && (evNameNorm === myFullNorm || evNameNorm.includes(myFullNorm) || myFullNorm.includes(evNameNorm))) return true;
-
-            // 4. مطابقة الكلمات المشتركة (مثال: "أحمد محمد" مع "أحمد محمد علي")
-            const evWords = evNameNorm.split(' ').filter(w => w.length > 2);
-            const myWords = myFullNorm.split(' ').filter(w => w.length > 2);
-            const commonWords = evWords.filter(w => myWords.includes(w));
-            if (commonWords.length >= 2 || (evWords.length === 1 && commonWords.length === 1)) return true;
-
-            // 5. فحص ما إذا كان المعرف المسند في الفعالية يطابق مستخدماً في جدول المستخدمين له نفس اسم المستخدم أو الاسم الكامل
-            try {
-              const u = db.prepare('SELECT userName, fullName FROM users WHERE orgId=? AND id=?').get(orgId, evUserId);
-              if (u && (norm(u.userName) === myUserNorm || norm(u.fullName) === myFullNorm)) return true;
-            } catch(e){}
-
-            return false;
-          });
-
-          send(res, 200, { ok: true, events: myEvents });
-          return;
-        }
-
-        // لوحة تحكم المدير: جلب جميع المهام
+        if (!can(me, 'canEvents') && !can(me, 'canEntry')) { sendError(res, 403, 'غير مصرح'); return; }
         let sql = 'SELECT * FROM events WHERE orgId=?';
         const params = [orgId];
+        if (me.role !== 'Admin' && (!me.canEvents || p === '/api/events/mine')) {
+          sql += ' AND (assignedUserId=? OR assignedUserId IS NULL OR assignedUserId="" OR assignedUserId="all" OR assignedUserId="0" OR LOWER(assignedUserName)=? OR LOWER(assignedUserName)=? OR assignedUserName="الكل" OR assignedUserName="جميع الموظفين" OR LOWER(assignedUserName) LIKE ?)';
+          params.push(me.id, me.userName.toLowerCase(), me.fullName.toLowerCase(), '%' + me.userName.toLowerCase() + '%');
+        }
         sql += ' ORDER BY eventDate DESC, createdDate DESC';
         const events = db.prepare(sql).all(...params);
         send(res, 200, { ok: true, events });
@@ -1755,13 +1621,10 @@ const server = http.createServer(async (req, res) => {
         const t = nowIso();
         const assignedUserId = b.assignedUserId ? String(b.assignedUserId) : me.id;
         let assignedUser = null;
-        if (assignedUserId && assignedUserId !== 'all' && assignedUserId !== '0') {
+        if (assignedUserId) {
           try { assignedUser = db.prepare('SELECT * FROM users WHERE orgId=? AND id=?').get(orgId, assignedUserId); } catch(e){}
         }
-        const assignedUserName = (assignedUserId === 'all' || assignedUserId === '0')
-          ? 'جميع الموظفين'
-          : (assignedUser ? assignedUser.fullName : (b.assignedUserName || me.fullName));
-
+        const assignedUserName = assignedUser ? assignedUser.fullName : (b.assignedUserName || me.fullName);
         db.prepare(`INSERT INTO events(
           id, orgId, title, eventType, notes, eventDate, eventTime, location,
           assignedUserId, assignedUserName, createdBy, createdById, createdDate, status
@@ -1775,7 +1638,7 @@ const server = http.createServer(async (req, res) => {
 
         // دفع التكليفات فوراً إلى السحابة إن كنا محلياً
         if (!process.env.RENDER && typeof performCloudRelaySync === 'function') {
-          setTimeout(() => performCloudRelaySync(orgId).catch(() => {}), 100);
+          setTimeout(() => performCloudRelaySync().catch(() => {}), 100);
         }
 
         send(res, 200, { ok: true, message: 'تم إرسال وتكليف المهمة بنجاح ✔', event: db.prepare('SELECT * FROM events WHERE id=?').get(id) });
@@ -1831,13 +1694,11 @@ const server = http.createServer(async (req, res) => {
           const rawHdr = getSetting(orgId, 'reportHeaderConfig', '');
           if (rawHdr) hdrCfg = JSON.parse(rawHdr);
         } catch(e){}
-        const orgRow = orgId ? db.prepare('SELECT logoUrl FROM organizations WHERE id=?').get(orgId) : null;
         const settings = {
           baseUrl: (req.headers['host'] ? ('http://' + req.headers['host']) : ('http://localhost:' + PORT)),
           enforceDeviceAuth: getSetting(orgId, 'enforceDeviceAuth', '1') === '1',
           consumeAddAfterSync: getSetting(orgId, 'consumeAddAfterSync', '0') === '1',
-          reportHeaderConfig: hdrCfg,
-          orgLogo: orgRow ? orgRow.logoUrl : null
+          reportHeaderConfig: hdrCfg
         };
         send(res, 200, { ok: true, settings });
         return;
@@ -1846,19 +1707,6 @@ const server = http.createServer(async (req, res) => {
         const b = await readBody(req);
         if (b.reportHeaderConfig !== undefined) {
           setSetting(orgId, 'reportHeaderConfig', JSON.stringify(b.reportHeaderConfig));
-          if (b.reportHeaderConfig && b.reportHeaderConfig.logoSrc && orgId) {
-            const lSrc = b.reportHeaderConfig.logoSrc;
-            if (lSrc && lSrc !== 'Image/1754379379088.jpg' && lSrc !== 'Image/app_logo.jpg') {
-              try { db.prepare('UPDATE organizations SET logoUrl=? WHERE id=?').run(lSrc, orgId); } catch(e){}
-            } else if (lSrc === 'Image/1754379379088.jpg' || lSrc === 'Image/app_logo.jpg') {
-              try { db.prepare('UPDATE organizations SET logoUrl=NULL WHERE id=?').run(orgId); } catch(e){}
-            }
-          }
-        }
-        if (b.orgLogo !== undefined && orgId) {
-          try {
-            db.prepare('UPDATE organizations SET logoUrl=? WHERE id=?').run(b.orgLogo || null, orgId);
-          } catch(e){}
         }
         if (b.enforceDeviceAuth !== undefined) {
           setSetting(orgId, 'enforceDeviceAuth', b.enforceDeviceAuth ? '1' : '0');

@@ -51,8 +51,6 @@
     checkOrgInfo(savedOrg, false);
   }
 
-  let checkTimer = null;
-
   // فحص معلومات الجهة وتحديث عنوان وشعار الشاشة
   async function checkOrgInfo(code, showFeedback = true) {
     if (!code) {
@@ -86,21 +84,15 @@
           return;
         }
 
-        const orgName = (data.org && data.org.orgName) ? data.org.orgName : DEFAULT_TITLE;
-        mainTitle.textContent = orgName;
-        subTitle.textContent = 'منظومة إدارة الحسابات والتقارير الميدانية';
-        
-        // عرض شعار الجهة الخاص إذا كان مسجلاً وإلا يظل الطير الجمهوري هو الأساس
-        if (loginTopLogo) {
-          const lUrl = (data.org && data.org.logoUrl) ? data.org.logoUrl : '';
-          loginTopLogo.src = (lUrl && lUrl !== 'Image/codex_logo.jpg') ? lUrl : DEFAULT_LOGO;
-        }
-
+        // عند نجاح الاقتران: تظهر رسالة تم الاقتران بنجاح دون ذكر اسم الجهة لضمان الخصوصية وسرية المؤسسة
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#10b981';
-        orgStatusText.textContent = '✔ تم الاقتران بنجاح: ' + orgName;
+        orgStatusText.textContent = '✔ تم الاقتران بنجاح';
+        mainTitle.textContent = DEFAULT_TITLE;
+        subTitle.textContent = DEFAULT_SUBTITLE;
+        if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
         setOrgCode(code);
-        if (showFeedback) show('تم الاقتران بنجاح مع ' + orgName + ' ✔', 'ok');
+        if (showFeedback) show('تم الاقتران بنجاح ✔', 'ok');
       } else {
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#ef4444';
@@ -117,7 +109,6 @@
 
   if (btnCheckOrg) {
     btnCheckOrg.onclick = () => {
-      clearTimeout(checkTimer);
       const code = orgCodeInput.value.trim().toUpperCase();
       if (!code) return show('يرجى كتابة رمز الجهة أولاً', 'err');
       checkOrgInfo(code, true);
@@ -125,22 +116,15 @@
   }
 
   orgCodeInput.addEventListener('input', () => {
-    clearTimeout(checkTimer);
     const val = orgCodeInput.value.trim().toUpperCase();
     if (!val) {
       checkOrgInfo('', false);
     } else if (val === 'CODEX' || val === 'SUPER') {
       checkOrgInfo(val, false);
-    } else {
-      // فحص تلقائي سريع بعد التوقف عن الكتابة
-      checkTimer = setTimeout(() => {
-        checkOrgInfo(val, false);
-      }, 350);
     }
   });
 
   orgCodeInput.addEventListener('blur', () => {
-    clearTimeout(checkTimer);
     const code = orgCodeInput.value.trim().toUpperCase();
     if (code) checkOrgInfo(code, false);
   });
@@ -272,7 +256,8 @@
       }
 
       const u = response.user;
-      if (u.role === 'Admin') {
+      const isOrgAdminUser = u.role === 'Admin' || u.canDash || u.canUsers || u.canSettings;
+      if (isOrgAdminUser) {
         show('تم الدخول بنجاح إلى لوحة تحكم الجهة ✔', 'ok');
         setTimeout(() => { location.href = 'admin.html'; }, 400);
       } else {
@@ -312,7 +297,7 @@
             const u = offAuth.user || offAuth;
             show('✔ تم الدخول بنجاح في وضع عدم الاتصال (أوفلاين) — البيانات محفوظة محلياً', 'ok');
             setTimeout(() => {
-              if (u.role === 'Admin') {
+              if (u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings) {
                 location.href = 'admin.html';
               } else {
                 location.href = 'entry.html';
