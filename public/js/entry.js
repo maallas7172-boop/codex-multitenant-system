@@ -554,11 +554,6 @@
   }
 
   /* ================= مهام وتكليفات الموظف (Events & Tasks) ================= */
-  let isFirstTaskLoad = true;
-  let knownTaskIds = new Set();
-  let myTasksList = [];
-  let currentActiveFeedbackTaskId = null;
-
   async function loadMyTasks() {
     try {
       const res = await api('/events/mine');
