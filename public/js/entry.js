@@ -26,19 +26,21 @@
   }
   $('userNameTop').textContent = u.fullName + (u.role === 'Admin' ? ' (مدير)' : '');
   if (u.role === 'Admin') $('userAv').textContent = '👑';
+  else $('userAv').textContent = '📝';
 
-  // إظهار الأقسام المصرح للمستخدم بالانتقال إليها
-  const hasAnyAdminPerm = u.role === 'Admin' || u.canDash || u.canReports || u.canEvents || u.canUsers || u.canSettings;
-  if (hasAnyAdminPerm) {
-    if ($('adminNav')) $('adminNav').style.display = 'grid';
-    if ($('eNavDash')) $('eNavDash').style.display = (u.role === 'Admin' || u.canDash) ? 'flex' : 'none';
-    if ($('eNavReports')) $('eNavReports').style.display = (u.role === 'Admin' || u.canReports) ? 'flex' : 'none';
-    if ($('eNavEvents')) $('eNavEvents').style.display = (u.role === 'Admin' || u.canEvents) ? 'flex' : 'none';
-    if ($('eNavUsers')) $('eNavUsers').style.display = (u.role === 'Admin' || u.canUsers) ? 'flex' : 'none';
-    if ($('eNavSettings')) $('eNavSettings').style.display = (u.role === 'Admin' || u.canSettings) ? 'flex' : 'none';
+  // إظهار الأزرار المتاحة للموظف الميداني
+  if (u.role === 'Admin' || u.canReports) {
+    if ($('eNavMyReports')) $('eNavMyReports').style.display = 'flex';
   } else {
-    if ($('adminNav')) $('adminNav').style.display = 'none';
+    if ($('eNavMyReports')) $('eNavMyReports').style.display = 'none';
   }
+
+  if (u.role === 'Admin' || u.canEvents) {
+    if ($('eNavMyTasks')) $('eNavMyTasks').style.display = 'flex';
+  } else {
+    if ($('eNavMyTasks')) $('eNavMyTasks').style.display = 'none';
+  }
+
   if ($('permChips')) $('permChips').innerHTML = permBadges(u);
   $('lockOut').style.display = 'none';
 
@@ -613,6 +615,10 @@
         $('myTasksBadge').style.display = pendingCount > 0 ? 'inline-block' : 'none';
       }
 
+      if ($('eNavMyTasks')) {
+        $('eNavMyTasks').style.display = (u.role === 'Admin' || u.canEvents || myTasksList.length > 0) ? 'flex' : 'none';
+      }
+
       if ($('myTasksAlertCount')) {
         $('myTasksAlertCount').textContent = pendingCount > 0 ? `${pendingCount} جديدة بانتظار الاستلام` : `${myTasksList.length} مهام مسندة`;
         $('myTasksAlertCount').className = pendingCount > 0 ? 'badge warn' : 'badge green';
@@ -620,13 +626,12 @@
 
       if ($('myTasksAlertBanner')) {
         if (pendingCount > 0) {
+          $('myTasksAlertBanner').style.display = 'flex';
           $('myTasksAlertBanner').style.background = 'linear-gradient(135deg, #fffbeb, #fef3c7)';
           $('myTasksAlertBanner').style.borderColor = '#f59e0b';
           $('myTasksAlertBanner').style.boxShadow = '0 0 12px rgba(245, 158, 11, 0.25)';
         } else {
-          $('myTasksAlertBanner').style.background = 'linear-gradient(135deg, #eff6ff, #dbeafe)';
-          $('myTasksAlertBanner').style.borderColor = '#bfdbfe';
-          $('myTasksAlertBanner').style.boxShadow = 'none';
+          $('myTasksAlertBanner').style.display = 'none';
         }
       }
 
@@ -811,29 +816,244 @@
     };
   }
 
-  /* تبديل العرض بين شاشة إدخال التقارير وشاشة مهام الموظف */
+  /* ================= تقارير الموظف المسجلة في النظام ================= */
+  let myLoadedReports = [];
+
+  async function loadMyReports() {
+    const container = $('myReportsList');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted);font-weight:700">⏳ جارٍ جلب التقارير...</div>';
+    try {
+      const d = await api('/reports');
+      const raw = d.reports || [];
+      myLoadedReports = raw.map(r => (typeof decryptReportData === 'function' ? decryptReportData(r) : r));
+      renderMyReportsList();
+    } catch(err) {
+      container.innerHTML = `<div class="empty" style="padding:24px;color:var(--danger);font-weight:700">❌ تعذر تحميل التقارير: ${esc(err.message)}</div>`;
+    }
+  }
+
+  function renderMyReportsList() {
+    const container = $('myReportsList');
+    if (!container) return;
+    const searchVal = $('myReportsSearch') ? $('myReportsSearch').value.trim().toLowerCase() : '';
+    let list = myLoadedReports;
+    if (searchVal) {
+      list = list.filter(r =>
+        (r.reportNumber || '').toLowerCase().includes(searchVal) ||
+        (r.subject || '').toLowerCase().includes(searchVal) ||
+        (r.target || '').toLowerCase().includes(searchVal) ||
+        (r.location || '').toLowerCase().includes(searchVal) ||
+        (r.details || '').toLowerCase().includes(searchVal)
+      );
+    }
+
+    if (!list.length) {
+      container.innerHTML = `
+        <div class="empty" style="padding:32px 16px;text-align:center">
+          <div style="font-size:36px;margin-bottom:8px">📄</div>
+          <div style="font-size:14.5px;font-weight:800;color:var(--text)">لا توجد أي تقارير مسجلة مطابقة</div>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">التقارير التي تم ترحيلها وحفظها في النظام ستظهر هنا.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = list.map(r => {
+      const encBadge = (r._wasEncrypted || r.isEncrypted)
+        ? `<span class="badge green" style="font-size:10.5px;padding:2px 6px" title="تقرير مشفر E2EE">🔒 مشفر</span>`
+        : '';
+      const imgCount = (r.images && Array.isArray(r.images)) ? r.images.length : (r.imageCount || 0);
+
+      return `
+        <div class="card" style="padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:#ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span class="badge blue" style="font-weight:900;font-size:12px;font-family:monospace">#${esc(r.reportNumber || r.id)}</span>
+                ${encBadge}
+                <h4 style="margin:0;font-size:15px;font-weight:800;color:var(--text)">${esc(r.subject)}</h4>
+              </div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">
+                المعني / الجهة: <b>${esc(r.target || '—')}</b> • الموقع: <b>${esc(r.location || '—')}</b>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              ${typeof badgeStatus === 'function' ? badgeStatus(r.rating || 'عادي') : `<span class="badge">${esc(r.rating || 'عادي')}</span>`}
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;border-top:1px dashed var(--line);padding-top:10px;margin-top:8px;font-size:12px;color:var(--muted)">
+            <div>
+              📅 <b>${esc(r.reportDate || '—')}</b> ${r.reportTime ? '⏰ ' + esc(r.reportTime) : ''}
+              ${imgCount > 0 ? `&nbsp;•&nbsp; <span class="badge blue" style="font-size:11px;padding:2px 6px">📎 ${imgCount} مرفقات</span>` : ''}
+            </div>
+            <button class="btn btn-outline btn-sm" data-view-entry-report="${r.id}" style="padding:4px 12px;font-size:12px;font-weight:700">
+              👁️ عرض التقرير والمرفقات
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('[data-view-entry-report]').forEach(b => {
+      b.onclick = () => {
+        const item = myLoadedReports.find(x => x.id === b.dataset.viewEntryReport);
+        if (item) showEntryReportDetail(item);
+      };
+    });
+  }
+
+  function showEntryReportDetail(r) {
+    if (!r) return;
+    const headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML(r) : '';
+    const rawImages = (r.images && Array.isArray(r.images)) ? r.images : [];
+    const attachments = rawImages.map(normalizeAttachment);
+
+    let attHtml = '';
+    if (attachments.length) {
+      attHtml = `
+        <h3 style="margin:18px 0 10px;font-size:14px;display:flex;align-items:center;gap:6px">
+          <span>📎 المرفقات والوسائط المتعددة (${attachments.length})</span>
+        </h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:12px">
+          ${attachments.map((att) => {
+            const isImg = att.type.startsWith('image/');
+            const isVid = att.type.startsWith('video/');
+            const isAud = att.type.startsWith('audio/');
+            const icon = typeof getAttachmentIcon === 'function' ? getAttachmentIcon(att.type, att.name) : '📎';
+            const sizeStr = typeof formatBytes === 'function' ? formatBytes(att.size) : '';
+
+            if (isImg) {
+              return `
+                <div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#f8fafc;display:flex;flex-direction:column">
+                  <a href="${att.data}" target="_blank" download="${esc(att.name)}" style="display:block;height:100px;overflow:hidden;background:#000" title="اضغط للتكبير أو التنزيل">
+                    <img src="${att.data}" alt="${esc(att.name)}" style="width:100%;height:100%;object-fit:cover" />
+                  </a>
+                  <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center;font-size:11px;background:#fff">
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:80px" title="${esc(att.name)}">${esc(att.name)}</span>
+                    <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 6px;font-size:10.5px" title="تنزيل">⬇️</a>
+                  </div>
+                </div>`;
+            } else if (isVid) {
+              return `
+                <div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#0f172a;color:#fff;display:flex;flex-direction:column">
+                  <video src="${att.data}" controls style="width:100%;height:100px;background:#000;object-fit:contain"></video>
+                  <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center;font-size:11px;background:#1e293b">
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:80px" title="${esc(att.name)}">🎬 ${esc(att.name)}</span>
+                    <a href="${att.data}" download="${esc(att.name)}" class="btn btn-primary btn-xs" style="padding:2px 6px;font-size:10.5px" title="تنزيل">⬇️</a>
+                  </div>
+                </div>`;
+            } else if (isAud) {
+              return `
+                <div style="border:1px solid var(--line);border-radius:8px;padding:8px;background:#f8fafc;display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;align-items:center;gap:4px;font-weight:700;font-size:11.5px">
+                    <span>🎵</span>
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:90px" title="${esc(att.name)}">${esc(att.name)}</span>
+                  </div>
+                  <audio src="${att.data}" controls style="width:100%;height:28px"></audio>
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:10.5px;color:var(--muted)">
+                    <span>${sizeStr}</span>
+                    <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:1px 6px;font-size:10.5px">⬇️</a>
+                  </div>
+                </div>`;
+            } else {
+              return `
+                <div style="border:1px solid var(--line);border-radius:8px;padding:10px;background:#ffffff;display:flex;flex-direction:column;justify-content:space-between;gap:8px">
+                  <div style="display:flex;align-items:flex-start;gap:6px">
+                    <span style="font-size:22px;line-height:1">${icon}</span>
+                    <div style="flex:1;overflow:hidden">
+                      <div style="font-size:11.5px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(att.name)}">${esc(att.name)}</div>
+                      <div style="font-size:10.5px;color:var(--muted);margin-top:2px">${sizeStr}</div>
+                    </div>
+                  </div>
+                  <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="width:100%;justify-content:center;font-size:11px;gap:4px">
+                    <span>⬇️ تنزيل</span>
+                  </a>
+                </div>`;
+            }
+          }).join('')}
+        </div>`;
+    }
+
+    const secNotice = (r._wasEncrypted || r.isEncrypted) ? `
+      <div style="background:#ecfdf5;border:1px solid #10b981;color:#065f46;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;display:flex;align-items:center;gap:6px">
+        <span>🔒</span>
+        <span><b>هذا التقرير مشفر ومحمي بتقنية (E2EE):</b> تم فك التشفير وعرض المحتوى الأصلي بأمان.</span>
+      </div>` : '';
+
+    $('erdModalBody').innerHTML = `
+      ${headerHtml}
+      ${secNotice}
+      <table class="recent-table" style="margin-bottom:6px;width:100%">
+        <tr><th style="width:140px">رقم التقرير</th><td><b>${esc(r.reportNumber || '—')}</b></td></tr>
+        <tr><th>موضوع التقرير</th><td><b>${esc(r.subject || '—')}</b></td></tr>
+        <tr><th>الجهة / الشخص</th><td>${esc(r.target || '—')}</td></tr>
+        <tr><th>المكان</th><td>${esc(r.location || '—')}</td></tr>
+        <tr><th>التاريخ والوقت</th><td>${esc(r.reportDate || '—')} ${r.reportTime ? '— ' + esc(r.reportTime) : ''}</td></tr>
+        <tr><th>تقييم التقرير</th><td>${typeof badgeStatus === 'function' ? badgeStatus(r.rating || 'عادي') : esc(r.rating || 'عادي')}</td></tr>
+      </table>
+      <h4 style="margin:14px 0 8px;font-size:14px">التقرير التفصيلي</h4>
+      <div style="background:var(--surface-soft);border:1px solid var(--line);border-radius:var(--r-md);padding:14px;line-height:1.9;white-space:pre-wrap;font-size:13px">${esc(r.details || '—')}</div>
+      ${attHtml}
+      <div style="font-size:11.5px;color:var(--muted);margin-top:12px;border-top:1px dashed var(--line);padding-top:8px">
+        مُدخل التقرير: <b>${esc(r.enteredBy || '—')}</b>
+      </div>
+    `;
+
+    $('entryReportDetailModal')?.classList.add('show');
+  }
+
+  if ($('myReportsSearch')) $('myReportsSearch').oninput = renderMyReportsList;
+  if ($('btnRefreshMyReports')) $('btnRefreshMyReports').onclick = loadMyReports;
+  if ($('erdCloseBtn')) $('erdCloseBtn').onclick = () => $('entryReportDetailModal')?.classList.remove('show');
+  if ($('erdCloseBtnFoot')) $('erdCloseBtnFoot').onclick = () => $('entryReportDetailModal')?.classList.remove('show');
+
+  /* ================= تبديل الواجهات في تطبيق الإدخال ================= */
+  function showEntryView() {
+    if ($('myTasksBox')) $('myTasksBox').style.display = 'none';
+    if ($('myReportsBox')) $('myReportsBox').style.display = 'none';
+    if ($('entryReportsHead')) $('entryReportsHead').style.display = 'flex';
+    if ($('eNavEntry')) $('eNavEntry').classList.add('active');
+    if ($('eNavMyTasks')) $('eNavMyTasks').classList.remove('active');
+    if ($('eNavMyReports')) $('eNavMyReports').classList.remove('active');
+    renderDrafts();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function showTasksView() {
     if ($('myTasksBox')) $('myTasksBox').style.display = 'block';
+    if ($('myReportsBox')) $('myReportsBox').style.display = 'none';
     if ($('draftBox')) $('draftBox').style.display = 'none';
     if ($('formCard')) $('formCard').style.display = 'none';
     if ($('entryReportsHead')) $('entryReportsHead').style.display = 'none';
     if ($('eNavMyTasks')) $('eNavMyTasks').classList.add('active');
     if ($('eNavEntry')) $('eNavEntry').classList.remove('active');
+    if ($('eNavMyReports')) $('eNavMyReports').classList.remove('active');
     loadMyTasks();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  function showReportsView() {
+  function showMyReportsView() {
+    if ($('myReportsBox')) $('myReportsBox').style.display = 'block';
     if ($('myTasksBox')) $('myTasksBox').style.display = 'none';
-    if ($('entryReportsHead')) $('entryReportsHead').style.display = 'flex';
+    if ($('draftBox')) $('draftBox').style.display = 'none';
+    if ($('formCard')) $('formCard').style.display = 'none';
+    if ($('entryReportsHead')) $('entryReportsHead').style.display = 'none';
+    if ($('eNavMyReports')) $('eNavMyReports').classList.add('active');
+    if ($('eNavEntry')) $('eNavEntry').classList.remove('active');
     if ($('eNavMyTasks')) $('eNavMyTasks').classList.remove('active');
-    if ($('eNavEntry')) $('eNavEntry').classList.add('active');
-    renderDrafts();
+    loadMyReports();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  if ($('eNavEntry')) $('eNavEntry').onclick = showEntryView;
   if ($('eNavMyTasks')) $('eNavMyTasks').onclick = showTasksView;
+  if ($('eNavMyReports')) $('eNavMyReports').onclick = showMyReportsView;
   if ($('btnToggleTasksView')) $('btnToggleTasksView').onclick = showTasksView;
+  if ($('btnBackToReportsFromTasks')) $('btnBackToReportsFromTasks').onclick = showEntryView;
+  if ($('btnBackToEntryFromReports')) $('btnBackToEntryFromReports').onclick = showEntryView;
+  if ($('btnRefreshMyTasks')) $('btnRefreshMyTasks').onclick = loadMyTasks;
+
   if ($('myTasksAlertBanner')) {
     $('myTasksAlertBanner').style.cursor = 'pointer';
     $('myTasksAlertBanner').onclick = (e) => {
@@ -841,9 +1061,6 @@
       showTasksView();
     };
   }
-  if ($('eNavEntry')) $('eNavEntry').onclick = showReportsView;
-  if ($('btnBackToReportsFromTasks')) $('btnBackToReportsFromTasks').onclick = showReportsView;
-  if ($('btnRefreshMyTasks')) $('btnRefreshMyTasks').onclick = loadMyTasks;
 
   bindPhotoAdd();
   renderDrafts();

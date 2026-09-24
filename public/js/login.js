@@ -272,8 +272,7 @@
       }
 
       const u = response.user;
-      const isOrgAdminUser = u.role === 'Admin' || u.canDash || u.canUsers || u.canSettings;
-      if (isOrgAdminUser) {
+      if (u.role === 'Admin') {
         show('تم الدخول بنجاح إلى لوحة تحكم الجهة ✔', 'ok');
         setTimeout(() => { location.href = 'admin.html'; }, 400);
       } else {
@@ -313,7 +312,7 @@
             const u = offAuth.user || offAuth;
             show('✔ تم الدخول بنجاح في وضع عدم الاتصال (أوفلاين) — البيانات محفوظة محلياً', 'ok');
             setTimeout(() => {
-              if (u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings) {
+              if (u.role === 'Admin') {
                 location.href = 'admin.html';
               } else {
                 location.href = 'entry.html';

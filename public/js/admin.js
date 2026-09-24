@@ -14,9 +14,8 @@
       document.getElementById('sidebarOrgLogo').src = org.logoUrl || 'Image/app_logo.jpg';
     }
   }
-  const canAccessAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings;
-  if (!canAccessAdmin) {
-    location.href = 'entry.html';
+  if (u.role !== 'Admin' && u.role !== 'SuperAdmin') {
+    location.replace('entry.html');
     return;
   }
   if (me.settings && me.settings.reportHeaderConfig && typeof updateReportHeaderConfig === 'function') {

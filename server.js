@@ -367,8 +367,8 @@ function publicUser(u) {
     role: u.role,
     plainPassword: u.plainPassword || '',
     isActive: !!u.isActive,
-    canOpen: isAdminUser || !!u.canOpen || !!u.canReports || !!u.canEntry,
-    canAdd: isAdminUser || !!u.canAdd,
+    canOpen: isAdminUser || !!u.canOpen || !!u.canEntry || !!u.canReports,
+    canAdd: isAdminUser || !!u.canAdd || !!u.canEntry,
     canDelete: isAdminUser || !!u.canDelete || !!u.canReportsDelete,
     canEdit: isAdminUser || !!u.canEdit || !!u.canReportsEdit,
     canPrint: isAdminUser || !!u.canPrint || !!u.canReportsPrint,
@@ -378,7 +378,7 @@ function publicUser(u) {
     canReportsEdit: isAdminUser || !!u.canReportsEdit || !!u.canEdit,
     canReportsDelete: isAdminUser || !!u.canReportsDelete || !!u.canDelete,
     canReportsPrint: isAdminUser || !!u.canReportsPrint || !!u.canPrint,
-    canEvents: isAdminUser || !!u.canEvents || !!u.canDash || !!u.canReports,
+    canEvents: isAdminUser || !!u.canEvents,
     canUsers: isAdminUser || !!u.canUsers,
     canSettings: isAdminUser || !!u.canSettings,
     createdAt: u.createdAt
@@ -1264,7 +1264,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // 2. تأكيد استلام وحفظ التقارير على القرص الصلب وتفريغها من السحابة (Acknowledge & Clear)
+    // 2. تأكيد استلام وحفظ التقارير على القرص الصلب وتفريغها نهائياً من السحابة (Acknowledge & Clear Transit Data)
     if (method === 'POST' && p === '/api/relay/ack') {
       if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
       const b = await readBody(req);
@@ -1272,11 +1272,20 @@ const server = http.createServer(async (req, res) => {
       let deletedCount = 0;
       for (const id of itemIds) {
         try {
+          const row = db.prepare('SELECT payload FROM cloud_relay_queue WHERE orgId=? AND id=?').get(orgId, id);
+          if (row && row.payload) {
+            try {
+              const rep = JSON.parse(row.payload);
+              if (rep && rep.id) {
+                db.prepare('DELETE FROM reports WHERE orgId=? AND id=?').run(orgId, rep.id);
+              }
+            } catch(err){}
+          }
           db.prepare('DELETE FROM cloud_relay_queue WHERE orgId=? AND id=?').run(orgId, id);
           deletedCount++;
         } catch(e){}
       }
-      send(res, 200, { ok: true, clearedCount: deletedCount, message: 'تم تأكيد الحفظ وتفريغ الطابور السحابي بنجاح ✔' });
+      send(res, 200, { ok: true, clearedCount: deletedCount, message: 'تم تأكيد الحفظ على جهاز المدير وتفريغ البيانات تماماً من السحابة ✔' });
       return;
     }
 
@@ -1676,7 +1685,7 @@ const server = http.createServer(async (req, res) => {
     /* ---- إدارة المهام والتكليفات داخل الجهة ---- */
     if (p === '/api/events' || p === '/api/events/mine') {
       if (method === 'GET') {
-        if (p === '/api/events' && !can(me, 'canEvents') && !can(me, 'canReports') && !can(me, 'canDash')) {
+        if (p === '/api/events' && !can(me, 'canEvents') && !isOrgAdmin(me)) {
           sendError(res, 403, 'غير مصرح');
           return;
         }

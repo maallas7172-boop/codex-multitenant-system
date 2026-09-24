@@ -19,13 +19,8 @@
     </div>
     <nav class="nav">
       <button class="nav-btn active" id="eNavEntry" type="button"><span class="ic">📝</span> إدخال تقرير</button>
-      <button class="nav-btn" id="eNavMyTasks" type="button"><span class="ic">📋</span> مهامي وتكليفاتي <span class="badge warn" id="myTasksBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
-      <div id="adminNav" style="display:none">
-        <button class="nav-btn" id="eNavDash" type="button" onclick="location.href='admin.html'"><span class="ic">📊</span> لوحة التحكم</button>
-        <button class="nav-btn" id="eNavReports" type="button" onclick="location.href='admin.html#reports'"><span class="ic">📄</span> التقارير</button>
-        <button class="nav-btn" id="eNavUsers" type="button" onclick="location.href='admin.html#users'"><span class="ic">👥</span> المستخدمون والصلاحيات</button>
-        <button class="nav-btn" id="eNavSettings" type="button" onclick="location.href='admin.html#settings'"><span class="ic">⚙️</span> الإعدادات</button>
-      </div>
+      <button class="nav-btn" id="eNavMyTasks" type="button" style="display:none"><span class="ic">📋</span> مهامي وتكليفاتي <span class="badge warn" id="myTasksBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
+      <button class="nav-btn" id="eNavMyReports" type="button" style="display:none"><span class="ic">📄</span> التقارير</button>
     </nav>
     <div class="side-foot">
       <div class="user-box">
@@ -51,7 +46,7 @@
     </div>
 
     <!-- شريط المهام والتكليفات الموجهة للموظف -->
-    <div id="myTasksAlertBanner" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-radius:var(--r-md);margin-bottom:16px;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;flex-wrap:wrap">
+    <div id="myTasksAlertBanner" style="display:none;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-radius:var(--r-md);margin-bottom:16px;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:22px">📋</span>
         <div>
@@ -78,6 +73,24 @@
         </div>
       </div>
       <div id="myTasksList" style="display:flex;flex-direction:column;gap:14px"></div>
+    </section>
+
+    <!-- قسم تقارير الموظف (يظهر عند تفعيل صلاحية التقارير) -->
+    <section class="card" id="myReportsBox" style="display:none;margin-bottom:18px">
+      <div class="page-head" style="margin-bottom:14px">
+        <div>
+          <h3>📄 سجل التقارير</h3>
+          <p style="margin:0;font-size:13px;color:var(--muted)">استعراض التقارير المسجلة على النظام مع إمكانية البحث والاطلاع على المرفقات والتفاصيل.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-outline btn-sm" id="btnRefreshMyReports" type="button">🔄 تحديث</button>
+          <button class="btn btn-primary btn-sm" id="btnBackToEntryFromReports" type="button">➕ تقرير جديد</button>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:14px">
+        <input type="text" id="myReportsSearch" placeholder="🔍 ابحث في التقارير برقم التقرير، الموضوع، الجهة، أو المكان..." />
+      </div>
+      <div id="myReportsList" style="display:flex;flex-direction:column;gap:12px"></div>
     </section>
 
     <div class="page-head" id="entryReportsHead">
@@ -202,9 +215,24 @@
   </div>
 </div>
 
-<script src="js/config.js?v=20260923-106"></script>
-<script src="js/app.js?v=20260923-106"></script>
-<script src="js/report-header.js?v=20260923-106"></script>
-<script src="js/entry.js?v=20260923-106"></script>
+<!-- نافذة تفاصيل التقرير والوسائط للموظف الميداني -->
+<div class="modal-back" id="entryReportDetailModal">
+  <div class="modal" style="max-width:700px;max-height:90vh;overflow-y:auto">
+    <div class="modal-head">
+      <h3 id="erdModalTitle">📄 تفاصيل التقرير والمرفقات</h3>
+      <button class="x-btn" id="erdCloseBtn" type="button">✕</button>
+    </div>
+    <div class="modal-body" id="erdModalBody" style="padding:16px 20px"></div>
+    <div class="modal-foot" style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-outline" id="erdCloseBtnFoot" type="button">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js?v=20260924-107"></script>
+<script src="js/app.js?v=20260924-107"></script>
+<script src="js/crypto-js.js?v=20260924-107"></script>
+<script src="js/report-header.js?v=20260924-107"></script>
+<script src="js/entry.js?v=20260924-107"></script>
 </body>
 </html>
