@@ -84,15 +84,15 @@
           return;
         }
 
-        // عند نجاح الاقتران: تظهر رسالة تم الاقتران بنجاح دون ذكر اسم الجهة لضمان الخصوصية وسرية المؤسسة
+        const orgName = (data.org && data.org.orgName) ? data.org.orgName : 'منظومة التقارير والبيانات';
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#10b981';
-        orgStatusText.textContent = '✔ تم الاقتران بنجاح';
-        mainTitle.textContent = DEFAULT_TITLE;
-        subTitle.textContent = DEFAULT_SUBTITLE;
-        if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
+        orgStatusText.textContent = '✔ متصل بجهة: ' + orgName;
+        mainTitle.textContent = orgName;
+        subTitle.textContent = 'منظومة التقارير والبيانات — رمز الجهة: ' + (data.org && data.org.orgCode ? data.org.orgCode : code);
+        if (loginTopLogo) loginTopLogo.src = (data.org && data.org.logoUrl) ? data.org.logoUrl : DEFAULT_LOGO;
         setOrgCode(code);
-        if (showFeedback) show('تم الاقتران بنجاح ✔', 'ok');
+        if (showFeedback) show('تم الاقتران بجهة ' + orgName + ' بنجاح ✔', 'ok');
       } else {
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#ef4444';
@@ -115,12 +115,18 @@
     };
   }
 
+  let orgDebounceTimer = null;
   orgCodeInput.addEventListener('input', () => {
     const val = orgCodeInput.value.trim().toUpperCase();
+    clearTimeout(orgDebounceTimer);
     if (!val) {
       checkOrgInfo('', false);
     } else if (val === 'CODEX' || val === 'SUPER') {
       checkOrgInfo(val, false);
+    } else if (val.length >= 2) {
+      orgDebounceTimer = setTimeout(() => {
+        checkOrgInfo(val, false);
+      }, 400);
     }
   });
 

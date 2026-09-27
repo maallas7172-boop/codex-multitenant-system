@@ -8,16 +8,22 @@
   const DRAFT_KEY = 'codex_mt_local_drafts_v1';
   let me = null;
   try { me = await currentMe(); } catch (e) { location.replace('login.html'); return; }
+  const u = me.user;
+  if (u.role === 'Admin') {
+    location.replace('admin.html#entry');
+    return;
+  }
+  if (u.role === 'SuperAdmin') {
+    location.replace('super_admin.html');
+    return;
+  }
   if (me.settings && me.settings.reportHeaderConfig && typeof updateReportHeaderConfig === 'function') {
     updateReportHeaderConfig(me.settings.reportHeaderConfig);
   }
-  // المدير يستطيع استخدام واجهة الإدخال أيضاً عند الحاجة، من دون إجباره
-  // على المرور بحساب مستخدم إدخال أو منحه صلاحية منفصلة.
 
   // عناصر الواجهة
   const $ = id => document.getElementById(id);
   const draftBox = $('draftBox'), formCard = $('formCard');
-  const u = me.user;
   const org = me.organization;
   if (org) {
     if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = org.orgName || 'إدخال البيانات';

@@ -33,6 +33,7 @@
 
   // إظهار أو إخفاء أزرار التبويب حسب الصلاحيات الممنوحة من المدير
   const navDash = document.querySelector('.nav-btn[data-page="dash"]');
+  const navEntry = document.querySelector('.nav-btn[data-page="entry"]');
   const navReports = document.querySelector('.nav-btn[data-page="reports"]');
   const navEvents = document.querySelector('.nav-btn[data-page="events"]');
   const navUnits = document.querySelector('.nav-btn[data-page="units"]');
@@ -40,6 +41,7 @@
   const navSettings = document.querySelector('.nav-btn[data-page="settings"]');
 
   if (navDash) navDash.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canDash) ? 'flex' : 'none';
+  if (navEntry) navEntry.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canAdd || u.canEntry) ? 'flex' : 'none';
   if (navReports) navReports.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canReports) ? 'flex' : 'none';
   if (navEvents) navEvents.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canEvents) ? 'flex' : 'none';
   if (navUnits) navUnits.style.display = (u.role === 'Admin') ? 'flex' : 'none';
@@ -48,12 +50,13 @@
 
   /* ---------- التنقل ---------- */
   const NAVS = {
-    dash: 'dashPage', reports: 'reportsPage',
+    dash: 'dashPage', entry: 'entryPage', reports: 'reportsPage',
     events: 'eventsPage', units: 'unitsPage',
     users: 'usersPage', settings: 'settingsPage'
   };
   const PERMS = {
     dash: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canDash,
+    entry: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canAdd || u.canEntry,
     reports: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canReports,
     events: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canEvents,
     units: u.role === 'Admin',
@@ -73,6 +76,7 @@
       Object.values(NAVS).forEach(p => { if ($(p)) $(p).classList.remove('active'); });
       if ($(NAVS[pageKey])) $(NAVS[pageKey]).classList.add('active');
       if (pageKey === 'dash') renderDash();
+      if (pageKey === 'entry') renderAdminEntry();
       if (pageKey === 'reports') renderReports();
       if (pageKey === 'events') renderEvents();
       if (pageKey === 'units') renderUnits();
@@ -1477,6 +1481,7 @@
       
       if ($('rUnit')) $('rUnit').innerHTML = '<option value="">كل الوحدات والأقسام</option>' + unitOpts;
       if ($('efUnit')) $('efUnit').innerHTML = '<option value="">-- عام للفرع / بدون وحدة محددة --</option>' + unitOpts;
+      if ($('admFUnit')) $('admFUnit').innerHTML = '<option value="">-- عام للفرع / بدون وحدة محددة --</option>' + unitOpts;
       if ($('ufUnitSel')) $('ufUnitSel').innerHTML = '<option value="">-- بدون وحدة (مباشر للفرع) --</option>' + unitOpts;
       if ($('uFilterUnit')) $('uFilterUnit').innerHTML = '<option value="">كل الوحدات والأقسام</option>' + unitOpts;
     } catch(err) {}
@@ -2404,8 +2409,196 @@
     w.document.close();
   };
 
+  /* ================= إدخال تقرير جديد للمدير ================= */
+  let admPhotos = [];
+  let admEntryInitialized = false;
+
+  function initAdminEntry() {
+    if (!$('entryPage')) return;
+    if ($('admFEnteredBy')) $('admFEnteredBy').value = u.fullName + (u.role === 'Admin' ? ' (المدير)' : '');
+    const today = new Date().toISOString().slice(0, 10);
+    const nowTime = new Date().toTimeString().slice(0, 5);
+    if ($('admFDate') && !$('admFDate').value) $('admFDate').value = today;
+    if ($('admFTime') && !$('admFTime').value) $('admFTime').value = nowTime;
+
+    if (!admEntryInitialized) {
+      admEntryInitialized = true;
+      if ($('admPhotoInput')) {
+        $('admPhotoInput').onchange = e => handleAdminPhotos(e.target.files);
+      }
+      if ($('adminEntryResetBtn')) {
+        $('adminEntryResetBtn').onclick = () => resetAdminEntryForm();
+      }
+      if ($('admSyncBtn')) {
+        $('admSyncBtn').onclick = () => submitAdminReport();
+      }
+    }
+    renderAdmPhotos();
+  }
+
+  async function renderAdminEntry() {
+    initAdminEntry();
+    await fetchNextReportNumberForAdmin();
+    if (typeof loadUnitsSelects === 'function') loadUnitsSelects();
+  }
+
+  async function fetchNextReportNumberForAdmin() {
+    try {
+      const res = await api('/reports/next-number');
+      if (res && res.nextNumber && $('admFReportNumber')) {
+        $('admFReportNumber').value = res.nextNumber;
+      }
+    } catch (e) {
+      if ($('admFReportNumber')) $('admFReportNumber').value = 'تلقائي (عند الحفظ)';
+    }
+  }
+
+  function resetAdminEntryForm() {
+    if ($('admFSubject')) $('admFSubject').value = '';
+    if ($('admFTarget')) $('admFTarget').value = '';
+    if ($('admFLocation')) $('admFLocation').value = '';
+    if ($('admFDetails')) $('admFDetails').value = '';
+    if ($('admFRel')) $('admFRel').value = '';
+    if ($('admFStatus')) $('admFStatus').value = '';
+    if ($('admFAch')) $('admFAch').value = '';
+    if ($('admFRating')) $('admFRating').value = 'عادي';
+    if ($('admFUnit')) $('admFUnit').value = '';
+    admPhotos = [];
+    renderAdmPhotos();
+    const today = new Date().toISOString().slice(0, 10);
+    const nowTime = new Date().toTimeString().slice(0, 5);
+    if ($('admFDate')) $('admFDate').value = today;
+    if ($('admFTime')) $('admFTime').value = nowTime;
+    if ($('adminEntrySaveMsg')) $('adminEntrySaveMsg').textContent = '';
+    fetchNextReportNumberForAdmin();
+  }
+
+  async function handleAdminPhotos(files) {
+    if (!files || !files.length) return;
+    for (const f of Array.from(files)) {
+      if (admPhotos.length >= 10) {
+        toast('الحد الأقصى للصور في التقرير هو 10 صور', 'warn');
+        break;
+      }
+      try {
+        const b64 = await readFileAsBase64(f);
+        admPhotos.push({
+          name: f.name,
+          type: f.type,
+          size: f.size,
+          data: b64
+        });
+      } catch (e) {
+        console.error('Error reading photo:', e);
+      }
+    }
+    renderAdmPhotos();
+  }
+
+  function renderAdmPhotos() {
+    const grid = $('admPhotoGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    
+    // Add button card
+    const addCard = document.createElement('div');
+    addCard.className = 'photo-card add';
+    addCard.style.cssText = 'border:2px dashed var(--line);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;min-height:90px;background:var(--surface-soft)';
+    addCard.innerHTML = '<span style="font-size:24px">📷</span><span style="font-size:11px;font-weight:700;margin-top:4px">إضافة مرفق / صورة</span>';
+    addCard.onclick = () => $('admPhotoInput') && $('admPhotoInput').click();
+    grid.appendChild(addCard);
+
+    admPhotos.forEach((p, idx) => {
+      const card = document.createElement('div');
+      card.className = 'photo-card';
+      card.style.cssText = 'position:relative;border:1px solid var(--border);border-radius:8px;overflow:hidden;min-height:90px;background:#000;display:flex;align-items:center;justify-content:center';
+      
+      let previewHtml = '';
+      if (p.type && p.type.startsWith('image/')) {
+        previewHtml = `<img src="${p.data}" style="width:100%;height:100%;object-fit:cover" alt="${esc(p.name)}" />`;
+      } else {
+        previewHtml = `<div style="color:#fff;font-size:11px;padding:8px;text-align:center">📄 ${esc(p.name)}</div>`;
+      }
+      card.innerHTML = `
+        ${previewHtml}
+        <button type="button" style="position:absolute;top:4px;right:4px;background:rgba(220,38,38,0.9);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-weight:900;line-height:1;display:flex;align-items:center;justify-content:center" title="حذف">&times;</button>
+      `;
+      card.querySelector('button').onclick = (e) => {
+        e.stopPropagation();
+        admPhotos.splice(idx, 1);
+        renderAdmPhotos();
+      };
+      grid.appendChild(card);
+    });
+
+    if ($('admPhotoSize')) {
+      const totalBytes = admPhotos.reduce((acc, x) => acc + (x.size || (x.data ? x.data.length * 0.75 : 0)), 0);
+      $('admPhotoSize').textContent = admPhotos.length ? `عدد المرفقات: (${admPhotos.length}) — الحجم التقريبي: ${(totalBytes / 1024).toFixed(1)} ك.ب` : '';
+    }
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function submitAdminReport() {
+    const subject = ($('admFSubject')?.value || '').trim();
+    const details = ($('admFDetails')?.value || '').trim();
+    if (!subject) {
+      toast('يرجى كتابة موضوع التقرير', 'warn');
+      $('admFSubject')?.focus();
+      return;
+    }
+    if (!details) {
+      toast('يرجى كتابة التقرير التفصيلي', 'warn');
+      $('admFDetails')?.focus();
+      return;
+    }
+
+    const payload = {
+      subject,
+      target: ($('admFTarget')?.value || '').trim(),
+      reportDate: $('admFDate')?.value || new Date().toISOString().slice(0, 10),
+      reportTime: $('admFTime')?.value || new Date().toTimeString().slice(0, 5),
+      location: ($('admFLocation')?.value || '').trim(),
+      rating: $('admFRating')?.value || 'عادي',
+      unitId: $('admFUnit')?.value || me.user.unitId || null,
+      reliability: ($('admFRel')?.value || '').trim(),
+      status: ($('admFStatus')?.value || '').trim(),
+      achievement: ($('admFAch')?.value || '').trim(),
+      details,
+      photos: admPhotos.map(p => p.data),
+      enteredBy: u.fullName
+    };
+
+    const btn = $('admSyncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ جارٍ الحفظ والترحيل...'; }
+
+    try {
+      const res = await api('/reports', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      toast(`✅ تم حفظ وترحيل التقرير الرسمي بنجاح برقم (#${res.reportNumber || ''})`, 'ok');
+      resetAdminEntryForm();
+      // Navigate to reports tab to view
+      const repNav = document.querySelector('.nav-btn[data-page="reports"]');
+      if (repNav) repNav.click();
+    } catch (e) {
+      toast('فشل حفظ التقرير: ' + e.message, 'err');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🚀 حفظ وترحيل التقرير'; }
+    }
+  }
+
   /* ================= التشغيل الأولي ================= */
   window.renderDash = renderDash;
+  window.renderAdminEntry = renderAdminEntry;
   window.renderReports = renderReports;
   window.renderUnits = renderUnits;
   window.renderUsers = renderUsers;

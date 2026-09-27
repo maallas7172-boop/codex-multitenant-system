@@ -19,9 +19,9 @@
     </div>
     <nav class="nav">
       <button class="nav-btn active" data-page="dash"><span class="ic">📊</span> لوحة التحكم</button>
-      <button class="nav-btn" type="button" onclick="location.href='entry.html'"><span class="ic">📝</span> إدخال تقرير</button>
+      <button class="nav-btn" data-page="entry"><span class="ic">📝</span> إدخال تقرير</button>
       <button class="nav-btn" data-page="reports"><span class="ic">📄</span> التقارير</button>
-      <button class="nav-btn" data-page="events"><span class="ic">📋</span> المهام والأحداث <span class="badge warn" id="sideEventsBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
+      <button class="nav-btn" data-page="events"><span class="ic">📋</span> المهام والتكليفات <span class="badge warn" id="sideEventsBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
       <button class="nav-btn" data-page="units" id="navUnitsBtn"><span class="ic">🏢</span> الوحدات والأقسام</button>
       <button class="nav-btn" data-page="users"><span class="ic">👥</span> المستخدمون والأجهزة <span class="badge warn" id="sideDevicesBadge" style="display:none;margin-right:auto;font-size:10.5px;padding:2px 7px;border-radius:10px;background:#ea580c;color:#fff">0</span></button>
       <button class="nav-btn" data-page="settings"><span class="ic">⚙️</span> الإعدادات</button>
@@ -81,7 +81,7 @@
       <div class="filter-bar" style="margin-bottom:18px">
         <div class="field" style="flex:1">
           <span>🔍 بحث سريع في لوحة التحكم</span>
-          <input type="text" id="dashSearch" placeholder="ابحث برقم التقرير، موضوع، جهة، مستخدم، أو كلمة دلالية..." />
+          <input type="text" id="dashSearch" placeholder="ابحث برقم التقرير، موضوع، جهة، مستخدم، أو كلمة دلالية..." autocomplete="off" />
         </div>
       </div>
 
@@ -105,6 +105,99 @@
             <thead><tr><th>الرقم</th><th>الموضوع</th><th>المدخل</th><th>التاريخ</th><th>التصنيف</th></tr></thead>
             <tbody id="latestReports"></tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== إدخال تقرير جديد للمدير ==================== -->
+    <section class="page" id="entryPage">
+      <div class="page-head">
+        <div>
+          <h2>📝 إدخال تقرير رسمي جديد</h2>
+          <p>إدخال وحفظ تقرير جديد مباشرةً في قاعدة بيانات الفرع مع إمكانية إرفاق الصور والوسائط وتحديد التصنيف والوحدة.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-outline" type="button" id="adminEntryResetBtn">🔄 تفريغ الحقول</button>
+        </div>
+      </div>
+
+      <div class="card entry-card" style="margin-top:10px">
+        <div id="adminEntrySaveMsg" style="color:var(--warn);font-weight:700;font-size:13px;margin-bottom:14px"></div>
+
+        <div class="form-grid">
+          <div class="field">
+            <span>رقم التقرير (يُولَّد تسلسلياً تلقائياً)</span>
+            <input type="text" id="admFReportNumber" readonly placeholder="تلقائي من السيرفر (آخر رقم + 1)" title="يتم توليد الرقم التسلسلي تلقائياً" />
+          </div>
+          <div class="field">
+            <span>موضوع التقرير *</span>
+            <input type="text" id="admFSubject" placeholder="عنوان مختصر للتقرير..." autocomplete="off" />
+          </div>
+          <div class="field full">
+            <span>الجهة أو الشخص الذي عليه التقرير</span>
+            <input type="text" id="admFTarget" placeholder="الجهة / الشخص المعني..." autocomplete="off" />
+          </div>
+          <div class="field">
+            <span>المكان / الموقع</span>
+            <input type="text" id="admFLocation" placeholder="موقع أو مكان الحدث..." autocomplete="off" />
+          </div>
+          <div class="field">
+            <span>التاريخ</span>
+            <input type="date" id="admFDate" />
+          </div>
+          <div class="field">
+            <span>الوقت</span>
+            <input type="time" id="admFTime" />
+          </div>
+          <div class="field">
+            <span>تقييم التقرير</span>
+            <select id="admFRating">
+              <option value="عادي" selected>عادي</option>
+              <option value="مهم">مهم</option>
+              <option value="مهم جدا">مهم جدا</option>
+              <option value="متوسط">متوسط</option>
+              <option value="غير مهم">غير مهم</option>
+            </select>
+          </div>
+          <div class="field" id="admFUnitField">
+            <span>الوحدة / القسم التابع لها التقرير</span>
+            <select id="admFUnit">
+              <option value="">-- عام للفرع / بدون وحدة محددة --</option>
+            </select>
+          </div>
+          <div class="field">
+            <span>درجة المصداقية</span>
+            <input type="text" id="admFRel" list="dlRel" placeholder="عالية / متوسط / منخفض" autocomplete="off" />
+          </div>
+          <div class="field">
+            <span>حالة الموضوع</span>
+            <input type="text" id="admFStatus" list="dlStatus" placeholder="نشط / متقطع / غير نشط" autocomplete="off" />
+          </div>
+          <div class="field">
+            <span>نسبة الإنجاز</span>
+            <input type="text" id="admFAch" list="dlAch" placeholder="ممتاز / جيد / متوسط..." autocomplete="off" />
+          </div>
+          <div class="field full">
+            <span>التقرير التفصيلي *</span>
+            <textarea id="admFDetails" style="min-height:180px" placeholder="اكتب هنا نص التقرير التفصيلي الكامل..."></textarea>
+          </div>
+          <div class="field full">
+            <span>📎 المرفقات والوسائط (صور، وثائق، ملفات)</span>
+            <div class="photo-grid" id="admPhotoGrid"></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:6px" id="admPhotoSize"></div>
+            <input type="file" id="admPhotoInput" multiple style="display:none" />
+          </div>
+          <div class="field full">
+            <span>اسم مُدخل التقرير</span>
+            <input type="text" id="admFEnteredBy" readonly style="background:#f1f5f9;font-weight:700" />
+          </div>
+        </div>
+
+        <div class="pager" style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+          <div style="font-size:13px;color:var(--muted)" id="admSaveMsgSide"></div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="admSyncBtn" style="padding:10px 24px;font-size:14.5px;font-weight:800">🚀 حفظ وترحيل التقرير</button>
+          </div>
         </div>
       </div>
     </section>

@@ -1,7 +1,7 @@
 /* =========================================================
-   service-worker.js — دعم التثبيت والعمل أوفلاين (PWA) — كامل الملفات
+   service-worker.js — دعم التثبيت والعمل أوفلاين للمنظومة المتعددة (PWA)
    ========================================================= */
-const CACHE_NAME = 'reports-app-v3.1';
+const CACHE_NAME = 'reports-multitenant-v4.2';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -65,33 +65,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // بالنسبة للملفات الثابتة (HTML, CSS, JS, Images)
+  // Network first with cache fallback for static assets
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
-          }
-        }).catch(() => {});
-        return cachedResponse;
+    fetch(event.request).then((networkResponse) => {
+      if (networkResponse && networkResponse.status === 200) {
+        const copy = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
       }
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          return networkResponse;
-        }
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
-        return networkResponse;
-      }).catch(async () => {
-        if (event.request.mode === 'navigate') {
-          const navFallback = (await caches.match('./entry.html')) || (await caches.match('./login.html'));
-          if (navFallback) return navFallback;
-        }
-        return new Response('', { status: 408, statusText: 'Offline' });
-      });
+      return networkResponse;
+    }).catch(async () => {
+      const cached = await caches.match(event.request);
+      if (cached) return cached;
+      if (event.request.mode === 'navigate') {
+        const navFallback = (await caches.match('./login.html')) || (await caches.match('./entry.html'));
+        if (navFallback) return navFallback;
+      }
+      return new Response('Offline', { status: 503, statusText: 'Offline' });
     })
   );
 });

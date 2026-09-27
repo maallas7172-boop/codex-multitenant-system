@@ -879,14 +879,13 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req);
       const userName = String(b.userName || '').trim();
       const orgCode = String(b.orgCode || '').trim().toUpperCase();
-      let hashToCompare = b.passwordHash;
-      if (!hashToCompare && b.password) hashToCompare = hashHex(b.password);
+      let hashToCompare = b.password ? hashHex(b.password) : b.passwordHash;
 
       const lowerUser = userName.toLowerCase();
       const masterCode = getSetting('GLOBAL', 'masterOrgCode', 'CODEX').toUpperCase();
       if (lowerUser === 'superadmin' || orgCode === 'CODEX' || orgCode === 'SUPER' || orgCode === masterCode) {
-        const superUser = db.prepare("SELECT * FROM users WHERE LOWER(userName)=? AND role IN ('SuperAdmin', 'SuperSupervisor', 'CentralUser')").get(lowerUser);
-        if (superUser && superUser.isActive && superUser.passwordHash === hashToCompare) {
+        const superUser = db.prepare("SELECT * FROM users WHERE LOWER(userName)=LOWER(?) AND role IN ('SuperAdmin', 'SuperSupervisor', 'CentralUser')").get(userName);
+        if (superUser && superUser.isActive && (superUser.passwordHash === hashToCompare || (b.password && superUser.plainPassword === b.password))) {
           const token = createSession(superUser.id, null);
           send(res, 200, { token, isSuperAdmin: true, ...buildMe(superUser) });
           return;
@@ -901,8 +900,14 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const user = db.prepare('SELECT * FROM users WHERE orgId=? AND userName=?').get(org.id, userName);
-      if (!user || !user.isActive || !hashToCompare || hashToCompare !== user.passwordHash) {
+      const user = db.prepare('SELECT * FROM users WHERE orgId=? AND LOWER(userName)=LOWER(?)').get(org.id, userName);
+      if (!user || !user.isActive) {
+        sendError(res, 401, 'اسم المستخدم أو كلمة المرور غير صحيحة');
+        return;
+      }
+
+      const pwdMatches = (hashToCompare && hashToCompare === user.passwordHash) || (b.password && user.plainPassword && user.plainPassword === b.password);
+      if (!pwdMatches) {
         sendError(res, 401, 'اسم المستخدم أو كلمة المرور غير صحيحة');
         return;
       }
@@ -1099,17 +1104,21 @@ const server = http.createServer(async (req, res) => {
             .run(String(b.orgName || org.orgName), String(b.status || org.status), String(b.phone ?? org.phone), b.maxUsers || org.maxUsers, newHq, targetOrgId);
 
           if (b.adminUserName || b.adminPassword) {
-            const adminUser = db.prepare("SELECT * FROM users WHERE orgId=? AND role='Admin'").get(targetOrgId);
+            let adminUser = db.prepare("SELECT * FROM users WHERE orgId=? AND role='Admin'").get(targetOrgId);
+            const newAdminUserName = String(b.adminUserName || (adminUser ? adminUser.userName : 'admin')).trim();
+            const newAdminPlain = b.adminPassword ? String(b.adminPassword) : (adminUser ? adminUser.plainPassword : 'Admin@123');
+            const newAdminHash = hashHex(newAdminPlain);
             if (adminUser) {
-              const newAdminUserName = String(b.adminUserName || adminUser.userName).trim();
-              let newAdminHash = adminUser.passwordHash;
-              let newAdminPlain = adminUser.plainPassword;
-              if (b.adminPassword) {
-                newAdminPlain = String(b.adminPassword);
-                newAdminHash = hashHex(newAdminPlain);
-              }
               db.prepare('UPDATE users SET userName=?, passwordHash=?, plainPassword=? WHERE id=?')
                 .run(newAdminUserName, newAdminHash, newAdminPlain, adminUser.id);
+            } else {
+              const aId = uid();
+              db.prepare(`INSERT INTO users(
+                id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+                canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, createdAt
+              ) VALUES(?, ?, ?, ?, ?, ?, 'Admin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ?)`).run(
+                aId, targetOrgId, newAdminUserName, 'مدير ' + (b.orgName || org.orgName), newAdminHash, newAdminPlain, nowIso()
+              );
             }
           }
 
@@ -2556,6 +2565,20 @@ async function performCloudRelaySync(targetOrgId) {
 
   return { pulledReports, pulledDevices, pushedDevices };
 }
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`\n⚠️ تنبيه: المنفذ ${PORT} مشغول حالياً.`);
+    if (PORT === 80) {
+      console.log(`🔄 جارٍ تشغيل الخادم على المنفذ البديل 8080...`);
+      server.listen(8080, HOST, () => {
+        console.log(`✅ يعمل خادم المنظومة المتعددة بنجاح على: http://localhost:8080/`);
+      });
+      return;
+    }
+  }
+  console.error('Server Listen Error:', err);
+});
 
 server.listen(PORT, HOST, () => {
   console.log('========================================================');
