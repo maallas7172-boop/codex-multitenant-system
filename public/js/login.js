@@ -42,7 +42,7 @@
   const loginTopLogo = document.getElementById('loginTopLogo');
   const DEFAULT_TITLE = 'إدارة الحسابات';
   const DEFAULT_SUBTITLE = 'منظومة إدارة الحسابات والتقارير المالية والميدانية';
-  const DEFAULT_LOGO = 'Image/app_logo.jpg';
+  const DEFAULT_LOGO = 'Image/1754379379088.jpg';
 
   // استرجاع رمز الجهة المحفوظ مسبقاً في الهاتف
   const savedOrg = getOrgCode();
@@ -256,7 +256,7 @@
       }
 
       const u = response.user;
-      const isOrgAdminUser = u.role === 'Admin' || u.canDash || u.canUsers || u.canSettings;
+      const isOrgAdminUser = u.role === 'Admin' || u.canDash || u.canReports || u.canEvents || u.canUsers || u.canSettings;
       if (isOrgAdminUser) {
         show('تم الدخول بنجاح إلى لوحة تحكم الجهة ✔', 'ok');
         setTimeout(() => { location.href = 'admin.html'; }, 400);
@@ -297,7 +297,7 @@
             const u = offAuth.user || offAuth;
             show('✔ تم الدخول بنجاح في وضع عدم الاتصال (أوفلاين) — البيانات محفوظة محلياً', 'ok');
             setTimeout(() => {
-              if (u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings) {
+              if (u.role === 'Admin' || u.canDash || u.canReports || u.canEvents || u.canUsers || u.canSettings) {
                 location.href = 'admin.html';
               } else {
                 location.href = 'entry.html';

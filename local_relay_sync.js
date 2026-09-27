@@ -111,18 +111,23 @@ async function syncOrgQueue(db, org, cloudToken) {
           const r = item.payload;
           try {
             let repNum = String(r.reportNumber || '').trim();
-            if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#')) {
+            if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#') || repNum === 'undefined' || repNum === 'null') {
               repNum = getNextReportNumber(db, org.id);
+            } else {
+              const dup = db.prepare('SELECT id FROM reports WHERE orgId=? AND reportNumber=? AND id<>?').get(org.id, repNum, r.id);
+              if (dup) {
+                repNum = getNextReportNumber(db, org.id);
+              }
             }
             db.prepare(`INSERT OR REPLACE INTO reports(
               id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
-              enteredBy, enteredByUserId, rating, logoId, createdAt, updatedAt, syncedAt
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+              enteredBy, enteredByUserId, unitId, rating, logoId, createdAt, updatedAt, syncedAt
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
               .run(
                 r.id, org.id, repNum, r.subject || '', r.target || '',
                 r.reportDate || '', r.reportTime || '', r.location || '', r.details || '',
                 typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
-                r.enteredBy || '', r.enteredByUserId || null,
+                r.enteredBy || '', r.enteredByUserId || null, r.unitId || null,
                 r.rating || 'عادي', r.logoId || 'logo1', r.createdAt || new Date().toISOString(),
                 r.updatedAt || new Date().toISOString(), new Date().toISOString()
               );
@@ -145,16 +150,23 @@ async function syncOrgQueue(db, org, cloudToken) {
             const existing = db.prepare('SELECT id FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
             if (!existing) {
               db.prepare(`INSERT INTO devices(
-                id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
-              ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+                id, orgId, deviceId, deviceName, userId, userName, userFullName, unitId, status, registeredAt, lastSeenAt, approvedAt, approvedBy
+              ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
                 .run(
-                  dev.id, org.id, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
-                  dev.userFullName || '', dev.status || 'pending', dev.registeredAt || new Date().toISOString(),
+                  dev.id || (Date.now().toString(36) + Math.random().toString(36).slice(2)), org.id, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
+                  dev.userFullName || '', dev.unitId || null, dev.status || 'pending', dev.registeredAt || new Date().toISOString(),
                   dev.lastSeenAt || new Date().toISOString(), dev.approvedAt || null, dev.approvedBy || ''
+                );
+            } else {
+              db.prepare(`UPDATE devices SET 
+                deviceName=?, userId=?, userName=?, userFullName=?, unitId=?, lastSeenAt=? WHERE id=?`)
+                .run(
+                  dev.deviceName || '', dev.userId || '', dev.userName || '',
+                  dev.userFullName || '', dev.unitId || null, new Date().toISOString(), existing.id
                 );
             }
             ackIds.push(item.id);
-            console.log(`[📱 Device Sync] تم مزامنة الهاتف الجديد (${dev.deviceName || dev.deviceId}) إلى قاعدة بيانات المدير محلياً ✔`);
+            console.log(`[📱 Device Sync] تم مزامنة الهاتف (${dev.deviceName || dev.deviceId}) إلى قاعدة بيانات المدير محلياً ✔`);
           } catch(err) {
             console.error('Error saving device to local DB:', err.message);
           }
@@ -225,6 +237,13 @@ async function runSyncCycle() {
   if (!fs.existsSync(DB_PATH)) return;
   const db = new DatabaseSync(DB_PATH);
   try {
+    try { db.exec("CREATE TABLE IF NOT EXISTS units (id TEXT PRIMARY KEY, orgId TEXT NOT NULL, unitName TEXT NOT NULL, unitCode TEXT, managerUserId TEXT, managerName TEXT, phone TEXT, notes TEXT, status TEXT DEFAULT 'active', createdAt TEXT NOT NULL);"); } catch(e){}
+    try { db.exec("ALTER TABLE reports ADD COLUMN unitId TEXT;"); } catch(e){}
+    try { db.exec("ALTER TABLE users ADD COLUMN unitId TEXT;"); } catch(e){}
+    try { db.exec("ALTER TABLE users ADD COLUMN isUnitManager INTEGER DEFAULT 0;"); } catch(e){}
+    try { db.exec("ALTER TABLE events ADD COLUMN unitId TEXT;"); } catch(e){}
+    try { db.exec("ALTER TABLE devices ADD COLUMN unitId TEXT;"); } catch(e){}
+
     const orgs = db.prepare("SELECT * FROM organizations WHERE status='active'").all();
     for (const org of orgs) {
       const admin = db.prepare("SELECT * FROM users WHERE orgId=? AND role='Admin'").get(org.id);

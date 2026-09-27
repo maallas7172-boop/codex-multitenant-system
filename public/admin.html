@@ -14,7 +14,7 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
-      <div class="logo">🧮</div>
+      <div class="logo"><img id="orgBrandLogoImg" src="Image/1754379379088.jpg" alt="شعار الجهة" /></div>
       <div class="t"><span id="orgBrandTitle">إدارة الحسابات</span><small id="orgBrandSubtitle">لوحة مدير النظام</small></div>
     </div>
     <nav class="nav">
@@ -22,6 +22,7 @@
       <button class="nav-btn" type="button" onclick="location.href='entry.html'"><span class="ic">📝</span> إدخال تقرير</button>
       <button class="nav-btn" data-page="reports"><span class="ic">📄</span> التقارير</button>
       <button class="nav-btn" data-page="events"><span class="ic">📋</span> المهام والأحداث <span class="badge warn" id="sideEventsBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
+      <button class="nav-btn" data-page="units" id="navUnitsBtn"><span class="ic">🏢</span> الوحدات والأقسام</button>
       <button class="nav-btn" data-page="users"><span class="ic">👥</span> المستخدمون والأجهزة <span class="badge warn" id="sideDevicesBadge" style="display:none;margin-right:auto;font-size:10.5px;padding:2px 7px;border-radius:10px;background:#ea580c;color:#fff">0</span></button>
       <button class="nav-btn" data-page="settings"><span class="ic">⚙️</span> الإعدادات</button>
     </nav>
@@ -130,6 +131,7 @@
         <div class="field" style="flex:1.5"><span>بحث</span><input type="text" id="rSearch" placeholder="ابحث برقم التقرير، الموضوع، الجهة، أو التفاصيل..." /></div>
         <div class="field tight"><span>من تاريخ</span><input type="date" id="rFrom" /></div>
         <div class="field tight"><span>إلى تاريخ</span><input type="date" id="rTo" /></div>
+        <div class="field" id="rUnitField"><span>الوحدة / القسم</span><select id="rUnit"><option value="">كل الوحدات والأقسام</option></select></div>
         <div class="field"><span>اسم المستخدم</span><select id="rUser"></select></div>
         <div class="field"><span>تقييم التقرير</span><select id="rRating">
           <option value="">كل التقييمات</option>
@@ -213,6 +215,12 @@
               <option value="أخرى">أخرى</option>
             </select>
           </div>
+          <div class="field" id="efUnitField">
+            <span>الوحدة / القسم التابع لها الحدث</span>
+            <select id="efUnit">
+              <option value="">-- عام للفرع / بدون وحدة محددة --</option>
+            </select>
+          </div>
           <div class="field">
             <span>الموظف المكلف بالمهمة *</span>
             <select id="efAssignedUser">
@@ -247,6 +255,10 @@
         <div class="field" style="flex:1.5">
           <span>بحث</span>
           <input type="text" id="evSearch" placeholder="ابحث بعنوان المهمة، الموظف، المكان، أو الملاحظات..." />
+        </div>
+        <div class="field" id="evFilterUnitField">
+          <span>الوحدة / القسم</span>
+          <select id="evFilterUnit"><option value="">كل الوحدات</option></select>
         </div>
         <div class="field">
           <span>الموظف المكلف</span>
@@ -317,6 +329,125 @@
       </div>
     </section>
 
+    <!-- ==================== الوحدات والأقسام ==================== -->
+    <section class="page" id="unitsPage">
+      <div class="page-head">
+        <div>
+          <h2>🏢 إدارة الوحدات والأقسام (Units & Departments)</h2>
+          <p>إدارة الوحدات التابعة للفرع وتعيين مدراء الوحدات والاطلاع على تقارير وموظفي كل وحدة بدقة واستقلالية.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnNewUnit">➕ إضافة وحدة / قسم جديد</button>
+          <button class="btn btn-outline" onclick="renderUnits()">🔄 تحديث القائمة</button>
+        </div>
+      </div>
+
+      <!-- بطاقات إحصائيات الوحدات -->
+      <div class="kpis" id="unitsKpiGrid">
+        <div class="kpi blue">
+          <div class="lbl">🏢 إجمالي الوحدات</div>
+          <div class="val" id="unKpiTotal">0</div>
+          <div class="hint">الأقسام والوحدات المعتمدة</div>
+        </div>
+        <div class="kpi gold">
+          <div class="lbl">👑 مدراء الوحدات</div>
+          <div class="val" id="unKpiManagers">0</div>
+          <div class="hint">مسؤولو الوحدات الميدانية</div>
+        </div>
+        <div class="kpi green">
+          <div class="lbl">👥 الموظفون الموزعون</div>
+          <div class="val" id="unKpiUsers">0</div>
+          <div class="hint">مدخلو البيانات بالوحدات</div>
+        </div>
+        <div class="kpi purple">
+          <div class="lbl">📄 تقارير الوحدات</div>
+          <div class="val" id="unKpiReports">0</div>
+          <div class="hint">التقارير المرفوعة عبر الوحدات</div>
+        </div>
+      </div>
+
+      <!-- نموذج إنشاء / تعديل وحدة -->
+      <div class="card" id="unitFormCard" style="display:none;margin-top:18px">
+        <div class="page-head" style="margin-bottom:14px">
+          <h3 id="unitFormTitle">➕ إضافة وحدة / قسم جديد</h3>
+          <button class="btn btn-outline btn-sm" id="unitCancelBtn">إغلاق</button>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <span>اسم الوحدة / القسم *</span>
+            <input type="text" id="unName" placeholder="مثال: وحدة الرقابة والتفتيش / قسم الشؤون القانونية..." />
+          </div>
+          <div class="field">
+            <span>الرمز أو الكود التعريفي (اختياري)</span>
+            <input type="text" id="unCode" placeholder="مثال: UNIT-01 / U-INSP" />
+          </div>
+          <div class="field">
+            <span>مدير الوحدة المسؤول *</span>
+            <select id="unManagerSel">
+              <option value="">-- اختر مدير الوحدة --</option>
+            </select>
+          </div>
+          <div class="field">
+            <span>رقم الهاتف / التحويلة</span>
+            <input type="text" id="unPhone" placeholder="مثال: 777000111" />
+          </div>
+          <div class="field full">
+            <span>الوصف والمهام والملاحظات</span>
+            <textarea id="unNotes" style="min-height:75px" placeholder="اكتب نبذة عن اختصاصات ومهام هذه الوحدة..."></textarea>
+          </div>
+          <div class="field">
+            <span>الحالة</span>
+            <select id="unStatus">
+              <option value="active">نشطة ومفعلة</option>
+              <option value="inactive">موقوفة مؤقتاً</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn btn-primary" id="unSaveBtn">💾 حفظ بيانات الوحدة</button>
+          <button class="btn btn-outline" id="unCloseBtn">إلغاء</button>
+        </div>
+      </div>
+
+      <!-- شريط البحث والتصفية للوحدات -->
+      <div class="filter-bar" style="margin-top:18px">
+        <div class="field" style="flex:1">
+          <span>بحث سريع</span>
+          <input type="text" id="unSearch" placeholder="ابحث باسم الوحدة، الرمز، أو اسم المدير..." />
+        </div>
+        <div class="field tight">
+          <span>الحالة</span>
+          <select id="unFilterStatus">
+            <option value="">الكل</option>
+            <option value="active">نشطة</option>
+            <option value="inactive">موقوفة</option>
+          </select>
+        </div>
+        <div class="field tight">
+          <span>&nbsp;</span>
+          <button class="btn btn-outline" onclick="renderUnits()">تصفية</button>
+        </div>
+      </div>
+
+      <div style="font-weight:800;color:var(--muted);margin-bottom:10px" id="unCountLabel"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>اسم الوحدة / القسم</th>
+              <th>الرمز</th>
+              <th>مدير الوحدة</th>
+              <th>الهاتف</th>
+              <th>الموظفون والتقارير</th>
+              <th>الحالة</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="unitsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ==================== المستخدمون والصلاحيات ==================== -->
     <section class="page" id="usersPage">
       <div class="page-head">
@@ -346,6 +477,18 @@
               <input type="password" id="ufPassword" placeholder="أدخل كلمة المرور..." style="padding-left:42px;width:100%" />
               <button type="button" id="toggleUfPasswordBtn" style="position:absolute;left:8px;background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--muted)" title="إظهار / إخفاء كلمة المرور">👁️</button>
             </div>
+          </div>
+          <div class="field" id="ufUnitField">
+            <span>الوحدة / القسم التابع لها</span>
+            <select id="ufUnitSel">
+              <option value="">-- بدون وحدة (مباشر للفرع) --</option>
+            </select>
+          </div>
+          <div class="field" id="ufIsUnitManagerWrap">
+            <span>صفة المسؤولية في الوحدة</span>
+            <label style="flex-direction:row;align-items:center;gap:8px;font-weight:800;color:var(--text);margin-top:6px">
+              <input type="checkbox" id="ufIsUnitManager" style="width:auto" /> مسؤول / مدير هذه الوحدة (Unit Manager)
+            </label>
           </div>
           <div class="field"><span>الحالة</span><label style="flex-direction:row;align-items:center;gap:8px;font-weight:800;color:var(--text)"><input type="checkbox" id="ufActive" checked style="width:auto" /> مستخدم نشط</label></div>
         </div>
@@ -388,7 +531,8 @@
       </div>
 
       <div class="filter-bar">
-        <div class="field"><span>بحث</span><input type="text" id="userSearch" placeholder="ابحث بالاسم أو اسم المستخدم..." /></div>
+        <div class="field" style="flex:1"><span>بحث</span><input type="text" id="userSearch" placeholder="ابحث بالاسم أو اسم المستخدم..." /></div>
+        <div class="field" id="uFilterUnitField"><span>تصفية بالوحدة</span><select id="uFilterUnit"><option value="">كل الوحدات والأقسام</option></select></div>
       </div>
       <div class="table-wrap">
         <table>
@@ -647,7 +791,10 @@
     <div class="modal-body" id="mDetailBody"></div>
     <div class="modal-foot" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
       <button class="btn btn-danger" id="mDeleteBtn" style="display:none">🗑️ حذف هذا التقرير</button>
-      <div style="display:flex;gap:8px;margin-right:auto">
+      <div style="display:flex;align-items:center;gap:12px;margin-right:auto">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text);cursor:pointer">
+          <input type="checkbox" id="mIncludeMediaCheck" checked /> تضمين المرفقات في الطباعة
+        </label>
         <button class="btn btn-primary" id="mPrintBtn">🖨 طباعة التقرير</button>
       </div>
     </div>

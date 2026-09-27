@@ -27,7 +27,7 @@ let REPORT_HEADER_CONFIG = {
   // درجة السرية / الوسام (اختياري: اتركه فارغاً '' لإخفائه)
   confidentialityBadge: "خاص وسري",
 
-  // إظهار التاريخ والوقت في الترويسة
+  // إظهار التاريخ في الترويسة
   showDateTime: true,
 
   // إظهار رقم التقرير في الترويسة (معطّل افتراضياً)
@@ -110,8 +110,7 @@ function renderReportHeaderHTML(report, customOpts = {}) {
       </div>
 
       <div class="hdr-col hdr-left">
-        ${cfg.showDateTime ? `<div class="hdr-info-item"><b>التاريخ:</b> <span>${esc(reportDate)}</span></div>` : ''}
-        ${cfg.showDateTime && reportTime ? `<div class="hdr-info-item"><b>الوقت:</b> <span>${esc(reportTime)}</span></div>` : ''}
+        ${cfg.showDateTime !== false ? `<div class="hdr-info-item"><b>التاريخ:</b> <span>${esc(new Date().toISOString().slice(0, 10))}</span></div>` : ''}
       </div>
     </div>
     <div class="report-header-line"></div>

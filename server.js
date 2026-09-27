@@ -164,6 +164,20 @@ CREATE TABLE IF NOT EXISTS cloud_relay_queue (
   createdAt TEXT NOT NULL,
   status TEXT DEFAULT 'pending'
 );
+
+-- جدول الوحدات والأقسام التابعة للفرع
+CREATE TABLE IF NOT EXISTS units (
+  id TEXT PRIMARY KEY,
+  orgId TEXT NOT NULL,
+  unitName TEXT NOT NULL,
+  unitCode TEXT,
+  managerUserId TEXT,
+  managerName TEXT,
+  phone TEXT,
+  notes TEXT,
+  status TEXT DEFAULT 'active',
+  createdAt TEXT NOT NULL
+);
 `);
 
 // ترحيل تلقائي للأعمدة الجديدة في قواعد البيانات القائمة
@@ -172,6 +186,11 @@ try { db.exec("ALTER TABLE organizations ADD COLUMN encKey TEXT;"); } catch(e){}
 try { db.exec("ALTER TABLE reports ADD COLUMN isEncrypted INTEGER DEFAULT 0;"); } catch(e){}
 try { db.exec("ALTER TABLE reports ADD COLUMN encryptedPayload TEXT;"); } catch(e){}
 try { db.exec("ALTER TABLE reports ADD COLUMN encryptedIv TEXT;"); } catch(e){}
+try { db.exec("ALTER TABLE reports ADD COLUMN unitId TEXT;"); } catch(e){}
+try { db.exec("ALTER TABLE users ADD COLUMN unitId TEXT;"); } catch(e){}
+try { db.exec("ALTER TABLE users ADD COLUMN isUnitManager INTEGER DEFAULT 0;"); } catch(e){}
+try { db.exec("ALTER TABLE events ADD COLUMN unitId TEXT;"); } catch(e){}
+try { db.exec("ALTER TABLE devices ADD COLUMN unitId TEXT;"); } catch(e){}
 
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -274,6 +293,62 @@ function cleanupDuplicateUsers() {
 }
 setTimeout(cleanupDuplicateUsers, 1000);
 
+function cleanupDuplicateDevices() {
+  try {
+    const dupes = db.prepare(`
+      SELECT orgId, deviceId, COUNT(*) as cnt 
+      FROM devices 
+      GROUP BY orgId, deviceId 
+      HAVING cnt > 1
+    `).all();
+    for (const d of dupes) {
+      const rows = db.prepare(`
+        SELECT id, status, lastSeenAt, registeredAt 
+        FROM devices 
+        WHERE orgId=? AND deviceId=? 
+        ORDER BY CASE WHEN status='approved' THEN 1 WHEN status='pending' THEN 2 ELSE 3 END, 
+                 lastSeenAt DESC, registeredAt DESC
+      `).all(d.orgId, d.deviceId);
+      if (rows.length > 1) {
+        const deleteIds = rows.slice(1).map(r => r.id);
+        for (const delId of deleteIds) {
+          db.prepare('DELETE FROM devices WHERE id=?').run(delId);
+        }
+      }
+    }
+
+    const dupesByUser = db.prepare(`
+      SELECT orgId, userId, COUNT(*) as cnt 
+      FROM devices 
+      WHERE userId IS NOT NULL AND userId <> ''
+      GROUP BY orgId, userId 
+      HAVING cnt > 1
+    `).all();
+    for (const d of dupesByUser) {
+      const rows = db.prepare(`
+        SELECT id, status, lastSeenAt, registeredAt 
+        FROM devices 
+        WHERE orgId=? AND userId=? 
+        ORDER BY CASE WHEN status='approved' THEN 1 WHEN status='pending' THEN 2 ELSE 3 END, 
+                 lastSeenAt DESC, registeredAt DESC
+      `).all(d.orgId, d.userId);
+      if (rows.length > 1) {
+        const deleteIds = rows.slice(1).map(r => r.id);
+        for (const delId of deleteIds) {
+          db.prepare('DELETE FROM devices WHERE id=?').run(delId);
+        }
+      }
+    }
+  } catch(e) {
+    console.warn('Device deduplication notice:', e.message);
+  }
+}
+setTimeout(cleanupDuplicateDevices, 1200);
+
+try {
+  db.prepare(`UPDATE organizations SET logoUrl='Image/1754379379088.jpg' WHERE logoUrl IS NULL OR logoUrl='' OR logoUrl LIKE '%codex_logo%'`).run();
+} catch(e){}
+
 function setSetting(orgId, key, value) {
   if (!orgId) return;
   db.prepare('INSERT OR REPLACE INTO settings(orgId, key, value) VALUES(?,?,?)').run(orgId, key, String(value));
@@ -297,7 +372,7 @@ function setSetting(orgId, key, value) {
     demoOrgId = uid();
     const demoEncKey = crypto.randomBytes(32).toString('hex');
     db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
-      VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/codex_logo.jpg', '783745550', 'active', 50, 1, ?, ?)`)
+      VALUES(?, 'DEMO', 'المؤسسة النموذجية الأولى', 'Image/1754379379088.jpg', '783745550', 'active', 50, 1, ?, ?)`)
       .run(demoOrgId, demoEncKey, nowIso());
     setSetting(demoOrgId, 'enforceDeviceAuth', '1');
     console.log('✓ Created Demo Organization: DEMO with E2EE key');
@@ -341,28 +416,40 @@ function setSetting(orgId, key, value) {
 
 function publicUser(u) {
   const isAdminUser = u.role === 'Admin' || u.role === 'SuperAdmin';
+  const isUnitMgr = !!u.isUnitManager || u.role === 'UnitAdmin';
+  let unitName = '';
+  if (u.unitId) {
+    try {
+      const un = db.prepare('SELECT unitName FROM units WHERE id=?').get(u.unitId);
+      if (un) unitName = un.unitName;
+    } catch(e){}
+  }
   return {
     id: u.id,
     orgId: u.orgId,
+    unitId: u.unitId || null,
+    unitName: unitName || '',
+    isUnitManager: isUnitMgr ? 1 : 0,
     userName: u.userName,
     fullName: u.fullName,
     role: u.role,
     plainPassword: u.plainPassword || '',
     isActive: !!u.isActive,
-    canOpen: isAdminUser || !!u.canOpen || !!u.canReports || !!u.canEntry,
-    canAdd: isAdminUser || !!u.canAdd,
+    canOpen: isAdminUser || isUnitMgr || !!u.canOpen || !!u.canReports || !!u.canEntry,
+    canAdd: isAdminUser || isUnitMgr || !!u.canAdd,
     canDelete: isAdminUser || !!u.canDelete || !!u.canReportsDelete,
     canEdit: isAdminUser || !!u.canEdit || !!u.canReportsEdit,
-    canPrint: isAdminUser || !!u.canPrint || !!u.canReportsPrint,
-    canDash: isAdminUser || !!u.canDash,
-    canEntry: isAdminUser || !!u.canEntry,
-    canReports: isAdminUser || !!u.canReports,
+    canPrint: isAdminUser || isUnitMgr || !!u.canPrint || !!u.canReportsPrint,
+    canDash: isAdminUser || isUnitMgr || !!u.canDash,
+    canEntry: isAdminUser || isUnitMgr || !!u.canEntry,
+    canReports: isAdminUser || isUnitMgr || !!u.canReports,
     canReportsEdit: isAdminUser || !!u.canReportsEdit || !!u.canEdit,
     canReportsDelete: isAdminUser || !!u.canReportsDelete || !!u.canDelete,
-    canReportsPrint: isAdminUser || !!u.canReportsPrint || !!u.canPrint,
-    canEvents: isAdminUser || !!u.canEvents || !!u.canDash || !!u.canReports,
+    canReportsPrint: isAdminUser || isUnitMgr || !!u.canReportsPrint || !!u.canPrint,
+    canEvents: isAdminUser || isUnitMgr || !!u.canEvents || !!u.canDash || !!u.canReports,
     canUsers: isAdminUser || !!u.canUsers,
-    canSettings: isAdminUser || !!u.canSettings,
+    canSettings: isAdminUser || (!isUnitMgr && !!u.canSettings),
+    canUnits: isAdminUser,
     createdAt: u.createdAt
   };
 }
@@ -371,8 +458,16 @@ function parseReportRow(r) {
   if (!r) return null;
   let images = [];
   try { images = JSON.parse(r.images || '[]'); } catch (e) { images = []; }
+  let unitName = '';
+  if (r.unitId) {
+    try {
+      const un = db.prepare('SELECT unitName FROM units WHERE id=?').get(r.unitId);
+      if (un) unitName = un.unitName;
+    } catch(e){}
+  }
   return {
     ...r,
+    unitName,
     images,
     imageCount: images.length,
     isEncrypted: r.isEncrypted ? 1 : 0,
@@ -437,6 +532,7 @@ function auth(req) {
 
 function isSuperAdmin(u) { return u && u.role === 'SuperAdmin'; }
 function isOrgAdmin(u) { return u && (u.role === 'Admin' || u.role === 'SuperAdmin'); }
+function isUnitAdmin(u) { return u && (u.role === 'UnitAdmin' || !!u.isUnitManager); }
 function can(u, p) { return isSuperAdmin(u) || isOrgAdmin(u) || (u && !!u[p]); }
 
 function checkDeviceAuth(user, org, req) {
@@ -453,62 +549,95 @@ function checkDeviceAuth(user, org, req) {
     return { ok: false, code: 'DEVICE_MISSING', message: 'لم يتم إرسال معرّف الجهاز (Device ID).' };
   }
 
+  // 1. فحص إذا كان معرّف الجهاز مسجل مسبقاً
   const dev = db.prepare('SELECT * FROM devices WHERE orgId=? AND deviceId=?').get(user.orgId, deviceId);
-  if (!dev) {
-    const id = uid();
-    const t = nowIso();
-    const initialStatus = enforce ? 'pending' : 'approved';
-    db.prepare('INSERT INTO devices(id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-      .run(id, user.orgId, deviceId, deviceName, user.id, user.userName, user.fullName, initialStatus, t, t, enforce ? null : t, enforce ? null : 'تلقائي');
+  if (dev) {
+    db.prepare('UPDATE devices SET lastSeenAt=?, userId=?, userName=?, userFullName=?, deviceName=?, unitId=COALESCE(?, unitId) WHERE id=?')
+      .run(nowIso(), user.id, user.userName, user.fullName, deviceName, user.unitId || null, dev.id);
 
-    try {
-      db.prepare(`INSERT INTO cloud_relay_queue(id, orgId, itemType, payload, createdAt, status) VALUES(?,?,?,?,?,?)`)
-        .run(uid(), user.orgId, 'device_registration', JSON.stringify({
-          id, orgId: user.orgId, deviceId, deviceName, userId: user.id, userName: user.userName, userFullName: user.fullName,
-          status: initialStatus, registeredAt: t, lastSeenAt: t, approvedAt: enforce ? null : t, approvedBy: enforce ? null : 'تلقائي'
-        }), t, 'pending');
-    } catch(e){}
-
-    if (enforce) {
-      return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف جديد وقيد المراجعة بانتظار اعتماد مدير الجهة (' + org.orgName + ').' };
+    if (dev.status === 'blocked') {
+      return { ok: false, code: 'DEVICE_BLOCKED', message: '🚫 تم حظر هذا الهاتف من الاتصال بالنظام من قِبل إدارة الجهة.' };
     }
-    return { ok: true };
+    if (enforce && dev.status === 'pending') {
+      return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف قيد المراجعة وبانتظار اعتماد مدير الجهة (' + org.orgName + ').' };
+    }
+    return { ok: true, device: dev };
   }
 
-  db.prepare('UPDATE devices SET lastSeenAt=?, userId=?, userName=?, userFullName=?, deviceName=? WHERE id=?')
-    .run(nowIso(), user.id, user.userName, user.fullName, deviceName, dev.id);
-
-  if (dev.status === 'blocked') {
-    return { ok: false, code: 'DEVICE_BLOCKED', message: '🚫 تم حظر هذا الهاتف من الاتصال بالنظام من قِبل إدارة الجهة.' };
-  }
-  if (enforce && dev.status === 'pending') {
-    return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف قيد المراجعة وبانتظار اعتماد مدير الجهة (' + org.orgName + ').' };
+  // 2. إذا كان للمستخدم جهاز سابق معتمد في النظام بنفس الفرع (مثلاً عند إعادة تثبيت التطبيق أو تحديث الهاتف)
+  const existingUserDev = db.prepare("SELECT * FROM devices WHERE orgId=? AND (userId=? OR userName=?) AND status='approved'").get(user.orgId, user.id, user.userName);
+  if (existingUserDev) {
+    db.prepare('UPDATE devices SET deviceId=?, deviceName=?, lastSeenAt=?, unitId=COALESCE(?, unitId) WHERE id=?')
+      .run(deviceId, deviceName, nowIso(), user.unitId || null, existingUserDev.id);
+    return { ok: true, device: existingUserDev };
   }
 
-  return { ok: true, device: dev };
+  // 3. تسجيل جهاز جديد لأول مرة
+  const id = uid();
+  const t = nowIso();
+  const initialStatus = enforce ? 'pending' : 'approved';
+  db.prepare('INSERT INTO devices(id, orgId, unitId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, user.orgId, user.unitId || null, deviceId, deviceName, user.id, user.userName, user.fullName, initialStatus, t, t, enforce ? null : t, enforce ? null : 'تلقائي');
+
+  try {
+    db.prepare(`INSERT INTO cloud_relay_queue(id, orgId, itemType, payload, createdAt, status) VALUES(?,?,?,?,?,?)`)
+      .run(uid(), user.orgId, 'device_registration', JSON.stringify({
+        id, orgId: user.orgId, unitId: user.unitId || null, deviceId, deviceName, userId: user.id, userName: user.userName, userFullName: user.fullName,
+        status: initialStatus, registeredAt: t, lastSeenAt: t, approvedAt: enforce ? null : t, approvedBy: enforce ? null : 'تلقائي'
+      }), t, 'pending');
+  } catch(e){}
+
+  if (enforce) {
+    return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف جديد وقيد المراجعة بانتظار اعتماد مدير الجهة (' + org.orgName + ').' };
+  }
+  return { ok: true };
 }
 
 function buildMe(user) {
   let org = null;
+  let userUnit = null;
+  let orgUnits = [];
   if (user.orgId) {
     org = db.prepare('SELECT * FROM organizations WHERE id=?').get(user.orgId);
     if (org && !org.encKey) {
       const k = crypto.randomBytes(32).toString('hex');
       try { db.prepare('UPDATE organizations SET encKey=? WHERE id=?').run(k, org.id); org.encKey = k; } catch(e){}
     }
+    try {
+      if (user.unitId) {
+        userUnit = db.prepare('SELECT * FROM units WHERE id=?').get(user.unitId) || null;
+      }
+      if (isOrgAdmin(user) || isSuperAdmin(user)) {
+        orgUnits = db.prepare('SELECT id, unitName, unitCode, managerName, status FROM units WHERE orgId=? ORDER BY unitName').all(user.orgId);
+      } else if (userUnit) {
+        orgUnits = [userUnit];
+      }
+    } catch(e){}
   }
-  const entryUsers = user.orgId ? db.prepare("SELECT id, userName, fullName, role FROM users WHERE orgId=? AND role='EntryUser' ORDER BY fullName").all() : [];
+
+  let entryUsers = [];
+  if (user.orgId) {
+    const isUnitMgr = isUnitAdmin(user) && user.unitId;
+    if (isUnitMgr) {
+      entryUsers = db.prepare("SELECT id, userName, fullName, role, unitId FROM users WHERE orgId=? AND unitId=? AND role IN ('EntryUser', 'UnitAdmin') ORDER BY fullName").all(user.orgId, user.unitId);
+    } else {
+      entryUsers = db.prepare("SELECT id, userName, fullName, role, unitId FROM users WHERE orgId=? AND role IN ('EntryUser', 'UnitAdmin') ORDER BY fullName").all(user.orgId);
+    }
+  }
+
   return {
     user: publicUser(user),
     organization: org ? {
       id: org.id,
       orgCode: org.orgCode,
       orgName: org.orgName,
-      logoUrl: org.logoUrl || 'Image/codex_logo.jpg',
+      logoUrl: (org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg',
       phone: org.phone,
       status: org.status,
       encKey: org.encKey || ''
     } : null,
+    unit: userUnit,
+    units: orgUnits,
     users: entryUsers,
     settings: user.orgId ? {
       consumeAddAfterSync: getSetting(user.orgId, 'consumeAddAfterSync', '0') === '1',
@@ -518,26 +647,56 @@ function buildMe(user) {
   };
 }
 
-function buildStats(orgId) {
-  const usersTotal = db.prepare('SELECT COUNT(*) c FROM users WHERE orgId=?').get(orgId).c;
-  const usersActive = db.prepare('SELECT COUNT(*) c FROM users WHERE orgId=? AND isActive=1').get(orgId).c;
-  const reportsTotal = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=?').get(orgId).c;
+function buildStats(orgId, me = null, requestedUnitId = null) {
+  const isUnitMgr = me && isUnitAdmin(me) && me.unitId;
+  const unitFilter = isUnitMgr ? me.unitId : (requestedUnitId || null);
+
+  let usersTotal = 0, usersActive = 0, reportsTotal = 0, reportsToday = 0;
   const today = new Date().toISOString().slice(0, 10);
-  const reportsToday = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=? AND reportDate=?').get(orgId, today).c;
+
+  if (unitFilter) {
+    usersTotal = db.prepare('SELECT COUNT(DISTINCT LOWER(userName)) c FROM users WHERE orgId=? AND unitId=?').get(orgId, unitFilter).c;
+    usersActive = db.prepare('SELECT COUNT(DISTINCT LOWER(userName)) c FROM users WHERE orgId=? AND unitId=? AND isActive=1').get(orgId, unitFilter).c;
+    reportsTotal = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=? AND (unitId=? OR enteredByUserId IN (SELECT id FROM users WHERE unitId=?))').get(orgId, unitFilter, unitFilter).c;
+    reportsToday = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=? AND reportDate=? AND (unitId=? OR enteredByUserId IN (SELECT id FROM users WHERE unitId=?))').get(orgId, today, unitFilter, unitFilter).c;
+  } else {
+    usersTotal = db.prepare('SELECT COUNT(DISTINCT LOWER(userName)) c FROM users WHERE orgId=?').get(orgId).c;
+    usersActive = db.prepare('SELECT COUNT(DISTINCT LOWER(userName)) c FROM users WHERE orgId=? AND isActive=1').get(orgId).c;
+    reportsTotal = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=?').get(orgId).c;
+    reportsToday = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=? AND reportDate=?').get(orgId, today).c;
+  }
+
+  let unitsTotal = 0;
+  try {
+    unitsTotal = db.prepare('SELECT COUNT(*) c FROM units WHERE orgId=?').get(orgId).c;
+  } catch(e){}
 
   let devicesPending = 0, devicesApproved = 0, devicesTotal = 0;
   try {
-    devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending'").get(orgId).c;
-    devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved'").get(orgId).c;
-    devicesTotal = db.prepare('SELECT COUNT(*) c FROM devices WHERE orgId=?').get(orgId).c;
+    if (unitFilter) {
+      devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending' AND (unitId=? OR userId IN (SELECT id FROM users WHERE unitId=?))").get(orgId, unitFilter, unitFilter).c;
+      devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved' AND (unitId=? OR userId IN (SELECT id FROM users WHERE unitId=?))").get(orgId, unitFilter, unitFilter).c;
+      devicesTotal = db.prepare('SELECT COUNT(*) c FROM devices WHERE orgId=? AND (unitId=? OR userId IN (SELECT id FROM users WHERE unitId=?))').get(orgId, unitFilter, unitFilter).c;
+    } else {
+      devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending'").get(orgId).c;
+      devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved'").get(orgId).c;
+      devicesTotal = db.prepare('SELECT COUNT(*) c FROM devices WHERE orgId=?').get(orgId).c;
+    }
   } catch(e){}
 
   let eventsTotal = 0, eventsPending = 0, eventsReceived = 0, eventsCompleted = 0;
   try {
-    eventsTotal = db.prepare('SELECT COUNT(*) c FROM events WHERE orgId=? AND isArchived=0').get(orgId).c;
-    eventsPending = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status='pending' AND isArchived=0").get(orgId).c;
-    eventsReceived = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status IN ('received', 'in_progress') AND isArchived=0").get(orgId).c;
-    eventsCompleted = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status='completed' AND isArchived=0").get(orgId).c;
+    if (unitFilter) {
+      eventsTotal = db.prepare('SELECT COUNT(*) c FROM events WHERE orgId=? AND isArchived=0 AND (unitId=? OR assignedUserId IN (SELECT id FROM users WHERE unitId=?))').get(orgId, unitFilter, unitFilter).c;
+      eventsPending = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status='pending' AND isArchived=0 AND (unitId=? OR assignedUserId IN (SELECT id FROM users WHERE unitId=?))").get(orgId, unitFilter, unitFilter).c;
+      eventsReceived = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status IN ('received', 'in_progress') AND isArchived=0 AND (unitId=? OR assignedUserId IN (SELECT id FROM users WHERE unitId=?))").get(orgId, unitFilter, unitFilter).c;
+      eventsCompleted = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status='completed' AND isArchived=0 AND (unitId=? OR assignedUserId IN (SELECT id FROM users WHERE unitId=?))").get(orgId, unitFilter, unitFilter).c;
+    } else {
+      eventsTotal = db.prepare('SELECT COUNT(*) c FROM events WHERE orgId=? AND isArchived=0').get(orgId).c;
+      eventsPending = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status='pending' AND isArchived=0").get(orgId).c;
+      eventsReceived = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status IN ('received', 'in_progress') AND isArchived=0").get(orgId).c;
+      eventsCompleted = db.prepare("SELECT COUNT(*) c FROM events WHERE orgId=? AND status='completed' AND isArchived=0").get(orgId).c;
+    }
   } catch(e){}
 
   let queuePending = 0;
@@ -546,7 +705,7 @@ function buildStats(orgId) {
   } catch(e){}
 
   return {
-    usersTotal, usersActive, reportsTotal, reportsToday,
+    usersTotal, usersActive, reportsTotal, reportsToday, unitsTotal,
     devicesPending, devicesApproved, devicesTotal,
     eventsTotal, eventsPending, eventsReceived, eventsCompleted,
     queuePending
@@ -845,7 +1004,7 @@ const server = http.createServer(async (req, res) => {
         const orgId = uid();
         db.prepare(`INSERT INTO organizations(id, orgCode, orgName, logoUrl, phone, status, maxUsers, allowHqAccess, encKey, createdAt)
           VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`)
-          .run(orgId, orgCode, orgName, b.logoUrl || 'Image/codex_logo.jpg', b.phone || '', b.maxUsers || 50, allowHqAccess, encKey, nowIso());
+          .run(orgId, orgCode, orgName, b.logoUrl || 'Image/1754379379088.jpg', b.phone || '', b.maxUsers || 50, allowHqAccess, encKey, nowIso());
 
         setSetting(orgId, 'enforceDeviceAuth', '1');
 
@@ -887,9 +1046,10 @@ const server = http.createServer(async (req, res) => {
         const q = (u.searchParams.get('q') || '').trim().toLowerCase();
 
         let sql = `
-          SELECT r.*, o.orgName, o.orgCode, o.encKey as orgEncKey
+          SELECT r.*, o.orgName, o.orgCode, o.encKey as orgEncKey, un.unitName
           FROM reports r
           JOIN organizations o ON r.orgId = o.id
+          LEFT JOIN units un ON r.unitId = un.id
           WHERE (o.allowHqAccess IS NULL OR o.allowHqAccess = 1)
         `;
         const params = [];
@@ -907,9 +1067,9 @@ const server = http.createServer(async (req, res) => {
           params.push(toDate);
         }
         if (q) {
-          sql += ' AND (LOWER(r.subject) LIKE ? OR LOWER(r.reportNumber) LIKE ? OR LOWER(r.enteredBy) LIKE ? OR LOWER(r.target) LIKE ?)';
+          sql += ' AND (LOWER(r.subject) LIKE ? OR LOWER(r.reportNumber) LIKE ? OR LOWER(r.enteredBy) LIKE ? OR LOWER(r.target) LIKE ? OR LOWER(un.unitName) LIKE ?)';
           const term = '%' + q + '%';
-          params.push(term, term, term, term);
+          params.push(term, term, term, term, term);
         }
 
         sql += ' ORDER BY r.reportDate DESC, r.createdAt DESC LIMIT 500';
@@ -918,6 +1078,7 @@ const server = http.createServer(async (req, res) => {
           rep.orgName = r.orgName;
           rep.orgCode = r.orgCode;
           rep.orgEncKey = r.orgEncKey;
+          rep.unitName = r.unitName || null;
           return rep;
         });
 
@@ -1290,15 +1451,27 @@ const server = http.createServer(async (req, res) => {
       const devices = Array.isArray(b.devices) ? b.devices : [];
       let upsertedCount = 0;
       for (const dev of devices) {
-        if (!dev.id || !dev.deviceId) continue;
-        db.prepare(`INSERT OR REPLACE INTO devices(
-          id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
-          .run(
-            dev.id, orgId, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
-            dev.userFullName || '', dev.status || 'approved', dev.registeredAt || nowIso(), dev.lastSeenAt || nowIso(),
-            dev.approvedAt || nowIso(), dev.approvedBy || me.fullName
-          );
+        if (!dev.deviceId) continue;
+        const existing = db.prepare('SELECT id FROM devices WHERE orgId=? AND deviceId=?').get(orgId, dev.deviceId);
+        if (existing) {
+          db.prepare(`UPDATE devices SET 
+            deviceName=?, userId=?, userName=?, userFullName=?, status=?, lastSeenAt=?, approvedAt=?, approvedBy=? 
+            WHERE id=?`)
+            .run(
+              dev.deviceName || '', dev.userId || '', dev.userName || '',
+              dev.userFullName || '', dev.status || 'approved', dev.lastSeenAt || nowIso(),
+              dev.approvedAt || nowIso(), dev.approvedBy || me.fullName, existing.id
+            );
+        } else {
+          db.prepare(`INSERT INTO devices(
+            id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(
+              dev.id || uid(), orgId, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
+              dev.userFullName || '', dev.status || 'approved', dev.registeredAt || nowIso(), dev.lastSeenAt || nowIso(),
+              dev.approvedAt || nowIso(), dev.approvedBy || me.fullName
+            );
+        }
         upsertedCount++;
       }
       send(res, 200, { ok: true, syncedDevices: upsertedCount });
@@ -1359,20 +1532,128 @@ const server = http.createServer(async (req, res) => {
     /* ---- إحصائيات لوحة تحكم الجهة ---- */
     if (method === 'GET' && p === '/api/stats') {
       if (!can(me, 'canDash')) { sendError(res, 403, 'غير مصرح'); return; }
-      send(res, 200, buildStats(orgId));
+      const requestedUnit = u.searchParams.get('unitId');
+      send(res, 200, buildStats(orgId, me, requestedUnit));
       return;
+    }
+
+    /* ---- إدارة الوحدات والأقسام داخل الفرع ---- */
+    if (p === '/api/units') {
+      if (!can(me, 'canOpen') && !isOrgAdmin(me) && !isUnitAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      if (method === 'GET') {
+        let sql = 'SELECT * FROM units WHERE orgId=?';
+        const params = [orgId];
+        if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+          sql += ' AND id=?';
+          params.push(me.unitId);
+        }
+        sql += ' ORDER BY unitName ASC';
+        const units = db.prepare(sql).all(...params).map(un => {
+          let usersCount = 0;
+          let reportsCount = 0;
+          try {
+            usersCount = db.prepare('SELECT COUNT(*) c FROM users WHERE orgId=? AND unitId=?').get(orgId, un.id).c;
+            reportsCount = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=? AND (unitId=? OR enteredByUserId IN (SELECT id FROM users WHERE unitId=?))').get(orgId, un.id, un.id).c;
+          } catch(e){}
+          return { ...un, usersCount, reportsCount };
+        });
+        send(res, 200, { ok: true, units });
+        return;
+      }
+      if (method === 'POST') {
+        if (!isOrgAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'صلاحية إنشاء الوحدات مخصصة لمدير الفرع فقط'); return; }
+        const b = await readBody(req);
+        const unitName = String(b.unitName || '').trim();
+        if (!unitName) { sendError(res, 400, 'اسم الوحدة مطلوب'); return; }
+        const id = uid();
+        const unitCode = String(b.unitCode || ('U' + Date.now().toString().slice(-4))).trim().toUpperCase();
+        const managerUserId = b.managerUserId ? String(b.managerUserId) : null;
+        let managerName = String(b.managerName || '').trim();
+        if (managerUserId && !managerName) {
+          try {
+            const mu = db.prepare('SELECT fullName FROM users WHERE id=?').get(managerUserId);
+            if (mu) managerName = mu.fullName;
+          } catch(e){}
+        }
+        db.prepare(`INSERT INTO units(id, orgId, unitName, unitCode, managerUserId, managerName, phone, notes, status, createdAt)
+          VALUES(?,?,?,?,?,?,?,?,?,?)`)
+          .run(id, orgId, unitName, unitCode, managerUserId, managerName, String(b.phone || ''), String(b.notes || ''), 'active', nowIso());
+        
+        if (managerUserId) {
+          try {
+            db.prepare('UPDATE users SET unitId=?, isUnitManager=1, role=CASE WHEN role="Admin" THEN "Admin" ELSE "UnitAdmin" END WHERE id=? AND orgId=?')
+              .run(id, managerUserId, orgId);
+          } catch(e){}
+        }
+        send(res, 200, { ok: true, unit: db.prepare('SELECT * FROM units WHERE id=?').get(id), message: 'تم إنشاء الوحدة بنجاح ✔' });
+        return;
+      }
+    }
+
+    const unitMatch = p.match(/^\/api\/units\/([^/]+)$/);
+    if (unitMatch) {
+      const uId = unitMatch[1];
+      const unit = db.prepare('SELECT * FROM units WHERE orgId=? AND id=?').get(orgId, uId);
+      if (!unit) { sendError(res, 404, 'الوحدة غير موجودة'); return; }
+
+      if (method === 'PUT') {
+        if (!isOrgAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح بتعديل بيانات الوحدة'); return; }
+        const b = await readBody(req);
+        const unitName = String(b.unitName || unit.unitName).trim();
+        const unitCode = String(b.unitCode || unit.unitCode).trim().toUpperCase();
+        const managerUserId = b.managerUserId !== undefined ? (b.managerUserId ? String(b.managerUserId) : null) : unit.managerUserId;
+        let managerName = String(b.managerName || unit.managerName || '').trim();
+        if (managerUserId) {
+          try {
+            const mu = db.prepare('SELECT fullName FROM users WHERE id=?').get(managerUserId);
+            if (mu) managerName = mu.fullName;
+          } catch(e){}
+        }
+        const phone = b.phone !== undefined ? String(b.phone) : unit.phone;
+        const notes = b.notes !== undefined ? String(b.notes) : unit.notes;
+        const status = b.status !== undefined ? String(b.status) : unit.status;
+
+        db.prepare(`UPDATE units SET unitName=?, unitCode=?, managerUserId=?, managerName=?, phone=?, notes=?, status=? WHERE id=? AND orgId=?`)
+          .run(unitName, unitCode, managerUserId, managerName, phone, notes, status, uId, orgId);
+
+        if (managerUserId) {
+          try {
+            db.prepare('UPDATE users SET unitId=?, isUnitManager=1, role=CASE WHEN role="Admin" THEN "Admin" ELSE "UnitAdmin" END WHERE id=? AND orgId=?')
+              .run(uId, managerUserId, orgId);
+          } catch(e){}
+        }
+
+        send(res, 200, { ok: true, unit: db.prepare('SELECT * FROM units WHERE id=?').get(uId), message: 'تم تحديث بيانات الوحدة بنجاح ✔' });
+        return;
+      }
+      if (method === 'DELETE') {
+        if (!isOrgAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح بحذف الوحدة'); return; }
+        try {
+          db.prepare('UPDATE users SET unitId=NULL, isUnitManager=0 WHERE orgId=? AND unitId=?').run(orgId, uId);
+        } catch(e){}
+        db.prepare('DELETE FROM units WHERE id=? AND orgId=?').run(uId, orgId);
+        send(res, 200, { ok: true, message: 'تم حذف الوحدة بنجاح وإلغاء ارتباط موظفيها ✔' });
+        return;
+      }
     }
 
     /* ---- إدارة المستخدمين داخل الجهة ---- */
     if (p === '/api/users') {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
       if (method === 'GET') {
-        const users = db.prepare(`
-          SELECT * FROM users 
-          WHERE orgId=? 
-          GROUP BY LOWER(userName)
-          ORDER BY role DESC, fullName ASC
-        `).all(orgId).map(publicUser);
+        const filterUnit = u.searchParams.get('unitId');
+        let sql = 'SELECT * FROM users WHERE orgId=?';
+        const params = [orgId];
+
+        if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+          sql += ' AND unitId=?';
+          params.push(me.unitId);
+        } else if (filterUnit) {
+          sql += ' AND unitId=?';
+          params.push(filterUnit);
+        }
+        sql += ' GROUP BY LOWER(userName) ORDER BY role DESC, isUnitManager DESC, fullName ASC';
+        const users = db.prepare(sql).all(...params).map(publicUser);
         send(res, 200, { users });
         return;
       }
@@ -1389,14 +1670,21 @@ const server = http.createServer(async (req, res) => {
         const pHash = hashHex(pPlain);
         const id = uid();
 
+        let assignedUnitId = b.unitId ? String(b.unitId) : null;
+        if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+          assignedUnitId = me.unitId;
+        }
+        const isUnitMgr = (b.isUnitManager || b.role === 'UnitAdmin') && isOrgAdmin(me) ? 1 : 0;
+        const assignedRole = isUnitMgr ? 'UnitAdmin' : (b.role === 'Admin' && isOrgAdmin(me) ? 'Admin' : 'EntryUser');
+
         db.prepare(`INSERT INTO users(
-          id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+          id, orgId, unitId, isUnitManager, userName, fullName, passwordHash, plainPassword, role, isActive,
           canOpen, canAdd, canDelete, canEdit, canPrint,
           canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint,
           canEvents, canUsers, canSettings, createdAt
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
-            id, orgId, userName, fullName, pHash, pPlain, 'EntryUser', b.isActive ? 1 : 0,
+            id, orgId, assignedUnitId, isUnitMgr, userName, fullName, pHash, pPlain, assignedRole, b.isActive ? 1 : 0,
             b.canOpen ? 1 : 0, b.canAdd ? 1 : 0, b.canReportsDelete ? 1 : 0, b.canReportsEdit ? 1 : 0, b.canReportsPrint ? 1 : 0,
             b.canDash ? 1 : 0, b.canEntry ? 1 : 0, b.canReports ? 1 : 0, b.canReportsEdit ? 1 : 0, b.canReportsDelete ? 1 : 0, b.canReportsPrint ? 1 : 0,
             b.canEvents ? 1 : 0, b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, nowIso()
@@ -1423,11 +1711,25 @@ const server = http.createServer(async (req, res) => {
             db.prepare('UPDATE users SET userName=? WHERE id=?').run(newU, user.id);
           }
         }
+
+        let updatedUnitId = user.unitId;
+        let updatedIsUnitMgr = user.isUnitManager || 0;
+        let updatedRole = user.role;
+        if (isOrgAdmin(me) || isSuperAdmin(me)) {
+          if (b.unitId !== undefined) updatedUnitId = b.unitId ? String(b.unitId) : null;
+          if (b.isUnitManager !== undefined) {
+            updatedIsUnitMgr = b.isUnitManager ? 1 : 0;
+            if (updatedIsUnitMgr && updatedRole !== 'Admin') updatedRole = 'UnitAdmin';
+            else if (!updatedIsUnitMgr && updatedRole === 'UnitAdmin') updatedRole = 'EntryUser';
+          }
+        }
+
         db.prepare(`UPDATE users SET
-          fullName=?, isActive=?, canDash=?, canEntry=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?, canEvents=?, canUsers=?, canSettings=?
+          fullName=?, unitId=?, isUnitManager=?, role=?, isActive=?, canDash=?, canEntry=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?, canEvents=?, canUsers=?, canSettings=?
           WHERE id=?`)
           .run(
             String(b.fullName ?? user.fullName),
+            updatedUnitId, updatedIsUnitMgr, updatedRole,
             b.isActive !== undefined ? (b.isActive ? 1 : 0) : user.isActive,
             b.canDash ? 1 : 0, b.canEntry ? 1 : 0, b.canReports ? 1 : 0,
             b.canReportsEdit ? 1 : 0, b.canReportsDelete ? 1 : 0, b.canReportsPrint ? 1 : 0,
@@ -1455,9 +1757,17 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/reports') {
       if (method === 'GET') {
         if (!can(me, 'canReports') && !can(me, 'canEntry')) { sendError(res, 403, 'غير مصرح'); return; }
+        const filterUnit = u.searchParams.get('unitId');
         let sql = 'SELECT * FROM reports WHERE orgId=?';
         const params = [orgId];
-        if (me.role !== 'Admin' && !me.canReports) {
+
+        if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+          sql += ' AND (unitId=? OR enteredByUserId IN (SELECT id FROM users WHERE unitId=?))';
+          params.push(me.unitId, me.unitId);
+        } else if (filterUnit) {
+          sql += ' AND (unitId=? OR enteredByUserId IN (SELECT id FROM users WHERE unitId=?))';
+          params.push(filterUnit, filterUnit);
+        } else if (me.role !== 'Admin' && me.role !== 'SuperAdmin' && !me.canReports) {
           sql += ' AND enteredByUserId=?';
           params.push(me.id);
         }
@@ -1476,17 +1786,23 @@ const server = http.createServer(async (req, res) => {
         let repNum = String(repData.reportNumber || '').trim();
         if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#') || repNum === 'undefined' || repNum === 'null') {
           repNum = getNextReportNumber(orgId);
+        } else {
+          const dup = db.prepare('SELECT id FROM reports WHERE orgId=? AND reportNumber=? AND id<>?').get(orgId, repNum, id);
+          if (dup) {
+            repNum = getNextReportNumber(orgId);
+          }
         }
         const isEnc = repData.isEncrypted ? 1 : 0;
         const encPayload = String(repData.encryptedPayload || '');
         const encIv = String(repData.encryptedIv || '');
+        const reportUnitId = repData.unitId || me.unitId || null;
         
         db.prepare(`INSERT OR REPLACE INTO reports(
-          id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
+          id, orgId, unitId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
           enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
-            id, orgId, repNum, String(repData.subject || ''), String(repData.target || ''),
+            id, orgId, reportUnitId, repNum, String(repData.subject || ''), String(repData.target || ''),
             String(repData.reportDate || t.slice(0, 10)), String(repData.reportTime || t.slice(11, 16)),
             String(repData.location || ''), String(repData.details || ''), JSON.stringify(repData.images || []),
             me.fullName, me.id, String(repData.rating || 'عادي'), String(repData.logoId || 'logo1'),
@@ -1629,10 +1945,22 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const allEvents = db.prepare('SELECT * FROM events WHERE orgId=? ORDER BY eventDate DESC, createdDate DESC').all(orgId);
+        const filterUnit = u.searchParams.get('unitId');
+        let sql = 'SELECT * FROM events WHERE orgId=?';
+        const params = [orgId];
+
+        if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me) && !isMineOnly) {
+          sql += ' AND (unitId=? OR assignedUserId IN (SELECT id FROM users WHERE unitId=?))';
+          params.push(me.unitId, me.unitId);
+        } else if (filterUnit && !isMineOnly) {
+          sql += ' AND (unitId=? OR assignedUserId IN (SELECT id FROM users WHERE unitId=?))';
+          params.push(filterUnit, filterUnit);
+        }
+        sql += ' ORDER BY eventDate DESC, createdDate DESC';
+        const allEvents = db.prepare(sql).all(...params);
 
         let filteredEvents = allEvents;
-        if (me.role !== 'Admin' && (!me.canEvents || isMineOnly)) {
+        if (isMineOnly || (me.role !== 'Admin' && me.role !== 'SuperAdmin' && !isUnitAdmin(me) && !me.canEvents)) {
           const myId = String(me.id || '').toLowerCase().trim();
           const myUser = String(me.userName || '').toLowerCase().trim();
           const myFull = String(me.fullName || '').toLowerCase().trim();
@@ -1642,30 +1970,14 @@ const server = http.createServer(async (req, res) => {
             const aId = String(e.assignedUserId || '').toLowerCase().trim();
             const aName = String(e.assignedUserName || '').toLowerCase().trim();
 
-            // مهمة عامة موجهة للجميع
-            if (!aId || aId === 'all' || aId === '0' || aId === 'null' || !aName || aName === 'الكل' || aName === 'جميع الموظفين' || aName === 'all') {
-              return true;
-            }
-            // مطابقة مباشرة بالمعرف أو اسم المستخدم أو الاسم الكامل
+            // مطابقة مباشرة لحساب هذا المستخدم
             if (aId === myId || aId === myUser || aName === myUser || aName === myFull) {
               return true;
             }
-            // مطابقة جزئية بالاسم
-            if (myFull && aName && (aName.includes(myFull) || myFull.includes(aName))) {
+            // إذا كان موظف عادي (وليس مديراً)، والحدث عام موجه لجميع الموظفين
+            if (!isOrgAdmin(me) && !isSuperAdmin(me) && (!aId || aId === 'all' || aId === '0' || aName === 'الكل' || aName === 'جميع الموظفين' || aName === 'all')) {
               return true;
             }
-            if (myUser && aName && aName.includes(myUser)) {
-              return true;
-            }
-            // إذا كان المعرف يطابق مستخدم في نفس الفرع يحمل نفس اسم المستخدم
-            try {
-              const uRow = db.prepare('SELECT userName, fullName FROM users WHERE orgId=? AND id=?').get(orgId, e.assignedUserId);
-              if (uRow) {
-                if (String(uRow.userName || '').toLowerCase().trim() === myUser) return true;
-                if (String(uRow.fullName || '').toLowerCase().trim() === myFull) return true;
-              }
-            } catch(err){}
-
             return false;
           });
         }
@@ -1684,12 +1996,14 @@ const server = http.createServer(async (req, res) => {
           try { assignedUser = db.prepare('SELECT * FROM users WHERE orgId=? AND id=?').get(orgId, assignedUserId); } catch(e){}
         }
         const assignedUserName = assignedUser ? assignedUser.fullName : (assignedUserId === 'all' ? 'جميع الموظفين' : (b.assignedUserName || me.fullName));
+        const assignedUnitId = b.unitId || (assignedUser ? assignedUser.unitId : null) || (isUnitAdmin(me) ? me.unitId : null);
+
         db.prepare(`INSERT INTO events(
-          id, orgId, title, eventType, notes, eventDate, eventTime, location,
+          id, orgId, unitId, title, eventType, notes, eventDate, eventTime, location,
           assignedUserId, assignedUserName, createdBy, createdById, createdDate, status
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
-            id, orgId, String(b.title || ''), String(b.eventType || 'مهمة'), String(b.notes || ''),
+            id, orgId, assignedUnitId, String(b.title || ''), String(b.eventType || 'مهمة'), String(b.notes || ''),
             String(b.eventDate || t.slice(0, 10)), String(b.eventTime || t.slice(11, 16)),
             String(b.location || ''), assignedUserId, assignedUserName,
             me.fullName, me.id, t, 'pending'
@@ -1774,6 +2088,30 @@ const server = http.createServer(async (req, res) => {
           setSetting(orgId, 'consumeAddAfterSync', b.consumeAddAfterSync ? '1' : '0');
         }
         send(res, 200, { ok: true, message: 'تم حفظ الإعدادات بنجاح' });
+        return;
+      }
+    }
+
+    if ((method === 'POST' || method === 'GET') && (p === '/api/backup/now' || p === '/api/backup/instant')) {
+      if (!can(me, 'canSettings') && !isOrgAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const timestamp = Date.now();
+        const targetPath = path.join(BACKUP_DIR, `multitenant_backup_${today}_${timestamp}.db`);
+        const safeTarget = targetPath.replace(/\\/g, '/').replace(/'/g, "''");
+        db.exec(`VACUUM INTO '${safeTarget}'`);
+        
+        // Also make a copy to C:/ReportsSystem_Backups if possible
+        const cBackupDir = 'C:/ReportsSystem_Backups';
+        try {
+          if (!fs.existsSync(cBackupDir)) fs.mkdirSync(cBackupDir, { recursive: true });
+          fs.copyFileSync(targetPath, path.join(cBackupDir, `multitenant_backup_${today}.db`));
+        } catch(ce){}
+
+        send(res, 200, { ok: true, message: 'تم حفظ وتحديث نسخة احتياطية فورية بنجاح على القرص الصلب ومجلد البرنامج ✔' });
+        return;
+      } catch(err) {
+        sendError(res, 500, 'فشل إنشاء النسخة الاحتياطية: ' + err.message);
         return;
       }
     }
@@ -1980,7 +2318,12 @@ const server = http.createServer(async (req, res) => {
     /* ---- إدارة الأجهزة داخل الجهة ---- */
     if (method === 'GET' && p === '/api/devices') {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
-      const devices = db.prepare('SELECT * FROM devices WHERE orgId=? ORDER BY lastSeenAt DESC').all(orgId);
+      const devices = db.prepare(`
+        SELECT * FROM devices 
+        WHERE orgId=? 
+        GROUP BY deviceId 
+        ORDER BY lastSeenAt DESC
+      `).all(orgId);
       send(res, 200, { devices });
       return;
     }
@@ -2123,14 +2466,21 @@ async function performCloudRelaySync(targetOrgId) {
               id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
               .run(
-                dev.id, org.id, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
+                dev.id || uid(), org.id, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
                 dev.userFullName || '', dev.status || 'pending', dev.registeredAt || nowIso(),
                 dev.lastSeenAt || nowIso(), dev.approvedAt || null, dev.approvedBy || ''
+              );
+          } else {
+            db.prepare(`UPDATE devices SET 
+              deviceName=?, userId=?, userName=?, userFullName=?, lastSeenAt=? WHERE id=?`)
+              .run(
+                dev.deviceName || '', dev.userId || '', dev.userName || '',
+                dev.userFullName || '', dev.lastSeenAt || nowIso(), exists.id
               );
           }
           ackIds.push(item.id);
           pulledDevices++;
-          console.log(`[📱 Device Sync] تم مزامنة الهاتف الجديد (${dev.deviceName || dev.deviceId}) محلياً`);
+          console.log(`[📱 Device Sync] تم مزامنة الهاتف (${dev.deviceName || dev.deviceId}) محلياً`);
         } catch(e){}
       } else if (item.itemType === 'event_feedback' && item.payload) {
         const f = item.payload;

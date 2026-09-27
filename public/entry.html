@@ -14,10 +14,11 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand">
-      <div class="logo">🧮</div>
+      <div class="logo"><img id="orgBrandLogoImg" src="Image/1754379379088.jpg" alt="شعار الجهة" /></div>
       <div class="t"><span id="orgBrandTitle">إدخال البيانات</span><small id="orgBrandSubtitle">منظومة التقارير الميدانية</small></div>
     </div>
     <nav class="nav">
+      <button class="nav-btn" id="eNavBackToAdmin" type="button" onclick="location.href='admin.html'" style="display:none;background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;font-weight:800;border:1px solid #3b82f6"><span class="ic">👑</span> لوحة مدير النظام</button>
       <button class="nav-btn active" id="eNavEntry" type="button"><span class="ic">📝</span> إدخال تقرير</button>
       <button class="nav-btn" id="eNavMyTasks" type="button"><span class="ic">📋</span> مهامي وتكليفاتي <span class="badge warn" id="myTasksBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
     </nav>
@@ -109,7 +110,7 @@
       <div class="form-grid">
         <div class="field">
           <span>رقم التقرير (يُولَّد تسلسلياً تلقائياً: آخر رقم + 1)</span>
-          <input type="text" id="fReportNumber" placeholder="تلقائي (رقم التقرير الأخير + 1)" title="يتم حجز الرقم المتسلسل الرسمي تلقائياً من السيرفر عند المزامنة لمنع تضارب الأرقام" />
+          <input type="text" id="fReportNumber" readonly placeholder="تلقائي من السيرفر (آخر رقم + 1)" title="يتم حجز الرقم المتسلسل الرسمي تلقائياً من السيرفر عند المزامنة لمنع تضارب الأرقام" />
         </div>
         <div class="field">
           <span>موضوع التقرير *</span>

@@ -22,10 +22,22 @@
   if (org) {
     if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = org.orgName || 'إدخال البيانات';
     if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'منظومة: ' + (org.orgName || '') + ' (' + (org.orgCode || '') + ')';
-    if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = org.orgName + ' (' + org.orgCode + ')';
+    if (document.getElementById('orgBadgeText')) {
+      const unitPart = me.unit ? (' — 🏢 ' + me.unit.unitName) : '';
+      document.getElementById('orgBadgeText').textContent = org.orgName + ' (' + (org.orgCode || '') + ')' + unitPart;
+    }
+    const logoEl = document.getElementById('orgBrandLogoImg');
+    if (logoEl) {
+      logoEl.src = (org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg';
+    }
   }
   $('userNameTop').textContent = u.fullName + (u.role === 'Admin' ? ' (مدير)' : '');
   if (u.role === 'Admin') $('userAv').textContent = '👑';
+
+  const canAccessAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canEvents || u.canUsers || u.canSettings;
+  if (canAccessAdmin && $('eNavBackToAdmin')) {
+    $('eNavBackToAdmin').style.display = 'flex';
+  }
 
   if ($('permChips')) $('permChips').innerHTML = permBadges(u);
   $('lockOut').style.display = 'none';
@@ -249,7 +261,7 @@
     photos = [];
     // رقم التقرير يُترك فارغاً للمسودة ليتم حجز الرقم المتسلسل الرسمي تلقائياً (آخر رقم + 1)
     $('fReportNumber').value = '';
-    $('fReportNumber').placeholder = 'تلقائي (رقم التقرير الأخير + 1)';
+    $('fReportNumber').placeholder = 'تلقائي من السيرفر (آخر رقم + 1)';
     $('fSubject').value = '';
     $('fTarget').value = '';
     $('fDate').value = todayStr();
@@ -355,6 +367,7 @@
       reportNumber: $('fReportNumber').value.trim(),
       subject: $('fSubject').value.trim(),
       target: $('fTarget').value.trim(),
+      unitId: me?.user?.unitId || null,
       reportDate: $('fDate').value,
       reportTime: $('fTime').value,
       location: $('fLocation').value.trim(),

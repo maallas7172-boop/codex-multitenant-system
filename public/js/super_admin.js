@@ -6,11 +6,13 @@ let allSuperReports = [];
 let activeSuperReport = null;
 let superReportSearchDebounce = null;
 let currentSuperHeaderConfig = null;
+let currentSuperUser = null;
 
 (async function () {
   let me = null;
   try {
     me = await currentMe();
+    currentSuperUser = me.user;
   } catch (e) {
     location.replace('login.html');
     return;
@@ -280,6 +282,7 @@ async function loadSuperReports() {
           <td style="padding:12px">
             <span style="font-weight:800;color:#0284c7;font-size:13.5px">${esc(r.orgName || 'فرع')}</span>
             <div style="font-size:11px;color:#64748b;font-family:monospace">${esc(r.orgCode || '')}</div>
+            ${r.unitName ? `<span class="badge purple" style="font-size:10.5px;padding:2px 6px;margin-top:3px;display:inline-block">🏢 ${esc(r.unitName)}</span>` : ''}
           </td>
           <td style="padding:12px">
             <span style="font-family:monospace;font-weight:800;background:#f1f5f9;padding:2px 6px;border-radius:4px">${esc(r.reportNumber || '#' + r.id)}</span>${encBadge}
@@ -320,6 +323,56 @@ async function loadSuperReports() {
   }
 }
 
+function normalizeAttachment(p, idx) {
+  if (!p) return { id: 'att_' + (idx || 0), name: 'مرفق ' + ((idx || 0) + 1), type: 'application/octet-stream', size: 0, data: '' };
+  if (typeof p === 'string') {
+    if (p.startsWith('data:image')) {
+      return { id: 'att_' + (idx || 0), name: 'صورة ' + ((idx || 0) + 1), type: 'image/jpeg', size: Math.round(p.length * 0.75), data: p };
+    }
+    if (p.startsWith('data:video')) {
+      return { id: 'att_' + (idx || 0), name: 'فيديو ' + ((idx || 0) + 1), type: 'video/mp4', size: Math.round(p.length * 0.75), data: p };
+    }
+    if (p.startsWith('data:audio')) {
+      return { id: 'att_' + (idx || 0), name: 'تسجيل صوتي ' + ((idx || 0) + 1), type: 'audio/mp3', size: Math.round(p.length * 0.75), data: p };
+    }
+    if (p.startsWith('data:')) {
+      const match = p.match(/^data:([^;]+);/);
+      const mime = match ? match[1] : 'application/octet-stream';
+      return { id: 'att_' + (idx || 0), name: 'مرفق ' + ((idx || 0) + 1), type: mime, size: Math.round(p.length * 0.75), data: p };
+    }
+    return { id: 'att_' + (idx || 0), name: 'مرفق ' + ((idx || 0) + 1), type: 'image/jpeg', size: 0, data: p };
+  }
+  const data = p.data || p.url || p.src || p.path || '';
+  const type = p.type || (data.startsWith('data:image') ? 'image/jpeg' : (data.startsWith('data:video') ? 'video/mp4' : (data.startsWith('data:audio') ? 'audio/mp3' : 'application/octet-stream')));
+  return {
+    id: p.id || ('att_' + (idx || 0)),
+    name: p.name || ('مرفق ' + ((idx || 0) + 1)),
+    type: type,
+    size: p.size || (data ? Math.round(data.length * 0.75) : 0),
+    data: data
+  };
+}
+
+function getAttachmentIcon(mime = '', name = '') {
+  const m = (mime || '').toLowerCase();
+  const n = (name || '').toLowerCase();
+  if (m.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(n)) return '🖼️';
+  if (m.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|3gp)$/i.test(n)) return '🎬';
+  if (m.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|amr)$/i.test(n)) return '🎵';
+  if (m.includes('pdf') || n.endsWith('.pdf')) return '📄';
+  if (m.includes('word') || m.includes('document') || /\.(doc|docx)$/i.test(n)) return '📝';
+  if (m.includes('sheet') || m.includes('excel') || /\.(xls|xlsx)$/i.test(n)) return '📊';
+  return '📎';
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
 // عرض تفاصيل التقرير في نافذة منبثقة
 function showSuperReportDetail(reportId) {
   const r = allSuperReports.find(x => String(x.id) === String(reportId) || String(x.reportNumber) === String(reportId));
@@ -344,26 +397,78 @@ function showSuperReportDetail(reportId) {
   const detEl = document.getElementById('srdDetails');
   if (detEl) detEl.textContent = r.details || r.notes || 'لا يوجد نص تفصيلي للتقرير.';
 
-  // الصور المرفقة
+  // الصور والمرفقات
   const gallery = document.getElementById('srdImagesGallery');
   const sec = document.getElementById('srdImagesSection');
   if (gallery && sec) {
     gallery.innerHTML = '';
-    let imgList = [];
+    let rawList = [];
     if (r.images) {
       try {
-        imgList = typeof r.images === 'string' ? JSON.parse(r.images) : r.images;
-      } catch(e) { imgList = []; }
+        rawList = typeof r.images === 'string' ? JSON.parse(r.images) : r.images;
+      } catch(e) { rawList = []; }
     }
+    if (!Array.isArray(rawList)) rawList = [];
 
-    if (Array.isArray(imgList) && imgList.length > 0) {
+    const attachments = rawList.map((p, i) => normalizeAttachment(p, i));
+
+    if (attachments.length > 0) {
       sec.style.display = 'block';
-      gallery.innerHTML = imgList.map((imgSrc, idx) => {
-        return `
-          <a href="${imgSrc}" target="_blank" rel="noopener noreferrer" style="display:inline-block;border:2px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;box-shadow:var(--shadow-soft)" title="عرض الصورة بالحجم الكامل">
-            <img src="${imgSrc}" alt="مرفق ${idx + 1}" style="width:110px;height:110px;object-fit:cover;display:block" />
-          </a>
-        `;
+      gallery.innerHTML = attachments.map((att, idx) => {
+        const isImg = att.type.startsWith('image/') || (!att.type && att.data && att.data.startsWith('data:image'));
+        const isVid = att.type.startsWith('video/') || (!att.type && att.data && att.data.startsWith('data:video'));
+        const isAud = att.type.startsWith('audio/') || (!att.type && att.data && att.data.startsWith('data:audio'));
+        const icon = getAttachmentIcon(att.type, att.name);
+        const sizeStr = formatBytes(att.size);
+
+        if (isImg) {
+          return `
+            <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#f8fafc;display:flex;flex-direction:column;width:160px;box-shadow:0 1px 4px rgba(0,0,0,0.05)">
+              <a href="${att.data}" target="_blank" download="${esc(att.name)}" style="display:block;height:120px;overflow:hidden;background:#000" title="اضغط للتكبير أو التنزيل">
+                <img src="${att.data}" alt="${esc(att.name)}" style="width:100%;height:100%;object-fit:cover" />
+              </a>
+              <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center;font-size:11px;background:#fff">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:100px" title="${esc(att.name)}">${esc(att.name)}</span>
+                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 6px;font-size:11px" title="تنزيل">⬇️</a>
+              </div>
+            </div>`;
+        } else if (isVid) {
+          return `
+            <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0f172a;color:#fff;display:flex;flex-direction:column;width:180px">
+              <video src="${att.data}" controls style="width:100%;height:120px;background:#000;object-fit:contain"></video>
+              <div style="padding:6px 8px;display:flex;justify-content:space-between;align-items:center;font-size:11px;background:#1e293b">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;max-width:110px" title="${esc(att.name)}">🎬 ${esc(att.name)}</span>
+                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-primary btn-xs" style="padding:2px 6px;font-size:11px" title="تنزيل الفيديو">⬇️</a>
+              </div>
+            </div>`;
+        } else if (isAud) {
+          return `
+            <div style="border:1px solid var(--line);border-radius:10px;padding:8px;background:#f8fafc;display:flex;flex-direction:column;gap:6px;width:180px">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:11.5px">
+                <span style="font-size:16px">🎵</span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px" title="${esc(att.name)}">${esc(att.name)}</span>
+              </div>
+              <audio src="${att.data}" controls style="width:100%;height:30px"></audio>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:10.5px;color:var(--muted)">
+                <span>${sizeStr}</span>
+                <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="padding:2px 6px;font-size:10px">⬇️ تنزيل</a>
+              </div>
+            </div>`;
+        } else {
+          return `
+            <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#ffffff;display:flex;flex-direction:column;justify-content:space-between;gap:8px;box-shadow:0 1px 3px rgba(0,0,0,0.04);width:160px">
+              <div style="display:flex;align-items:flex-start;gap:8px">
+                <span style="font-size:24px;line-height:1">${icon}</span>
+                <div style="flex:1;overflow:hidden">
+                  <div style="font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(att.name)}">${esc(att.name)}</div>
+                  <div style="font-size:10.5px;color:var(--muted);margin-top:2px">${sizeStr}</div>
+                </div>
+              </div>
+              <a href="${att.data}" download="${esc(att.name)}" class="btn btn-outline btn-xs" style="width:100%;justify-content:center;font-size:11px;gap:4px">
+                <span>⬇️ تنزيل الملف</span>
+              </a>
+            </div>`;
+        }
       }).join('');
     } else {
       sec.style.display = 'none';
@@ -394,16 +499,26 @@ function printSuperReportById(reportId) {
 }
 
 // طباعة التقرير من لوحة المركز بتنسيق رسمي متكامل
-function printSuperReport(reportToPrint) {
+function printSuperReport(reportToPrint, includeMedia) {
   const r = reportToPrint || activeSuperReport;
   if (!r) return;
 
-  let imgList = [];
+  if (includeMedia === undefined) {
+    const chk = document.getElementById('srdIncludeMediaCheck');
+    includeMedia = chk ? chk.checked : true;
+  }
+
+  let rawList = [];
   if (r.images) {
     try {
-      imgList = typeof r.images === 'string' ? JSON.parse(r.images) : (r.images || []);
-    } catch(e) { imgList = []; }
+      rawList = typeof r.images === 'string' ? JSON.parse(r.images) : (r.images || []);
+    } catch(e) { rawList = []; }
   }
+  if (!Array.isArray(rawList)) rawList = [];
+
+  const attachments = rawList.map((p, i) => normalizeAttachment(p, i));
+  const imgList = attachments.filter(a => a.type.startsWith('image/') || (!a.type && a.data && a.data.startsWith('data:image')));
+  const otherList = attachments.filter(a => !imgList.includes(a));
 
   const cfg = currentSuperHeaderConfig || {};
   const lines = (cfg.lines && cfg.lines.length > 0 && cfg.lines.some(Boolean)) ? cfg.lines : [
@@ -431,44 +546,78 @@ function printSuperReport(reportToPrint) {
   const sig3Title = sigs.sig3Title || 'الختم الرسمي للمركز';
   const sig3Name = sigs.sig3Name !== undefined ? sigs.sig3Name : '[....................]';
 
-  const imagesHtml = (Array.isArray(imgList) && imgList.length > 0)
-    ? `<div style="margin-top:20px">
-        <h4 style="border-bottom:1.5px solid #cbd5e1;padding-bottom:6px;color:#1e3a8a;margin-bottom:12px">📷 المرفقات والصور الميدانية:</h4>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px">
-          ${imgList.map(src => `<div style="border:1px solid #cbd5e1;border-radius:8px;padding:4px;background:#fff"><img src="${src}" style="max-width:240px;max-height:180px;border-radius:6px;display:block" /></div>`).join('')}
-        </div>
-       </div>`
-    : '';
+  const imgHtml = imgList.length ? `
+    <div style="margin-top:14px">
+      <h4 style="border-bottom:1.5px solid #cbd5e1;padding-bottom:6px;color:#1e3a8a;margin-bottom:10px;font-size:14px">📷 الصور الميدانية المرفقة (${imgList.length}):</h4>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        ${imgList.map(img => `<div style="border:1px solid #cbd5e1;border-radius:8px;padding:4px;background:#fff"><img src="${img.data}" alt="${esc(img.name)}" style="max-width:240px;max-height:180px;border-radius:6px;display:block" /></div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const otherDocsHtml = otherList.length ? `
+    <div style="margin-top:14px">
+      <h4 style="border-bottom:1.5px solid #cbd5e1;padding-bottom:6px;color:#1e3a8a;margin-bottom:10px;font-size:14px">📎 المستندات والملفات المرفقة (${otherList.length}):</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;background:#fff">
+        <thead>
+          <tr style="background:#f1f5f9">
+            <th style="width:40px;text-align:center;border:1px solid #cbd5e1;padding:6px">#</th>
+            <th style="border:1px solid #cbd5e1;padding:6px">اسم الملف</th>
+            <th style="width:130px;text-align:center;border:1px solid #cbd5e1;padding:6px">النوع</th>
+            <th style="width:100px;text-align:center;border:1px solid #cbd5e1;padding:6px">الحجم</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${otherList.map((doc, idx) => `
+            <tr>
+              <td style="text-align:center;border:1px solid #cbd5e1;padding:6px">${idx + 1}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px"><b>${getAttachmentIcon(doc.type, doc.name)} ${esc(doc.name)}</b></td>
+              <td style="text-align:center;border:1px solid #cbd5e1;padding:6px">${esc(doc.type.split('/')[1] || doc.type)}</td>
+              <td style="text-align:center;border:1px solid #cbd5e1;padding:6px">${formatBytes(doc.size)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+  const mediaSectionHtml = (imgHtml || otherDocsHtml) ? `
+    <div id="printMediaSection" style="margin-top:16px;${includeMedia ? '' : 'display:none;'}">
+      ${imgHtml}
+      ${otherDocsHtml}
+    </div>` : '';
+
+  const printDateStr = new Date().toISOString().slice(0, 10);
+  const printedByName = (currentSuperUser && (currentSuperUser.fullName || currentSuperUser.userName)) || 'إدارة المركز الرئيسي';
 
   const w = window.open('', '_blank', 'width=850,height=950');
   w.document.write(`<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8" />
-<title>تقرير — ${esc(r.subject || r.reportNumber || 'تقرير')}</title>
+<title>&lrm;</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Aref+Ruqaa:wght@400;700&family=Cairo:wght@400;600;700;800;900&display=swap" />
 <style>
-  body { font-family: system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; margin: 0; padding: 24px; direction: rtl; font-size: 13.5px; }
-  .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; width: 100%; box-sizing: border-box; }
-  .header-right { flex: 0 0 auto; min-width: 220px; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; margin: 0; }
-  .hdr-line-main { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 22px; font-weight: 800; color: #0f172a; line-height: 1.35; letter-spacing: 0.5px; text-align: center; width: 100%; margin: 0 auto 3px auto; display: block; }
-  .hdr-line-sub { font-size: 13.5px; font-weight: 700; color: #334155; line-height: 1.4; text-align: center; width: 100%; margin: 0 auto; display: block; }
+  @page { size: A4 portrait; margin: 12mm 15mm; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #fff; color: #0f172a; margin: 0; padding: 20px 24px; direction: rtl; font-size: 13.5px; }
+  .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px; width: 100%; }
+  .header-right { flex: 0 0 auto; min-width: 200px; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; margin: 0; }
+  .hdr-line-main { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.35; letter-spacing: 0.5px; text-align: center; width: 100%; margin: 0 auto 3px auto; display: block; }
+  .hdr-line-sub { font-size: 13px; font-weight: 700; color: #334155; line-height: 1.4; text-align: center; width: 100%; margin: 0 auto; display: block; }
   .header-center { flex: 1 1 auto; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 12px; margin: 0; }
-  .header-center img { max-height: 75px; max-width: 130px; object-fit: contain; margin-bottom: 4px; display: block; }
-  .header-center .basmala { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 6px; letter-spacing: 0.5px; text-align: center; line-height: 1.25; display: block; }
-  .header-left { flex: 0 0 auto; min-width: 160px; text-align: left; font-size: 13px; line-height: 1.8; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 3px; margin: 0; font-family: 'Cairo', sans-serif; }
+  .header-center img { max-height: 70px; max-width: 120px; object-fit: contain; margin-top: 2px; display: block; }
+  .header-center .basmala { font-family: 'Aref Ruqaa', 'Amiri', 'Traditional Arabic', serif; font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 4px; letter-spacing: 0.5px; text-align: center; line-height: 1.25; display: block; }
+  .header-left { flex: 0 0 auto; min-width: 160px; text-align: left; font-size: 13px; line-height: 1.8; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 4px; margin: 0; font-family: 'Cairo', sans-serif; }
   .meta-card { background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; }
-  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px 18px; border-radius: 8px; margin-bottom: 18px; }
   .box { background: #fff; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 18px; }
   .box-title { font-weight: 800; font-size: 14px; color: #1e3a8a; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
   .details-content { line-height: 2; font-size: 13.5px; white-space: pre-wrap; color: #1e293b; }
-  .signatures-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; margin-top: 36px; padding-top: 20px; border-top: 1.5px dashed #cbd5e1; gap: 14px; }
-  .sig-title { font-weight: 800; font-size: 13.5px; color: #0f172a; margin-bottom: 6px; }
-  .sig-name { font-size: 12.5px; color: #64748b; }
-  .no-print { text-align: center; margin-bottom: 18px; }
-  .no-print button { background: #1e3a8a; color: #fff; border: none; padding: 10px 24px; font-size: 14px; font-weight: 800; border-radius: 8px; cursor: pointer; font-family: inherit; }
+  .signatures-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; margin-top: 32px; padding-top: 18px; border-top: 1.5px dashed #cbd5e1; gap: 14px; }
+  .sig-title { font-weight: 800; font-size: 13px; color: #0f172a; margin-bottom: 6px; }
+  .sig-name { font-size: 12px; color: #64748b; }
+  .no-print { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 18px; background: #f1f5f9; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; }
+  .no-print button { background: #1e3a8a; color: #fff; border: none; padding: 8px 20px; font-size: 13.5px; font-weight: 800; border-radius: 6px; cursor: pointer; font-family: inherit; }
   @media print {
-    body { padding: 0; }
+    body { padding: 0; margin: 0; }
     .no-print { display: none !important; }
   }
 </style>
@@ -476,7 +625,12 @@ function printSuperReport(reportToPrint) {
 <body>
   <div class="no-print">
     <button onclick="window.print()">🖨️ طباعة التقرير</button>
-    <button onclick="window.close()" style="background:#f1f5f9;color:#0f172a;border:1px solid #cbd5e1;margin-right:10px">✕ إغلاق</button>
+    ${mediaSectionHtml ? `
+      <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;font-size:13px;color:#1e3a8a;background:#fff;padding:6px 12px;border-radius:6px;border:1px solid #cbd5e1">
+        <input type="checkbox" id="toggleMediaCheck" ${includeMedia ? 'checked' : ''} onchange="var sec = document.getElementById('printMediaSection'); if(sec) sec.style.display = this.checked ? 'block' : 'none';" />
+        📷 تضمين المرفقات والوسائط في الطباعة
+      </label>` : ''}
+    <button onclick="window.close()" style="background:#fff;color:#0f172a;border:1px solid #cbd5e1;padding:8px 18px;border-radius:6px;font-size:13.5px;cursor:pointer;margin-right:auto">✕ إغلاق</button>
   </div>
 
   <div class="header-wrap">
@@ -486,29 +640,25 @@ function printSuperReport(reportToPrint) {
     <div class="header-center">
       ${showBasmala ? `<div class="basmala">${esc(basmalaText)}</div>` : ''}
       <img src="${logoUrl}" alt="شعار" />
-      ${confidential ? `<div style="font-size:11px;font-weight:800;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;padding:2px 10px;border-radius:10px;margin-top:4px">${esc(confidential)}</div>` : ''}
     </div>
     <div class="header-left">
-      <div><b>التاريخ:</b> <span>${esc(r.reportDate || '')}</span></div>
-      <div><b>الوقت:</b> <span>${esc(r.reportTime || '')}</span></div>
+      <div><b>التاريخ:</b> <span>${esc(r.reportDate || printDateStr)}</span></div>
+      ${confidential ? `<div style="font-weight:800;color:#dc2626;border:1.5px solid #dc2626;padding:3px 8px;border-radius:6px;font-size:11.5px;margin-top:2px">${esc(confidential)}</div>` : ''}
     </div>
   </div>
 
   <div class="meta-card">
-    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px dashed #cbd5e1;padding-bottom:10px;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:15.5px;font-weight:900;color:#1e3a8a;display:flex;align-items:center;gap:8px">
-        <span>📌 موضوع التقرير:</span>
-        <span style="color:#0f172a">${esc(r.subject || 'بدون موضوع')}</span>
-      </div>
-      <div style="font-family:monospace;font-size:14px;font-weight:900;background:#1e3a8a;color:#fff;padding:4px 14px;border-radius:6px">
-        رقم التقرير: #${esc(r.reportNumber || r.id)}
-      </div>
+    <div style="text-align:center;border-bottom:1.5px dashed #cbd5e1;padding-bottom:10px;margin-bottom:14px">
+      <span style="font-size:16px;font-weight:900;color:#1e3a8a">📌 موضوع التقرير: </span>
+      <span style="font-size:16.5px;font-weight:900;color:#0f172a;text-decoration:underline">${esc(r.subject || 'بدون موضوع')}</span>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13.5px">
+      <div><span style="color:#64748b">🔢 رقم التقرير:</span> <b style="color:#1e3a8a;font-family:monospace;font-size:14.5px">#${esc(r.reportNumber || r.id)}</b></div>
       <div><span style="color:#64748b">🏢 الفرع / المؤسسة:</span> <b style="color:#0284c7">${esc(r.orgName || 'فرع')} (${esc(r.orgCode || '')})</b></div>
       <div><span style="color:#64748b">👤 محرر التقرير / الموظف:</span> <b>${esc(r.enteredBy || '—')}</b></div>
       <div><span style="color:#64748b">📍 الجهة المستهدفة / الموقع:</span> <b>${esc(r.target || r.targetSector || r.location || '—')}</b></div>
-      <div><span style="color:#64748b">📅 تاريخ ووقت التحرير:</span> <b>${esc(r.reportDate || '—')} &nbsp; ${esc(r.reportTime || '')}</b></div>
+      <div><span style="color:#64748b">📅 تاريخ التحرير:</span> <b>${esc(r.reportDate || '—')}</b></div>
+      <div><span style="color:#64748b">⏰ وقت التحرير:</span> <b>${esc(r.reportTime || '—')}</b></div>
     </div>
   </div>
 
@@ -517,7 +667,7 @@ function printSuperReport(reportToPrint) {
     <div class="details-content">${esc(r.details || r.notes || 'لا يوجد نص تفصيلي')}</div>
   </div>
 
-  ${imagesHtml}
+  ${mediaSectionHtml}
 
   <div class="signatures-grid">
     <div>
@@ -534,8 +684,9 @@ function printSuperReport(reportToPrint) {
     </div>
   </div>
 
-  <div style="margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;text-align:center;font-size:11.5px;color:#94a3b8">
-    منظومة كودكس السحابية لإدارة التقارير الموحدة • تاريخ الطباعة: ${new Date().toLocaleDateString('ar-YE')}
+  <div style="margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#64748b">
+    <div>👤 طُبع بواسطة: <b>${esc(printedByName)}</b></div>
+    <div>📅 تاريخ الطباعة: <b>${esc(printDateStr)}</b></div>
   </div>
 
   <script>
@@ -1350,7 +1501,7 @@ function printAllSuperReports() {
           <div class="details-text">${esc(r.details || r.notes || '—')}</div>
         </div>
         ${imagesHtml}
-        <div class="footer-line">تم إصدار هذا التقرير عبر منظومة الإدارة المركزية (كودكس للبرمجيات • ${new Date().toLocaleDateString('ar-YE')})</div>
+        <div class="footer-line">طُبع بواسطة: ${esc(currentSuperUser?.fullName || currentSuperUser?.userName || 'إدارة المركز الرئيسي')} • تاريخ الطباعة: ${new Date().toISOString().slice(0, 10)}</div>
       </div>
     `;
   }).join('');
