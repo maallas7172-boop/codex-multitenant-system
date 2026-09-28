@@ -15,9 +15,9 @@
       logoEl.src = (org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg';
     }
   }
-  const canAccessAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canEvents || u.canUsers || u.canSettings;
+  const canAccessAdmin = u.role === 'Admin' || u.role === 'SuperAdmin' || u.isUnitManager || u.role === 'UnitAdmin';
   if (!canAccessAdmin) {
-    location.href = 'entry.html';
+    location.replace('entry.html');
     return;
   }
   if (me.settings && me.settings.reportHeaderConfig && typeof updateReportHeaderConfig === 'function') {

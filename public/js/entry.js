@@ -40,11 +40,6 @@
   $('userNameTop').textContent = u.fullName + (u.role === 'Admin' ? ' (مدير)' : '');
   if (u.role === 'Admin') $('userAv').textContent = '👑';
 
-  const canAccessAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canEvents || u.canUsers || u.canSettings;
-  if (canAccessAdmin && $('eNavBackToAdmin')) {
-    $('eNavBackToAdmin').style.display = 'flex';
-  }
-
   if ($('permChips')) $('permChips').innerHTML = permBadges(u);
   $('lockOut').style.display = 'none';
 
