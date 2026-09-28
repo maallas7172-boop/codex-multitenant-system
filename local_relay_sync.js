@@ -147,7 +147,7 @@ async function syncOrgQueue(db, org, cloudToken) {
         } else if (item.itemType === 'device_registration' && item.payload) {
           const dev = item.payload;
           try {
-            const existing = db.prepare('SELECT id FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
+            const existing = db.prepare('SELECT id, status, approvedAt, approvedBy FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
             if (!existing) {
               db.prepare(`INSERT INTO devices(
                 id, orgId, deviceId, deviceName, userId, userName, userFullName, unitId, status, registeredAt, lastSeenAt, approvedAt, approvedBy
@@ -158,11 +158,15 @@ async function syncOrgQueue(db, org, cloudToken) {
                   dev.lastSeenAt || new Date().toISOString(), dev.approvedAt || null, dev.approvedBy || ''
                 );
             } else {
+              const finalStatus = (existing.status === 'approved' || dev.status === 'approved') ? 'approved' : (existing.status === 'blocked' || dev.status === 'blocked' ? 'blocked' : 'pending');
+              const finalApprovedAt = (finalStatus === 'approved') ? (existing.approvedAt || dev.approvedAt || new Date().toISOString()) : null;
+              const finalApprovedBy = (finalStatus === 'approved') ? (existing.approvedBy || dev.approvedBy || 'المدير') : null;
               db.prepare(`UPDATE devices SET 
-                deviceName=?, userId=?, userName=?, userFullName=?, unitId=?, lastSeenAt=? WHERE id=?`)
+                deviceName=?, userId=?, userName=?, userFullName=?, unitId=COALESCE(?, unitId), status=?, lastSeenAt=?, approvedAt=?, approvedBy=? WHERE id=?`)
                 .run(
                   dev.deviceName || '', dev.userId || '', dev.userName || '',
-                  dev.userFullName || '', dev.unitId || null, new Date().toISOString(), existing.id
+                  dev.userFullName || '', dev.unitId || null, finalStatus, new Date().toISOString(),
+                  finalApprovedAt, finalApprovedBy, existing.id
                 );
             }
             ackIds.push(item.id);
@@ -200,17 +204,17 @@ async function syncOrgQueue(db, org, cloudToken) {
       }
     } catch(e){}
 
-    // 4. Push any local approved devices to cloud
+    // 4. Push local approved devices to cloud
     try {
-      const localDevices = db.prepare("SELECT * FROM devices WHERE orgId=? ORDER BY lastSeenAt DESC LIMIT 50").all(org.id);
-      if (localDevices.length > 0) {
+      const localApprovedDevices = db.prepare("SELECT * FROM devices WHERE orgId=? AND status='approved' ORDER BY lastSeenAt DESC LIMIT 50").all(org.id);
+      if (localApprovedDevices.length > 0) {
         await httpRequest(CLOUD_URL + '/api/relay/push-devices', {
           method: 'POST',
           headers: {
             'Authorization': 'Bearer ' + cloudToken,
             'X-Org-Code': org.orgCode
           }
-        }, { devices: localDevices });
+        }, { devices: localApprovedDevices });
       }
     } catch(e){}
 

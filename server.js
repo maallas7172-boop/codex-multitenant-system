@@ -1551,15 +1551,18 @@ const server = http.createServer(async (req, res) => {
       let upsertedCount = 0;
       for (const dev of devices) {
         if (!dev.deviceId) continue;
-        const existing = db.prepare('SELECT id FROM devices WHERE orgId=? AND deviceId=?').get(orgId, dev.deviceId);
+        const existing = db.prepare('SELECT id, status, approvedAt, approvedBy FROM devices WHERE orgId=? AND deviceId=?').get(orgId, dev.deviceId);
         if (existing) {
+          const finalStatus = (existing.status === 'approved' || dev.status === 'approved') ? 'approved' : (existing.status === 'blocked' || dev.status === 'blocked' ? 'blocked' : 'pending');
+          const finalApprovedAt = (finalStatus === 'approved') ? (existing.approvedAt || dev.approvedAt || nowIso()) : null;
+          const finalApprovedBy = (finalStatus === 'approved') ? (existing.approvedBy || dev.approvedBy || me.fullName || 'المدير') : null;
           db.prepare(`UPDATE devices SET 
             deviceName=?, userId=?, userName=?, userFullName=?, status=?, lastSeenAt=?, approvedAt=?, approvedBy=? 
             WHERE id=?`)
             .run(
               dev.deviceName || '', dev.userId || '', dev.userName || '',
-              dev.userFullName || '', dev.status || 'approved', dev.lastSeenAt || nowIso(),
-              dev.approvedAt || nowIso(), dev.approvedBy || me.fullName, existing.id
+              dev.userFullName || '', finalStatus, dev.lastSeenAt || nowIso(),
+              finalApprovedAt, finalApprovedBy, existing.id
             );
         } else {
           db.prepare(`INSERT INTO devices(
@@ -1568,7 +1571,8 @@ const server = http.createServer(async (req, res) => {
             .run(
               dev.id || uid(), orgId, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
               dev.userFullName || '', dev.status || 'approved', dev.registeredAt || nowIso(), dev.lastSeenAt || nowIso(),
-              dev.approvedAt || nowIso(), dev.approvedBy || me.fullName
+              dev.status === 'approved' ? (dev.approvedAt || nowIso()) : null,
+              dev.status === 'approved' ? (dev.approvedBy || me.fullName || 'المدير') : ''
             );
         }
         upsertedCount++;
@@ -2498,6 +2502,9 @@ const server = http.createServer(async (req, res) => {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
       const info = db.prepare("UPDATE devices SET status='approved', approvedAt=?, approvedBy=? WHERE orgId=? AND status='pending'")
         .run(nowIso(), me.fullName, orgId);
+      try {
+        db.prepare("DELETE FROM cloud_relay_queue WHERE orgId=? AND itemType='device_registration'").run(orgId);
+      } catch(e){}
       send(res, 200, { ok: true, count: info.changes, message: `تم اعتماد وتفعيل ${info.changes} أجهزة بنجاح ✔` });
       return;
     }
@@ -2510,6 +2517,15 @@ const server = http.createServer(async (req, res) => {
       const newStatus = action === 'approve' ? 'approved' : 'blocked';
       db.prepare('UPDATE devices SET status=?, approvedAt=?, approvedBy=? WHERE orgId=? AND id=?')
         .run(newStatus, nowIso(), me.fullName, orgId, devId);
+      if (newStatus === 'approved') {
+        try {
+          const devRow = db.prepare('SELECT deviceId FROM devices WHERE id=?').get(devId);
+          if (devRow) {
+            db.prepare("DELETE FROM cloud_relay_queue WHERE orgId=? AND itemType='device_registration' AND payload LIKE ?")
+              .run(orgId, '%' + devRow.deviceId + '%');
+          }
+        } catch(e){}
+      }
       send(res, 200, { ok: true, status: newStatus, message: newStatus === 'approved' ? 'تم اعتماد الهاتف بنجاح 🟢' : 'تم حظر الهاتف ⛔' });
       return;
     }
@@ -2626,7 +2642,7 @@ async function performCloudRelaySync(targetOrgId) {
       } else if (item.itemType === 'device_registration' && item.payload) {
         const dev = item.payload;
         try {
-          const exists = db.prepare('SELECT id FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
+          const exists = db.prepare('SELECT id, status, approvedAt, approvedBy FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
           if (!exists) {
             db.prepare(`INSERT INTO devices(
               id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
@@ -2637,11 +2653,15 @@ async function performCloudRelaySync(targetOrgId) {
                 dev.lastSeenAt || nowIso(), dev.approvedAt || null, dev.approvedBy || ''
               );
           } else {
+            const finalStatus = (exists.status === 'approved' || dev.status === 'approved') ? 'approved' : (exists.status === 'blocked' || dev.status === 'blocked' ? 'blocked' : 'pending');
+            const finalApprovedAt = (finalStatus === 'approved') ? (exists.approvedAt || dev.approvedAt || nowIso()) : null;
+            const finalApprovedBy = (finalStatus === 'approved') ? (exists.approvedBy || dev.approvedBy || 'المدير') : null;
             db.prepare(`UPDATE devices SET 
-              deviceName=?, userId=?, userName=?, userFullName=?, lastSeenAt=? WHERE id=?`)
+              deviceName=?, userId=?, userName=?, userFullName=?, status=?, lastSeenAt=?, approvedAt=?, approvedBy=? WHERE id=?`)
               .run(
                 dev.deviceName || '', dev.userId || '', dev.userName || '',
-                dev.userFullName || '', dev.lastSeenAt || nowIso(), exists.id
+                dev.userFullName || '', finalStatus, dev.lastSeenAt || nowIso(),
+                finalApprovedAt, finalApprovedBy, exists.id
               );
           }
           ackIds.push(item.id);
