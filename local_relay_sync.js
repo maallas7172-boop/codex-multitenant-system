@@ -13,8 +13,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const DATA_DIR = path.join(__dirname, 'data');
-const DB_PATH = path.join(DATA_DIR, 'multitenant.db');
+const DATA_DIR = process.env.DATA_DIR || (fs.existsSync(path.join(__dirname, '..', 'data')) ? path.join(__dirname, '..', 'data') : path.join(__dirname, 'data'));
+const DB_PATH = process.env.DATABASE_PATH || path.join(DATA_DIR, 'multitenant.db');
 const CLOUD_URL = process.env.CLOUD_RELAY_URL || 'https://codex-multitenant-system.onrender.com';
 const POLL_INTERVAL_MS = parseInt(process.env.SYNC_INTERVAL_MS || '10000', 10);
 
@@ -225,6 +225,20 @@ async function syncOrgQueue(db, org, cloudToken) {
             'X-Org-Code': org.orgCode
           }
         }, { users: localUsers });
+      }
+    } catch(e){}
+
+    // 6. Push local units to cloud
+    try {
+      const localUnits = db.prepare("SELECT * FROM units WHERE orgId=?").all(org.id);
+      if (localUnits.length > 0) {
+        await httpRequest(CLOUD_URL + '/api/relay/push-units', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + cloudToken,
+            'X-Org-Code': org.orgCode
+          }
+        }, { units: localUnits });
       }
     } catch(e){}
 

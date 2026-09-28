@@ -1,7 +1,7 @@
 /* =========================================================
    service-worker.js — دعم التثبيت والعمل أوفلاين للمنظومة المتعددة (PWA)
    ========================================================= */
-const CACHE_NAME = 'reports-multitenant-v4.2';
+const CACHE_NAME = 'reports-multitenant-v4.3';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -52,16 +52,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // إذا كان الطلب إلى API، يتم إرساله للشبكة أولاً
+  // إذا كان الطلب إلى API، يتم إرساله للشبكة مباشرة دون اعتراض
   if (url.pathname.startsWith('/api')) {
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ error: 'أنت في وضع عدم الاتصال بالخادم حالياً' }), {
-          status: 503,
-          headers: { 'Content-Type': 'application/json; charset=utf-8' }
-        });
-      })
-    );
     return;
   }
 

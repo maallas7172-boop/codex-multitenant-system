@@ -84,23 +84,22 @@
           return;
         }
 
-        const orgName = (data.org && data.org.orgName) ? data.org.orgName : 'منظومة التقارير والبيانات';
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#10b981';
-        orgStatusText.textContent = '✔ متصل بجهة: ' + orgName;
-        mainTitle.textContent = orgName;
-        subTitle.textContent = 'منظومة التقارير والبيانات — رمز الجهة: ' + (data.org && data.org.orgCode ? data.org.orgCode : code);
+        orgStatusText.textContent = '✔ تم الاقتران بنجاح';
+        mainTitle.textContent = DEFAULT_TITLE;
+        subTitle.textContent = DEFAULT_SUBTITLE;
         if (loginTopLogo) loginTopLogo.src = (data.org && data.org.logoUrl) ? data.org.logoUrl : DEFAULT_LOGO;
         setOrgCode(code);
-        if (showFeedback) show('تم الاقتران بجهة ' + orgName + ' بنجاح ✔', 'ok');
+        if (showFeedback) show('تم الاقتران بنجاح ✔', 'ok');
       } else {
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#ef4444';
-        orgStatusText.textContent = '❌ رمز الجهة غير مسجل في النظام';
+        orgStatusText.textContent = '❌ رمز غير صحيح أو غير مسجل في النظام';
         mainTitle.textContent = DEFAULT_TITLE;
         subTitle.textContent = DEFAULT_SUBTITLE;
         if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
-        if (showFeedback) show('رمز الجهة غير مسجل في النظام', 'err');
+        if (showFeedback) show('رمز غير صحيح أو غير مسجل في النظام', 'err');
       }
     } catch(e) {
       if (showFeedback) show('تعذر فحص الجهة: ' + e.message, 'err');

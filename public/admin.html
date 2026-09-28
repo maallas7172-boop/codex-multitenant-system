@@ -21,8 +21,8 @@
       <button class="nav-btn active" data-page="dash"><span class="ic">📊</span> لوحة التحكم</button>
       <button class="nav-btn" data-page="entry"><span class="ic">📝</span> إدخال تقرير</button>
       <button class="nav-btn" data-page="reports"><span class="ic">📄</span> التقارير</button>
-      <button class="nav-btn" data-page="events"><span class="ic">📋</span> المهام والتكليفات <span class="badge warn" id="sideEventsBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
-      <button class="nav-btn" data-page="units" id="navUnitsBtn"><span class="ic">🏢</span> الوحدات والأقسام</button>
+      <button class="nav-btn" data-page="events"><span class="ic">📋</span> المهام <span class="badge warn" id="sideEventsBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
+      <button class="nav-btn" data-page="units" id="navUnitsBtn"><span class="ic">🏢</span> الوحدات</button>
       <button class="nav-btn" data-page="users"><span class="ic">👥</span> المستخدمون والأجهزة <span class="badge warn" id="sideDevicesBadge" style="display:none;margin-right:auto;font-size:10.5px;padding:2px 7px;border-radius:10px;background:#ea580c;color:#fff">0</span></button>
       <button class="nav-btn" data-page="settings"><span class="ic">⚙️</span> الإعدادات</button>
     </nav>
@@ -32,9 +32,11 @@
         <div class="nm"><span id="adminName">مدير النظام</span><small id="orgBadgeText" style="color:#60a5fa;font-weight:700">الجهة</small></div>
       </div>
       <div style="display:flex;gap:6px;margin-top:8px">
-        <button class="btn btn-secondary btn-sm" onclick="triggerInstantBackup()" style="flex:1;font-size:11px;padding:7px 3px" title="حفظ وتحديث نسخة احتياطية فورية على القرص C ومجلد البرنامج">💾 حفظ نسخة</button>
-        <button class="btn btn-outline btn-sm" onclick="openServerConfigModal()" style="flex:1;font-size:11px;padding:7px 3px" title="تحديد عنوان IP الخاص بالسيرفر المركزي">🌐 الخادم</button>
-        <button class="btn btn-secondary btn-sm" onclick="showMyOrgQrModal()" style="flex:1;font-size:11px;padding:7px 3px" title="عرض وطباعة باركود وQR ربط الموظفين">📱 الباركود</button>
+        <div id="sideAdminButtons" style="display:flex;gap:6px;flex:3">
+          <button class="btn btn-secondary btn-sm" onclick="triggerInstantBackup()" style="flex:1;font-size:11px;padding:7px 3px" title="حفظ وتحديث نسخة احتياطية فورية على القرص C ومجلد البرنامج">💾 حفظ نسخة</button>
+          <button class="btn btn-outline btn-sm" onclick="openServerConfigModal()" style="flex:1;font-size:11px;padding:7px 3px" title="تحديد عنوان IP الخاص بالسيرفر المركزي">🌐 الخادم</button>
+          <button class="btn btn-secondary btn-sm" onclick="showMyOrgQrModal()" style="flex:1;font-size:11px;padding:7px 3px" title="عرض وطباعة باركود وQR ربط الموظفين">📱 الباركود</button>
+        </div>
         <button class="btn btn-outline btn-sm" onclick="logout()" style="flex:1;font-size:11px;padding:7px 3px">🚪 خروج</button>
       </div>
       <div class="sidebar-company-footer" style="display:flex;align-items:center;gap:9px;padding:8px 10px;text-align:right">
@@ -422,15 +424,15 @@
       </div>
     </section>
 
-    <!-- ==================== الوحدات والأقسام ==================== -->
+    <!-- ==================== الوحدات ==================== -->
     <section class="page" id="unitsPage">
       <div class="page-head">
         <div>
-          <h2>🏢 إدارة الوحدات والأقسام (Units & Departments)</h2>
+          <h2>🏢 إدارة الوحدات</h2>
           <p>إدارة الوحدات التابعة للفرع وتعيين مدراء الوحدات والاطلاع على تقارير وموظفي كل وحدة بدقة واستقلالية.</p>
         </div>
         <div class="btn-row">
-          <button class="btn btn-primary" id="btnNewUnit">➕ إضافة وحدة / قسم جديد</button>
+          <button class="btn btn-primary" id="btnNewUnit">➕ إضافة وحدة جديدة</button>
           <button class="btn btn-outline" onclick="renderUnits()">🔄 تحديث القائمة</button>
         </div>
       </div>
@@ -440,7 +442,7 @@
         <div class="kpi blue">
           <div class="lbl">🏢 إجمالي الوحدات</div>
           <div class="val" id="unKpiTotal">0</div>
-          <div class="hint">الأقسام والوحدات المعتمدة</div>
+          <div class="hint">الوحدات المعتمدة</div>
         </div>
         <div class="kpi gold">
           <div class="lbl">👑 مدراء الوحدات</div>
@@ -462,13 +464,13 @@
       <!-- نموذج إنشاء / تعديل وحدة -->
       <div class="card" id="unitFormCard" style="display:none;margin-top:18px">
         <div class="page-head" style="margin-bottom:14px">
-          <h3 id="unitFormTitle">➕ إضافة وحدة / قسم جديد</h3>
+          <h3 id="unitFormTitle">➕ إضافة وحدة جديدة</h3>
           <button class="btn btn-outline btn-sm" id="unitCancelBtn">إغلاق</button>
         </div>
         <div class="form-grid">
           <div class="field">
-            <span>اسم الوحدة / القسم *</span>
-            <input type="text" id="unName" placeholder="مثال: وحدة الرقابة والتفتيش / قسم الشؤون القانونية..." />
+            <span>اسم الوحدة *</span>
+            <input type="text" id="unName" placeholder="مثال: وحدة الرقابة / وحدة التحصيل..." />
           </div>
           <div class="field">
             <span>الرمز أو الكود التعريفي (اختياري)</span>
@@ -589,31 +591,35 @@
         <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">حدد الصفحات والإجراءات المسموح بها لهذا المستخدم:</p>
         
         <div class="perm-matrix">
-          <div class="perm-card">
+          <div class="perm-card" id="cardPermDash">
             <div class="perm-card-head">📊 لوحة التحكم والإحصائيات</div>
             <label class="perm-label"><input type="checkbox" id="ufCanDash" checked /> فتح لوحة التحكم</label>
           </div>
-          <div class="perm-card">
+          <div class="perm-card" id="cardPermEntry">
             <div class="perm-card-head">📝 إدخال البيانات والتقارير</div>
             <label class="perm-label"><input type="checkbox" id="ufCanEntry" checked /> فتح صفحة الإدخال</label>
             <label class="perm-label"><input type="checkbox" id="ufCanAdd" checked /> إضافة وحفظ تقارير ومسودات</label>
           </div>
-          <div class="perm-card">
+          <div class="perm-card" id="cardPermReports">
             <div class="perm-card-head">📄 التقارير والمتابعة</div>
             <label class="perm-label"><input type="checkbox" id="ufCanReports" checked /> استعراض التقارير</label>
-            <label class="perm-label"><input type="checkbox" id="ufCanEdit" /> تعديل التقارير</label>
-            <label class="perm-label"><input type="checkbox" id="ufCanDelete" /> حذف التقارير</label>
-            <label class="perm-label"><input type="checkbox" id="ufCanPrint" checked /> طباعة التقارير</label>
+            <label class="perm-label" id="wrapPermEdit"><input type="checkbox" id="ufCanEdit" /> تعديل التقارير</label>
+            <label class="perm-label" id="wrapPermDelete"><input type="checkbox" id="ufCanDelete" /> حذف التقارير</label>
+            <label class="perm-label" id="wrapPermPrint"><input type="checkbox" id="ufCanPrint" checked /> طباعة التقارير</label>
           </div>
-          <div class="perm-card">
-            <div class="perm-card-head">📋 المهام والأحداث</div>
-            <label class="perm-label"><input type="checkbox" id="ufCanEvents" /> إدارة وتكليف المهام والأحداث</label>
+          <div class="perm-card" id="cardPermEvents">
+            <div class="perm-card-head">📋 المهام</div>
+            <label class="perm-label"><input type="checkbox" id="ufCanEvents" /> استلام وتنفيذ المهام</label>
           </div>
-          <div class="perm-card">
+          <div class="perm-card" id="cardPermUnits">
+            <div class="perm-card-head">🏢 إدارة الوحدات</div>
+            <label class="perm-label"><input type="checkbox" id="ufCanUnits" /> فتح وإدارة الوحدات</label>
+          </div>
+          <div class="perm-card" id="cardPermUsers">
             <div class="perm-card-head">👥 المستخدمون والصلاحيات</div>
             <label class="perm-label"><input type="checkbox" id="ufCanUsers" /> إدارة المستخدمين والصلاحيات</label>
           </div>
-          <div class="perm-card">
+          <div class="perm-card" id="cardPermSettings">
             <div class="perm-card-head">⚙️ الإعدادات والنسخ الاحتياطي</div>
             <label class="perm-label"><input type="checkbox" id="ufCanSettings" /> فتح الإعدادات وتنزيل النسخ</label>
           </div>
@@ -625,7 +631,7 @@
 
       <div class="filter-bar">
         <div class="field" style="flex:1"><span>بحث</span><input type="text" id="userSearch" placeholder="ابحث بالاسم أو اسم المستخدم..." /></div>
-        <div class="field" id="uFilterUnitField"><span>تصفية بالوحدة</span><select id="uFilterUnit"><option value="">كل الوحدات والأقسام</option></select></div>
+        <div class="field" id="uFilterUnitField"><span>تصفية بالوحدة</span><select id="uFilterUnit"><option value="">كل الوحدات</option></select></div>
       </div>
       <div class="table-wrap">
         <table>

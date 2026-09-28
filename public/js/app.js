@@ -488,7 +488,7 @@ function permBadges(u) {
   const p = [
     ['canDash', 'لوحة التحكم'], ['canEntry', 'الإدخال'], ['canAdd', 'إضافة تقارير'],
     ['canReports', 'التقارير'], ['canEdit', 'تعديل'], ['canDelete', 'حذف'], ['canPrint', 'طباعة'],
-    ['canEvents', 'المهام والأحداث'], ['canUsers', 'المستخدمين'], ['canSettings', 'الإعدادات']
+    ['canEvents', 'المهام'], ['canUnits', 'الوحدات'], ['canUsers', 'المستخدمين'], ['canSettings', 'الإعدادات']
   ];
   return p.filter(([k]) => u[k]).map(([k, label]) => `<span class="badge green">${label}</span>`).join(' ') || '<span class="badge gray">بدون صلاحيات</span>';
 }

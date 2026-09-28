@@ -24,11 +24,20 @@
     updateReportHeaderConfig(me.settings.reportHeaderConfig);
   }
 
+  const isBranchAdmin = u.role === 'Admin' || u.role === 'SuperAdmin';
+  const isUnitMgr = (u.isUnitManager || u.role === 'UnitAdmin') && !isBranchAdmin;
+  const unitObj = me.unit;
+
   const $ = id => document.getElementById(id);
   const PRINTS = ['printView', 'printFrame'];
-  $('adminName').textContent = u.fullName + (u.role === 'Admin' ? ' (مدير)' : (u.isUnitManager ? ' (مدير وحدة)' : ''));
-  if (me.unit && $('orgBadgeText')) {
-    $('orgBadgeText').textContent = org.orgName + ' — ' + me.unit.unitName;
+  $('adminName').textContent = u.fullName + (isBranchAdmin ? ' (مدير الفرع)' : (unitObj ? ` (مدير وحدة ${unitObj.unitName})` : ' (مدير وحدة)'));
+  if (unitObj && $('orgBadgeText')) {
+    $('orgBadgeText').textContent = org.orgName + ' — ' + unitObj.unitName;
+  }
+
+  // إخفاء أزرار أدوات الفرع السفلية لمدير الوحدة
+  if ($('sideAdminButtons')) {
+    $('sideAdminButtons').style.display = isBranchAdmin ? 'flex' : 'none';
   }
 
   // إظهار أو إخفاء أزرار التبويب حسب الصلاحيات الممنوحة من المدير
@@ -40,13 +49,18 @@
   const navUsers = document.querySelector('.nav-btn[data-page="users"]');
   const navSettings = document.querySelector('.nav-btn[data-page="settings"]');
 
-  if (navDash) navDash.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canDash) ? 'flex' : 'none';
-  if (navEntry) navEntry.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canAdd || u.canEntry) ? 'flex' : 'none';
-  if (navReports) navReports.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canReports) ? 'flex' : 'none';
-  if (navEvents) navEvents.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canEvents) ? 'flex' : 'none';
-  if (navUnits) navUnits.style.display = (u.role === 'Admin') ? 'flex' : 'none';
-  if (navUsers) navUsers.style.display = (u.role === 'Admin' || u.role === 'UnitAdmin' || u.canUsers) ? 'flex' : 'none';
-  if (navSettings) navSettings.style.display = (u.role === 'Admin' || u.canSettings) ? 'flex' : 'none';
+  if (navDash) navDash.style.display = (isBranchAdmin || isUnitMgr || u.canDash) ? 'flex' : 'none';
+  if (navEntry) navEntry.style.display = (isBranchAdmin || isUnitMgr || u.canAdd || u.canEntry) ? 'flex' : 'none';
+  if (navReports) navReports.style.display = (isBranchAdmin || isUnitMgr || u.canReports) ? 'flex' : 'none';
+  if (navEvents) navEvents.style.display = (isBranchAdmin || isUnitMgr || u.canEvents) ? 'flex' : 'none';
+  if (navUnits) navUnits.style.display = isBranchAdmin ? 'flex' : 'none';
+  if (navUsers) {
+    navUsers.style.display = (isBranchAdmin || isUnitMgr || u.canUsers) ? 'flex' : 'none';
+    if (isUnitMgr) {
+      navUsers.innerHTML = '<span class="ic">👥</span> موظفو الوحدة <span class="badge warn" id="sideDevicesBadge" style="display:none;margin-right:auto;font-size:10.5px;padding:2px 7px;border-radius:10px;background:#ea580c;color:#fff">0</span>';
+    }
+  }
+  if (navSettings) navSettings.style.display = isBranchAdmin ? 'flex' : 'none';
 
   /* ---------- التنقل ---------- */
   const NAVS = {
@@ -55,13 +69,13 @@
     users: 'usersPage', settings: 'settingsPage'
   };
   const PERMS = {
-    dash: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canDash,
-    entry: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canAdd || u.canEntry,
-    reports: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canReports,
-    events: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canEvents,
-    units: u.role === 'Admin',
-    users: u.role === 'Admin' || u.role === 'UnitAdmin' || u.canUsers,
-    settings: u.role === 'Admin' || u.canSettings
+    dash: isBranchAdmin || isUnitMgr || u.canDash,
+    entry: isBranchAdmin || isUnitMgr || u.canAdd || u.canEntry,
+    reports: isBranchAdmin || isUnitMgr || u.canReports,
+    events: isBranchAdmin || isUnitMgr || u.canEvents,
+    units: isBranchAdmin,
+    users: isBranchAdmin || isUnitMgr || u.canUsers,
+    settings: isBranchAdmin
   };
 
   document.querySelectorAll('.nav-btn[data-page]').forEach(b => {
@@ -344,14 +358,14 @@
   async function renderReports() {
     const q = {};
     const from = $('rFrom').value, to = $('rTo').value, uId = $('rUser').value, rt = $('rRating').value;
-    const unitId = $('rUnit') ? $('rUnit').value : '';
+    const unitId = isUnitMgr && unitObj ? unitObj.id : ($('rUnit') ? $('rUnit').value : '');
     if (from) q.from = from; if (to) q.to = to;
     if (uId) q.userId = uId; if (rt) q.rating = rt;
     if (unitId) q.unitId = unitId;
 
     // إظهار أو إخفاء عمود التحديد بناءً على صلاحية الحذف
     if ($('thSelectAllReports')) {
-      $('thSelectAllReports').style.display = canDeleteReports ? 'table-cell' : 'none';
+      $('thSelectAllReports').style.display = (canDeleteReports && !isUnitMgr) ? 'table-cell' : 'none';
     }
     if ($('selectAllReportsChk')) $('selectAllReportsChk').checked = false;
     updateBatchDeleteUI();
@@ -359,6 +373,9 @@
     try {
       const d = await api('/reports?' + new URLSearchParams(q));
       currentReports = (d.reports || []).map(r => (typeof decryptReportData === 'function' ? decryptReportData(r) : r));
+      if (isUnitMgr && unitObj) {
+        currentReports = currentReports.filter(r => !r.unitId || r.unitId === unitObj.id);
+      }
       const searchVal = $('rSearch') ? $('rSearch').value.trim().toLowerCase() : '';
       if (searchVal) {
         currentReports = currentReports.filter(r =>
@@ -1157,17 +1174,18 @@
       const d = await api('/users');
       const rawUsers = d.users || [];
       const seen = new Set();
-      const activeUsers = rawUsers.filter(u => {
-        if (!u.isActive) return false;
-        const key = (u.userName || u.id || '').toLowerCase().trim();
+      const activeUsers = rawUsers.filter(usr => {
+        if (!usr.isActive) return false;
+        if (isUnitMgr && unitObj && usr.unitId && usr.unitId !== unitObj.id) return false;
+        const key = (usr.userName || usr.id || '').toLowerCase().trim();
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
-      const opts = activeUsers.map(u => `<option value="${u.id}">${esc(u.fullName)} (${esc(u.userName)})</option>`).join('');
-      if ($('rUser')) $('rUser').innerHTML = '<option value="">كل المستخدمين</option>' + opts;
-      if ($('efAssignedUser')) $('efAssignedUser').innerHTML = '<option value="">-- اختر الموظف المكلف --</option><option value="all">📢 تكليف عام (لجميع الموظفين)</option>' + opts;
-      if ($('evFilterUser')) $('evFilterUser').innerHTML = '<option value="">كل الموظفين</option>' + opts;
+      const opts = activeUsers.map(usr => `<option value="${usr.id}">${esc(usr.fullName)} (${esc(usr.userName)})</option>`).join('');
+      if ($('rUser')) $('rUser').innerHTML = (isUnitMgr ? '<option value="">كل موظفي الوحدة</option>' : '<option value="">كل المستخدمين</option>') + opts;
+      if ($('efAssignedUser')) $('efAssignedUser').innerHTML = '<option value="">-- اختر الموظف المكلف --</option>' + (!isUnitMgr ? '<option value="all">📢 تكليف عام (لجميع الموظفين)</option>' : '') + opts;
+      if ($('evFilterUser')) $('evFilterUser').innerHTML = (isUnitMgr ? '<option value="">كل موظفي الوحدة</option>' : '<option value="">كل الموظفين</option>') + opts;
       await loadUnitsSelects();
     } catch (err) { toast(err.message, 'err'); }
   }
@@ -1331,7 +1349,7 @@
     card.dataset.id = item ? item.id : '';
     $('efTitle').value = item ? item.title : '';
     $('efType').value = item ? item.eventType : 'ورشة عمل';
-    if ($('efUnit')) $('efUnit').value = item ? (item.unitId || '') : '';
+    if ($('efUnit')) $('efUnit').value = (isUnitMgr && unitObj) ? unitObj.id : (item ? (item.unitId || '') : '');
     $('efAssignedUser').value = item ? item.assignedUserId : '';
     $('efDate').value = item ? (item.eventDate || todayStr()) : todayStr();
     $('efTime').value = item ? (item.eventTime || '') : '';
@@ -1352,7 +1370,7 @@
       const title = $('efTitle').value.trim();
       const eventType = $('efType').value.trim();
       const assignedUserId = $('efAssignedUser').value.trim();
-      const unitId = $('efUnit') ? $('efUnit').value.trim() : '';
+      const unitId = (isUnitMgr && unitObj) ? unitObj.id : ($('efUnit') ? $('efUnit').value.trim() : '');
       const eventDate = $('efDate').value.trim();
       const eventTime = $('efTime').value.trim();
       const location = $('efLocation').value.trim();
@@ -1470,27 +1488,61 @@
     modalBack.classList.add('show');
   }
 
-  /* ================= إدارة الوحدات والأقسام (Units & Departments) ================= */
+  /* ================= إدارة الوحدات (Units Management) ================= */
   let allOrgUnits = [];
 
   async function loadUnitsSelects() {
     try {
       const res = await api('/units');
       allOrgUnits = res.units || [];
+      if (org) localStorage.setItem('codex_mt_cached_units_' + org.id, JSON.stringify(allOrgUnits));
+    } catch(err) {
+      if (org) {
+        try {
+          const cached = localStorage.getItem('codex_mt_cached_units_' + org.id);
+          if (cached) allOrgUnits = JSON.parse(cached);
+        } catch(e){}
+      }
+    }
+
+    if (isUnitMgr && unitObj) {
+      const uOpt = `<option value="${unitObj.id}" selected>${esc(unitObj.unitName)}</option>`;
+      if ($('rUnit')) $('rUnit').innerHTML = uOpt;
+      if ($('efUnit')) $('efUnit').innerHTML = uOpt;
+      if ($('admFUnit')) $('admFUnit').innerHTML = uOpt;
+      if ($('ufUnitSel')) $('ufUnitSel').innerHTML = uOpt;
+      if ($('uFilterUnit')) $('uFilterUnit').innerHTML = uOpt;
+      if ($('evFilterUnit')) $('evFilterUnit').innerHTML = uOpt;
+
+      if ($('rUnitField')) $('rUnitField').style.display = 'none';
+      if ($('efUnitField')) $('efUnitField').style.display = 'none';
+      if ($('admFUnitField')) $('admFUnitField').style.display = 'none';
+      if ($('ufUnitField')) $('ufUnitField').style.display = 'none';
+      if ($('uFilterUnitField')) $('uFilterUnitField').style.display = 'none';
+      if ($('evFilterUnitField')) $('evFilterUnitField').style.display = 'none';
+    } else {
       const unitOpts = allOrgUnits.filter(un => un.status === 'active').map(un => `<option value="${un.id}">${esc(un.unitName)}${un.unitCode ? ' (' + esc(un.unitCode) + ')' : ''}</option>`).join('');
-      
-      if ($('rUnit')) $('rUnit').innerHTML = '<option value="">كل الوحدات والأقسام</option>' + unitOpts;
+      if ($('rUnit')) $('rUnit').innerHTML = '<option value="">كل الوحدات</option>' + unitOpts;
       if ($('efUnit')) $('efUnit').innerHTML = '<option value="">-- عام للفرع / بدون وحدة محددة --</option>' + unitOpts;
       if ($('admFUnit')) $('admFUnit').innerHTML = '<option value="">-- عام للفرع / بدون وحدة محددة --</option>' + unitOpts;
       if ($('ufUnitSel')) $('ufUnitSel').innerHTML = '<option value="">-- بدون وحدة (مباشر للفرع) --</option>' + unitOpts;
-      if ($('uFilterUnit')) $('uFilterUnit').innerHTML = '<option value="">كل الوحدات والأقسام</option>' + unitOpts;
-    } catch(err) {}
+      if ($('uFilterUnit')) $('uFilterUnit').innerHTML = '<option value="">كل الوحدات</option>' + unitOpts;
+      if ($('evFilterUnit')) $('evFilterUnit').innerHTML = '<option value="">كل الوحدات</option>' + unitOpts;
+    }
   }
 
   async function renderUnits() {
     try {
-      const res = await api('/units');
-      allOrgUnits = res.units || [];
+      try {
+        const res = await api('/units');
+        allOrgUnits = res.units || [];
+        if (org) localStorage.setItem('codex_mt_cached_units_' + org.id, JSON.stringify(allOrgUnits));
+      } catch(apiErr) {
+        if (org) {
+          const cached = localStorage.getItem('codex_mt_cached_units_' + org.id);
+          if (cached) allOrgUnits = JSON.parse(cached);
+        }
+      }
       
       const total = allOrgUnits.length;
       const managersCount = allOrgUnits.filter(u => u.managerUserId || u.managerName).length;
@@ -1517,7 +1569,7 @@
         return true;
       });
 
-      if ($('unCountLabel')) $('unCountLabel').textContent = `عرض (${list.length}) وحدة وقسم`;
+      if ($('unCountLabel')) $('unCountLabel').textContent = `عرض (${list.length}) وحدة`;
 
       const tbody = $('unitsTableBody');
       if (!tbody) return;
@@ -1551,6 +1603,7 @@
           <td>${badgeStatus(un.status === 'active' ? 'نشط' : 'غير نشط')}</td>
           <td>
             <div class="btn-row" style="gap:4px">
+              <button class="btn btn-secondary btn-xs" data-un-qr="${un.id}" title="عرض وطباعة بطاقة وباركود ربط هذه الوحدة">📱 بطاقة الوحدة</button>
               <button class="btn btn-outline btn-xs" data-un-reports="${un.id}" title="عرض تقارير هذه الوحدة">📄 التقارير</button>
               <button class="btn btn-primary btn-xs" data-un-edit="${un.id}" title="تعديل بيانات الوحدة">✏️ تعديل</button>
               <button class="btn btn-danger btn-xs" data-un-del="${un.id}" title="حذف الوحدة">🗑️</button>
@@ -1558,6 +1611,13 @@
           </td>
         </tr>
       `).join('');
+
+      tbody.querySelectorAll('[data-un-qr]').forEach(b => {
+        b.onclick = () => {
+          const item = allOrgUnits.find(x => x.id === b.dataset.unQr);
+          if (item) printUnitQrCard(item);
+        };
+      });
 
       tbody.querySelectorAll('[data-un-reports]').forEach(b => {
         b.onclick = () => {
@@ -1585,7 +1645,13 @@
             toast('تم حذف الوحدة بنجاح ✔');
             renderUnits();
             loadUnitsSelects();
-          } catch(err) { toast(err.message, 'err'); }
+          } catch(err) {
+            allOrgUnits = allOrgUnits.filter(x => x.id !== item.id);
+            if (org) localStorage.setItem('codex_mt_cached_units_' + org.id, JSON.stringify(allOrgUnits));
+            toast('تم حذف الوحدة محلياً ✔');
+            renderUnits();
+            loadUnitsSelects();
+          }
         };
       });
 
@@ -1597,7 +1663,7 @@
   function openUnitEditor(un) {
     const card = $('unitFormCard');
     if (!card) return;
-    $('unitFormTitle').textContent = un ? `✏️ تعديل الوحدة: ${un.unitName}` : '➕ إضافة وحدة / قسم جديد';
+    $('unitFormTitle').textContent = un ? `✏️ تعديل الوحدة: ${un.unitName}` : '➕ إضافة وحدة جديدة';
     card.dataset.id = un ? un.id : '';
     $('unName').value = un ? un.unitName : '';
     $('unCode').value = un ? (un.unitCode || '') : '';
@@ -1631,7 +1697,7 @@
       const notes = $('unNotes').value.trim();
       const status = $('unStatus').value;
 
-      if (!unitName) { toast('اسم الوحدة أو القسم مطلوب', 'err'); $('unName').focus(); return; }
+      if (!unitName) { toast('اسم الوحدة مطلوب', 'err'); $('unName').focus(); return; }
 
       const body = { unitName, unitCode, managerUserId, phone, notes, status };
 
@@ -1646,7 +1712,42 @@
         if (card) card.style.display = 'none';
         renderUnits();
         loadUnitsSelects();
-      } catch(err) { toast(err.message, 'err'); }
+      } catch(err) {
+        const isOfflineErr = !navigator.onLine || err.message.includes('تعذر الاتصال') || err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('عدم الاتصال');
+        if (isOfflineErr) {
+          const targetId = id || ('unit_local_' + Date.now().toString(36));
+          const mgrObj = (allOrgUsers || []).find(u => u.id === managerUserId);
+          const localUnit = {
+            id: targetId,
+            orgId: org ? org.id : '',
+            unitName,
+            unitCode,
+            managerUserId: managerUserId || null,
+            managerName: mgrObj ? mgrObj.fullName : '',
+            phone,
+            notes,
+            status,
+            userCount: 0,
+            reportCount: 0,
+            createdAt: new Date().toISOString(),
+            isLocalDraft: true
+          };
+          
+          const existingIdx = allOrgUnits.findIndex(x => x.id === targetId);
+          if (existingIdx >= 0) {
+            allOrgUnits[existingIdx] = { ...allOrgUnits[existingIdx], ...localUnit };
+          } else {
+            allOrgUnits.push(localUnit);
+          }
+          if (org) localStorage.setItem('codex_mt_cached_units_' + org.id, JSON.stringify(allOrgUnits));
+          toast('تم حفظ الوحدة بنجاح ✔', 'ok');
+          if (card) card.style.display = 'none';
+          renderUnits();
+          loadUnitsSelects();
+          return;
+        }
+        toast(err.message, 'err');
+      }
     };
   }
 
@@ -1663,66 +1764,71 @@
       const d = await api('/users');
       const rawUsers = d.users || [];
       const seen = new Set();
-      allOrgUsers = rawUsers.filter(u => {
-        const key = (u.userName || u.id || '').toLowerCase().trim();
+      allOrgUsers = rawUsers.filter(usr => {
+        const key = (usr.userName || usr.id || '').toLowerCase().trim();
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
-      const filterUnitVal = $('uFilterUnit') ? $('uFilterUnit').value : '';
-      const list = allOrgUsers.filter(u => {
-        if (filterUnitVal && u.unitId !== filterUnitVal) return false;
+      const filterUnitVal = (isUnitMgr && unitObj) ? unitObj.id : ($('uFilterUnit') ? $('uFilterUnit').value : '');
+      const list = allOrgUsers.filter(usr => {
+        if (filterUnitVal && usr.unitId !== filterUnitVal) return false;
+        if (isUnitMgr && (usr.role === 'Admin' || usr.role === 'SuperAdmin')) return false;
         const q = ($('userSearch').value || '').trim().toLowerCase();
-        if (q && !u.userName.toLowerCase().includes(q) && !u.fullName.toLowerCase().includes(q)) return false;
+        if (q && !usr.userName.toLowerCase().includes(q) && !usr.fullName.toLowerCase().includes(q)) return false;
         return true;
       });
-      $('userTableBody').innerHTML = list.map(u => {
-        const curPw = u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456');
-        const unitName = u.unitName || (allOrgUnits.find(un => un.id === u.unitId)?.unitName) || '';
-        const unitBadge = unitName ? `<span class="badge purple" style="font-size:11px;padding:2px 7px;margin-top:4px;display:inline-block">🏢 ${esc(unitName)}${u.isUnitManager ? ' (مدير الوحدة)' : ''}</span>` : '';
+      $('userTableBody').innerHTML = list.map(usr => {
+        const curPw = usr.plainPassword || (usr.userName === 'admin' ? 'Admin@123' : '123456');
+        const unitName = usr.unitName || (allOrgUsers.find(un => un.id === usr.unitId)?.unitName) || (unitObj && usr.unitId === unitObj.id ? unitObj.unitName : '');
+        const unitBadge = unitName ? `<span class="badge purple" style="font-size:11px;padding:2px 7px;margin-top:4px;display:inline-block">🏢 ${esc(unitName)}${usr.isUnitManager ? ' (مدير الوحدة)' : ''}</span>` : '';
 
-        if (u.role === 'Admin') {
+        if (usr.role === 'Admin') {
           return `<tr>
             <td>
               <div class="rep-row">
                 <div class="rep-badge" style="background:var(--gold-soft);color:var(--gold)">👑</div>
                 <div>
-                  <b>${esc(u.fullName)}</b>
-                  <div class="s" style="color:var(--muted);font-size:12px">👤 ${esc(u.userName)} &nbsp;|&nbsp; 🔑 <span style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px" title="كلمة المرور: ${esc(curPw)}">••••••</span></div>
+                  <b>${esc(usr.fullName)}</b>
+                  <div class="s" style="color:var(--muted);font-size:12px">👤 ${esc(usr.userName)} &nbsp;|&nbsp; 🔑 <span style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px" title="كلمة المرور: ${esc(curPw)}">••••••</span></div>
                   ${unitBadge}
                 </div>
               </div>
             </td>
-            <td>${badgeStatus(u.isActive ? 'نشط' : 'غير نشط')}</td>
+            <td>${badgeStatus(usr.isActive ? 'نشط' : 'غير نشط')}</td>
             <td><span class="badge blue">👑 مدير النظام (كافة الصلاحيات)</span></td>
-            <td>${fmtDate(u.createdAt)}</td>
+            <td>${fmtDate(usr.createdAt)}</td>
             <td>
               <div class="btn-row" style="gap:6px">
-                <button class="btn btn-outline btn-xs" data-edit="${u.id}">✏️ تعديل / كشف كلمة المرور</button>
-                <button class="btn btn-outline btn-xs" data-pwd="${u.id}">🔑 كلمة المرور</button>
+                <button class="btn btn-outline btn-xs" data-edit="${usr.id}">✏️ تعديل / كشف كلمة المرور</button>
+                <button class="btn btn-outline btn-xs" data-pwd="${usr.id}">🔑 كلمة المرور</button>
               </div>
             </td>
           </tr>`;
         }
+
+        const canDeleteThisUser = !isUnitMgr || (!usr.isUnitManager && usr.id !== me.user.id);
+        const delBtnHtml = canDeleteThisUser ? `<button class="btn btn-danger btn-xs" data-del="${usr.id}" title="حذف المستخدم">🗑</button>` : '';
+
         return `<tr>
           <td>
             <div class="rep-row">
               <div class="rep-badge">👤</div>
               <div>
-                <b>${esc(u.fullName)}</b>
-                <div class="s" style="color:var(--muted);font-size:12px">👤 ${esc(u.userName)} &nbsp;|&nbsp; 🔑 <span style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px" title="كلمة المرور: ${esc(curPw)}">••••••</span></div>
+                <b>${esc(usr.fullName)}</b>
+                <div class="s" style="color:var(--muted);font-size:12px">👤 ${esc(usr.userName)} &nbsp;|&nbsp; 🔑 <span style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px" title="كلمة المرور: ${esc(curPw)}">••••••</span></div>
                 ${unitBadge}
               </div>
             </div>
           </td>
-          <td>${badgeStatus(u.isActive ? 'نشط' : 'غير نشط')}</td>
-          <td><div class="chips" style="gap:4px;max-width:240px">${permBadges(u)}</div></td>
-          <td>${fmtDate(u.createdAt)}</td>
+          <td>${badgeStatus(usr.isActive ? 'نشط' : 'غير نشط')}</td>
+          <td><div class="chips" style="gap:4px;max-width:240px">${permBadges(usr)}</div></td>
+          <td>${fmtDate(usr.createdAt)}</td>
           <td>
             <div class="btn-row" style="gap:6px">
-              <button class="btn btn-primary btn-xs" data-edit="${u.id}">⚙️ تعديل / كشف كلمة المرور</button>
-              <button class="btn btn-outline btn-xs" data-pwd="${u.id}" title="تعديل أو كشف كلمة المرور">🔑</button>
-              <button class="btn btn-danger btn-xs" data-del="${u.id}">🗑</button>
+              <button class="btn btn-primary btn-xs" data-edit="${usr.id}">⚙️ تعديل / كشف كلمة المرور</button>
+              <button class="btn btn-outline btn-xs" data-pwd="${usr.id}" title="تعديل أو كشف كلمة المرور">🔑</button>
+              ${delBtnHtml}
             </div>
           </td>
         </tr>`;
@@ -1909,11 +2015,11 @@
     }
   }
 
-  function openUserEditor(u) {
-    $('userFormTitle').textContent = u ? 'تعديل المستخدم: ' + u.fullName : 'إضافة مستخدم جديد';
-    $('ufUserName').value = u ? u.userName : '';
+  function openUserEditor(targetUser) {
+    $('userFormTitle').textContent = targetUser ? ((isUnitMgr ? 'تعديل موظف بالوحدة: ' : 'تعديل المستخدم: ') + targetUser.fullName) : (isUnitMgr ? 'إضافة موظف جديد بالوحدة' : 'إضافة مستخدم جديد');
+    $('ufUserName').value = targetUser ? targetUser.userName : '';
     $('ufUserName').readOnly = false;
-    $('ufFullName').value = u ? u.fullName : '';
+    $('ufFullName').value = targetUser ? targetUser.fullName : '';
 
     const errBox = $('ufUserNameError');
     if (errBox) {
@@ -1929,7 +2035,7 @@
     }
     
     // وضع كلمة المرور الحالية للمستخدم
-    const currentPw = u ? (u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456')) : '';
+    const currentPw = targetUser ? (targetUser.plainPassword || (targetUser.userName === 'admin' ? 'Admin@123' : '123456')) : '';
     $('ufPassword').value = currentPw;
     $('ufPassword').type = 'password';
 
@@ -1954,22 +2060,34 @@
       }
     }
 
-    $('ufActive').checked = u ? !!u.isActive : true;
-    if ($('ufUnitSel')) $('ufUnitSel').value = u ? (u.unitId || '') : '';
-    if ($('ufIsUnitManager')) $('ufIsUnitManager').checked = u ? (!!u.isUnitManager || u.role === 'UnitAdmin') : false;
+    $('ufActive').checked = targetUser ? !!targetUser.isActive : true;
+    if ($('ufUnitSel')) $('ufUnitSel').value = (isUnitMgr && unitObj) ? unitObj.id : (targetUser ? (targetUser.unitId || '') : '');
+    if ($('ufIsUnitManager')) $('ufIsUnitManager').checked = targetUser ? (!!targetUser.isUnitManager || targetUser.role === 'UnitAdmin') : false;
+
+    // إخفاء خيارات إدارة النظام والوحدات عند دخول مدير الوحدة
+    if ($('ufUnitField')) $('ufUnitField').style.display = isUnitMgr ? 'none' : 'block';
+    if ($('ufIsUnitManagerWrap')) $('ufIsUnitManagerWrap').style.display = isUnitMgr ? 'none' : 'block';
+    if ($('cardPermDash')) $('cardPermDash').style.display = isUnitMgr ? 'none' : 'block';
+    if ($('cardPermUnits')) $('cardPermUnits').style.display = isUnitMgr ? 'none' : 'block';
+    if ($('cardPermUsers')) $('cardPermUsers').style.display = isUnitMgr ? 'none' : 'block';
+    if ($('cardPermSettings')) $('cardPermSettings').style.display = isUnitMgr ? 'none' : 'block';
+    if ($('wrapPermEdit')) $('wrapPermEdit').style.display = isUnitMgr ? 'none' : 'block';
+    if ($('wrapPermDelete')) $('wrapPermDelete').style.display = isUnitMgr ? 'none' : 'block';
     
-    const permKeys = ['Dash', 'Entry', 'Add', 'Reports', 'Edit', 'Delete', 'Print', 'Events', 'Users', 'Settings'];
+    const permKeys = ['Dash', 'Entry', 'Add', 'Reports', 'Edit', 'Delete', 'Print', 'Events', 'Units', 'Users', 'Settings'];
     permKeys.forEach(k => {
       const el = $('ufCan' + k);
       if (el) {
-        if (u) {
-          el.checked = !!u['can' + k];
+        if (isUnitMgr && (k === 'Dash' || k === 'Units' || k === 'Users' || k === 'Settings' || k === 'Edit' || k === 'Delete')) {
+          el.checked = false;
+        } else if (targetUser) {
+          el.checked = !!targetUser['can' + k];
         } else {
-          el.checked = (k === 'Dash' || k === 'Entry' || k === 'Add' || k === 'Reports' || k === 'Print' || k === 'Events');
+          el.checked = (k === 'Entry' || k === 'Add' || k === 'Reports' || k === 'Print' || k === 'Events');
         }
       }
     });
-    $('userForm').dataset.id = u ? u.id : '';
+    $('userForm').dataset.id = targetUser ? targetUser.id : '';
     $('userForm').style.display = 'block';
     $('userForm').scrollIntoView({ behavior: 'smooth' });
   }
@@ -1989,24 +2107,25 @@
     const pw = $('ufPassword').value.trim();
     if (!id && !pw) { toast('كلمة المرور مطلوبة للمستخدم الجديد', 'err'); return; }
 
-    const unitId = $('ufUnitSel') ? $('ufUnitSel').value : null;
-    const isUnitManager = $('ufIsUnitManager') ? $('ufIsUnitManager').checked : false;
+    const unitId = (isUnitMgr && unitObj) ? unitObj.id : ($('ufUnitSel') ? $('ufUnitSel').value : null);
+    const isUnitManager = isUnitMgr ? false : ($('ufIsUnitManager') ? $('ufIsUnitManager').checked : false);
 
     const body = {
       userName, fullName, isActive: $('ufActive').checked,
       unitId: unitId || null,
       isUnitManager: isUnitManager,
-      role: (isUnitManager ? 'UnitAdmin' : 'User'),
-      canDash: !!$('ufCanDash')?.checked,
+      role: (isUnitManager ? 'UnitAdmin' : 'EntryUser'),
+      canDash: isUnitMgr ? false : !!$('ufCanDash')?.checked,
       canEntry: !!$('ufCanEntry')?.checked,
       canAdd: !!$('ufCanAdd')?.checked,
       canReports: !!$('ufCanReports')?.checked,
-      canEdit: !!$('ufCanEdit')?.checked,
-      canDelete: !!$('ufCanDelete')?.checked,
+      canEdit: isUnitMgr ? false : !!$('ufCanEdit')?.checked,
+      canDelete: isUnitMgr ? false : !!$('ufCanDelete')?.checked,
       canPrint: !!$('ufCanPrint')?.checked,
       canEvents: !!$('ufCanEvents')?.checked,
-      canUsers: !!$('ufCanUsers')?.checked,
-      canSettings: !!$('ufCanSettings')?.checked,
+      canUnits: isUnitMgr ? false : !!$('ufCanUnits')?.checked,
+      canUsers: isUnitMgr ? false : !!$('ufCanUsers')?.checked,
+      canSettings: isUnitMgr ? false : !!$('ufCanSettings')?.checked,
       canOpen: !!$('ufCanEntry')?.checked || !!$('ufCanReports')?.checked
     };
     if (pw) {
@@ -2409,6 +2528,87 @@
     w.document.close();
   };
 
+  window.printUnitQrCard = function(un) {
+    if (!un || !org) return;
+    const dummyDiv = document.createElement('div');
+    const baseUrl = getServerBaseUrl() || location.origin;
+    const directUrl = baseUrl + '/login.html?org=' + encodeURIComponent(un.unitCode || org.orgCode);
+    
+    let qrDataUrl = '';
+    if (typeof QRCode !== 'undefined') {
+      new QRCode(dummyDiv, { text: directUrl, width: 200, height: 200 });
+      const cvs = dummyDiv.querySelector('canvas');
+      if (cvs) qrDataUrl = cvs.toDataURL();
+      else {
+        const img = dummyDiv.querySelector('img');
+        if (img) qrDataUrl = img.src;
+      }
+    }
+
+    const w = window.open('', '_blank', 'width=650,height=750');
+    w.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>بطاقة ربط الوحدة — ${esc(un.unitName)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+  .card { background: #fff; border: 2px solid #0f172a; border-radius: 20px; padding: 32px 28px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.15); }
+  .header { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 14px; }
+  .header img { width: 42px; height: 42px; border-radius: 10px; }
+  .header h2 { margin: 0; font-size: 16px; color: #0f172a; }
+  .org-title { font-size: 15px; font-weight: 800; color: #64748b; margin: 4px 0; }
+  .unit-title { font-size: 20px; font-weight: 900; color: #1e3a8a; margin: 6px 0 14px; }
+  .qr-box { background: #f8fafc; border: 2px dashed #94a3b8; border-radius: 16px; padding: 16px; display: inline-block; margin-bottom: 14px; }
+  .qr-box img { width: 200px; height: 200px; display: block; }
+  .code-badge { background: #0f172a; color: #38bdf8; font-family: monospace; font-size: 22px; font-weight: 900; padding: 8px 20px; border-radius: 10px; display: inline-block; letter-spacing: 2px; margin-bottom: 14px; }
+  .steps { text-align: right; background: #f8fafc; border-radius: 12px; padding: 14px 18px; font-size: 13px; color: #334155; line-height: 1.8; margin-top: 10px; }
+  .footer { margin-top: 18px; font-size: 11.5px; color: #64748b; font-weight: 700; }
+  @media print { body { background: #fff; padding: 0; } .card { box-shadow: none; border: 2px solid #000; } .no-print { display: none; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <img src="Image/codex_logo.jpg" alt="Codex" />
+    <div>
+      <h2 style="margin:0">منظومة كودكس السحابية لإدارة التقارير</h2>
+      <small style="color:#64748b">بطاقة ربط واعتماد هواتف الوحدة</small>
+    </div>
+  </div>
+  
+  <div class="org-title">الفرع: ${esc(org.orgName)}</div>
+  <div class="unit-title">🏢 ${esc(un.unitName)}</div>
+  ${un.managerName ? `<div style="font-size:13px;color:#475569;margin-bottom:12px">👤 مسؤول الوحدة: <b>${esc(un.managerName)}</b></div>` : ''}
+  
+  <div class="qr-box">
+    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR Code" />` : '<div style="width:200px;height:200px;display:flex;align-items:center;justify-content:center">رمز QR</div>'}
+  </div>
+  
+  <div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:4px;font-weight:700">رمز الوحدة للربط المباشر:</div>
+    <div class="code-badge">${esc(un.unitCode || org.orgCode)}</div>
+  </div>
+
+  <div class="steps">
+    <b>طريقة ربط الهاتف بالوحدة:</b><br/>
+    1. افتح تطبيق المنظومة أو كاميرا الهاتف وامسح رمز الـ QR أعلاه.<br/>
+    2. أو اكتب رمز الوحدة: <b>${esc(un.unitCode || org.orgCode)}</b> في شاشة الدخول.<br/>
+    3. أدخل اسم المستخدم وكلمة المرور الخاصة بك.
+  </div>
+
+  <div class="footer">
+    تطوير ودعم: شركة كودكس للبرمجيات • هاتف: 783745550
+  </div>
+</div>
+<script>
+  window.onload = function() { window.print(); };
+</script>
+</body>
+</html>`);
+    w.document.close();
+  };
+
   /* ================= إدخال تقرير جديد للمدير ================= */
   let admPhotos = [];
   let admEntryInitialized = false;
@@ -2567,7 +2767,7 @@
       reportTime: $('admFTime')?.value || new Date().toTimeString().slice(0, 5),
       location: ($('admFLocation')?.value || '').trim(),
       rating: $('admFRating')?.value || 'عادي',
-      unitId: $('admFUnit')?.value || me.user.unitId || null,
+      unitId: (isUnitMgr && unitObj) ? unitObj.id : ($('admFUnit')?.value || me.user.unitId || null),
       reliability: ($('admFRel')?.value || '').trim(),
       status: ($('admFStatus')?.value || '').trim(),
       achievement: ($('admFAch')?.value || '').trim(),

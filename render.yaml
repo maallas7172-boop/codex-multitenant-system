@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: codex-multitenant-system
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: PORT
+        value: 10000
+    disk:
+      name: multitenant-data
+      mountPath: /var/data
+      sizeGB: 1
