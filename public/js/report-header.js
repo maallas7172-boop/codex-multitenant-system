@@ -85,9 +85,17 @@ function renderReportHeaderHTML(report, customOpts = {}) {
   }
 
   // الشعار
+  let logoSrc = cfg.logoSrc || 'Image/1754379379088.jpg';
+  if (logoSrc && !logoSrc.startsWith('data:') && !logoSrc.startsWith('http://') && !logoSrc.startsWith('https://')) {
+    if (typeof location !== 'undefined' && location.origin && location.origin !== 'null') {
+      const p = location.pathname || '/';
+      const dir = p.substring(0, p.lastIndexOf('/') + 1);
+      logoSrc = location.origin + dir + logoSrc.replace(/^\/+/, '');
+    }
+  }
   let logoHtml = '';
-  if (cfg.logoSrc) {
-    logoHtml = `<img src="${esc(cfg.logoSrc)}" alt="الشعار الرسمي" style="max-height:80px; max-width:140px; object-fit:contain; display:block; margin:0 auto;" />`;
+  if (logoSrc) {
+    logoHtml = `<img src="${esc(logoSrc)}" alt="الشعار الرسمي" style="max-height:80px; max-width:140px; object-fit:contain; display:block; margin:0 auto;" />`;
   } else if (cfg.logoHtml) {
     logoHtml = cfg.logoHtml;
   }

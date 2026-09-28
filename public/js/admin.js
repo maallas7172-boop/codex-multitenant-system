@@ -653,7 +653,8 @@
       </div>` : '';
 
     const w = window.open('', '_blank', 'width=900,height=700');
-    w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"/><title>&lrm;</title>
+    const baseHref = (typeof location !== 'undefined' && location.origin) ? (location.origin + location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1)) : '';
+    w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><base href="${baseHref}"/><meta charset="UTF-8"/><title>&lrm;</title>
 <style>
   @page { size: A4 portrait; margin: 12mm 15mm; }
   * { box-sizing: border-box; }
@@ -732,7 +733,8 @@
       </tr>`).join('');
 
     const w = window.open('', '_blank', 'width=1000,height=750');
-    w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"/><title>كشف إجمالي التقارير</title>
+    const baseHref = (typeof location !== 'undefined' && location.origin) ? (location.origin + location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1)) : '';
+    w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><base href="${baseHref}"/><meta charset="UTF-8"/><title>كشف إجمالي التقارير</title>
 <style>
   body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;color:#1e293b;margin:0;padding:28px;background:#fff;line-height:1.6}
   ${headerCss}
@@ -828,7 +830,8 @@
     }).join('\n<hr class="no-print" style="margin:40px 0;border:2px dashed #94a3b8"/>\n');
 
     const w = window.open('', '_blank', 'width=950,height=750');
-    w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"/><title>التقارير التفصيلية المجمعة</title>
+    const baseHref = (typeof location !== 'undefined' && location.origin) ? (location.origin + location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1)) : '';
+    w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><base href="${baseHref}"/><meta charset="UTF-8"/><title>التقارير التفصيلية المجمعة</title>
 <style>
   body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;color:#1e293b;margin:0;padding:28px;background:#fff;line-height:1.6}
   ${headerCss}
@@ -2491,9 +2494,9 @@
 <body>
 <div class="card">
   <div class="header">
-    <img src="Image/codex_logo.jpg" alt="Codex" />
+    <img src="${(o.logoUrl && !o.logoUrl.includes('codex_logo')) ? o.logoUrl : 'Image/1754379379088.jpg'}" alt="Logo" />
     <div>
-      <h2 style="margin:0">منظومة كودكس السحابية لإدارة التقارير</h2>
+      <h2 style="margin:0">منظومة إدارة التقارير</h2>
       <small style="color:#64748b">بطاقة ربط واعتماد الهواتف الميدانية</small>
     </div>
   </div>
@@ -2517,7 +2520,7 @@
   </div>
 
   <div class="footer">
-    تطوير ودعم: شركة كودكس للبرمجيات • هاتف: 783745550
+    منظومة إدارة الحسابات والتقارير الميدانية © 2026
   </div>
 </div>
 <script>
@@ -2570,9 +2573,9 @@
 <body>
 <div class="card">
   <div class="header">
-    <img src="Image/codex_logo.jpg" alt="Codex" />
+    <img src="${(org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg'}" alt="Logo" />
     <div>
-      <h2 style="margin:0">منظومة كودكس السحابية لإدارة التقارير</h2>
+      <h2 style="margin:0">منظومة إدارة التقارير</h2>
       <small style="color:#64748b">بطاقة ربط واعتماد هواتف الوحدة</small>
     </div>
   </div>
@@ -2598,7 +2601,7 @@
   </div>
 
   <div class="footer">
-    تطوير ودعم: شركة كودكس للبرمجيات • هاتف: 783745550
+    منظومة إدارة الحسابات والتقارير الميدانية © 2026
   </div>
 </div>
 <script>

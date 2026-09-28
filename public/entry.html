@@ -29,13 +29,6 @@
       <div style="margin-top:8px">
         <button class="btn btn-outline btn-sm" onclick="logout()" style="width:100%;font-size:12px;padding:7px">🚪 تسجيل الخروج</button>
       </div>
-      <div class="sidebar-company-footer" style="display:flex;align-items:center;gap:9px;padding:8px 10px;text-align:right">
-        <img src="Image/codex_logo.jpg" alt="Codex" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.2)" />
-        <div style="flex:1;min-width:0">
-          <div style="color:#f1f5f9;font-weight:800;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">شركة كودكس للبرمجيات</div>
-          <div style="direction:ltr;text-align:right"><a href="tel:783745550" style="color:#60a5fa;text-decoration:none;font-weight:700;font-size:11px">📞 783745550</a></div>
-        </div>
-      </div>
     </div>
   </aside>
 
@@ -51,26 +44,26 @@
       </div>
     </div>
 
-    <!-- شريط المهام والتكليفات الموجهة للموظف -->
+    <!-- شريط المهام الموجهة للموظف -->
     <div id="myTasksAlertBanner" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-radius:var(--r-md);margin-bottom:16px;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:22px">📋</span>
         <div>
           <div style="font-weight:900;color:#1e3a8a;font-size:14px">
-            المهام والتكليفات الموجهة لك من قِبل المدير
+            المهام الموجهة لك من قِبل المدير
             <span class="badge warn" id="myTasksAlertCount" style="margin-right:6px">0 جديدة</span>
           </div>
-          <div style="font-size:12px;color:#3b82f6;margin-top:2px">تظهر هنا فقط التكليفات والفعاليات المسندة لحسابك. يرجى تأكيد استلامها.</div>
+          <div style="font-size:12px;color:#3b82f6;margin-top:2px">تظهر هنا فقط المهام المسندة لحسابك. يرجى تأكيد استلامها.</div>
         </div>
       </div>
       <button class="btn btn-primary btn-sm" id="btnToggleTasksView" type="button" style="font-size:12.5px;padding:7px 16px">📋 عرض مهامي والتغذية الراجعة</button>
     </div>
 
-    <!-- قسم مهام وتكليفات الموظف -->
+    <!-- قسم مهام الموظف -->
     <section class="card" id="myTasksBox" style="display:none;margin-bottom:18px">
       <div class="page-head" style="margin-bottom:14px">
         <div>
-          <h3>📋 مهامك وتكليفاتك المسندة إليك</h3>
+          <h3>📋 مهامك المسندة إليك</h3>
           <p style="margin:0;font-size:13px;color:var(--muted)">تظهر هذه المهام لك حصرياً على هاتفك، مع إمكانية تأكيد الاستلام الفوري، تقديم التغذية الراجعة، أو حذف المهمة من تطبيقك.</p>
         </div>
         <div class="btn-row">

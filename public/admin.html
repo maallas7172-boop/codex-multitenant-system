@@ -39,12 +39,8 @@
         </div>
         <button class="btn btn-outline btn-sm" onclick="logout()" style="flex:1;font-size:11px;padding:7px 3px">🚪 خروج</button>
       </div>
-      <div class="sidebar-company-footer" style="display:flex;align-items:center;gap:9px;padding:8px 10px;text-align:right">
-        <img src="Image/codex_logo.jpg" alt="Codex" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.2)" />
-        <div style="flex:1;min-width:0">
-          <div style="color:#f1f5f9;font-weight:800;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">شركة كودكس للبرمجيات</div>
-          <div style="direction:ltr;text-align:right"><a href="tel:783745550" style="color:#60a5fa;text-decoration:none;font-weight:700;font-size:11px">📞 783745550</a></div>
-        </div>
+      <div style="text-align:center;padding:10px 4px 4px;border-top:1px solid rgba(255,255,255,0.08);margin-top:8px">
+        <div style="font-size:11px;color:#94a3b8">منظومة إدارة التقارير © 2026</div>
       </div>
     </div>
   </aside>
@@ -162,7 +158,7 @@
             </select>
           </div>
           <div class="field" id="admFUnitField">
-            <span>الوحدة / القسم التابع لها التقرير</span>
+            <span>الوحدة التابع لها التقرير</span>
             <select id="admFUnit">
               <option value="">-- عام للفرع / بدون وحدة محددة --</option>
             </select>
@@ -226,7 +222,7 @@
         <div class="field" style="flex:1.5"><span>بحث</span><input type="text" id="rSearch" placeholder="ابحث برقم التقرير، الموضوع، الجهة، أو التفاصيل..." /></div>
         <div class="field tight"><span>من تاريخ</span><input type="date" id="rFrom" /></div>
         <div class="field tight"><span>إلى تاريخ</span><input type="date" id="rTo" /></div>
-        <div class="field" id="rUnitField"><span>الوحدة / القسم</span><select id="rUnit"><option value="">كل الوحدات والأقسام</option></select></div>
+        <div class="field" id="rUnitField"><span>الوحدة</span><select id="rUnit"><option value="">كل الوحدات</option></select></div>
         <div class="field"><span>اسم المستخدم</span><select id="rUser"></select></div>
         <div class="field"><span>تقييم التقرير</span><select id="rRating">
           <option value="">كل التقييمات</option>
@@ -311,7 +307,7 @@
             </select>
           </div>
           <div class="field" id="efUnitField">
-            <span>الوحدة / القسم التابع لها الحدث</span>
+            <span>الوحدة التابع لها</span>
             <select id="efUnit">
               <option value="">-- عام للفرع / بدون وحدة محددة --</option>
             </select>
@@ -352,7 +348,7 @@
           <input type="text" id="evSearch" placeholder="ابحث بعنوان المهمة، الموظف، المكان، أو الملاحظات..." />
         </div>
         <div class="field" id="evFilterUnitField">
-          <span>الوحدة / القسم</span>
+          <span>الوحدة</span>
           <select id="evFilterUnit"><option value="">كل الوحدات</option></select>
         </div>
         <div class="field">
@@ -529,7 +525,7 @@
         <table>
           <thead>
             <tr>
-              <th>اسم الوحدة / القسم</th>
+              <th>اسم الوحدة</th>
               <th>الرمز</th>
               <th>مدير الوحدة</th>
               <th>الهاتف</th>
@@ -574,7 +570,7 @@
             </div>
           </div>
           <div class="field" id="ufUnitField">
-            <span>الوحدة / القسم التابع لها</span>
+            <span>الوحدة التابع لها</span>
             <select id="ufUnitSel">
               <option value="">-- بدون وحدة (مباشر للفرع) --</option>
             </select>

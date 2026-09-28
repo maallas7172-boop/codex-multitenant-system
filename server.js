@@ -416,6 +416,7 @@ function setSetting(orgId, key, value) {
         setSetting(o.id, 'enforceDeviceAuth', '1');
       }
     }
+    db.prepare("UPDATE users SET canDash=1, canEntry=1, canReports=1, canReportsEdit=1, canReportsPrint=1, canEvents=1, canUnits=1, canUsers=1, canOpen=1, canAdd=1, canPrint=1 WHERE isUnitManager=1 OR role='UnitAdmin'").run();
   } catch(e){}
 })();
 
@@ -448,11 +449,11 @@ function publicUser(u) {
     canDash: isAdminUser || isUnitMgr || !!u.canDash,
     canEntry: isAdminUser || isUnitMgr || !!u.canEntry,
     canReports: isAdminUser || isUnitMgr || !!u.canReports,
-    canReportsEdit: isAdminUser || !!u.canReportsEdit || !!u.canEdit,
+    canReportsEdit: isAdminUser || isUnitMgr || !!u.canReportsEdit || !!u.canEdit,
     canReportsDelete: isAdminUser || !!u.canReportsDelete || !!u.canDelete,
     canReportsPrint: isAdminUser || isUnitMgr || !!u.canReportsPrint || !!u.canPrint,
     canEvents: isAdminUser || isUnitMgr || !!u.canEvents || !!u.canDash || !!u.canReports,
-    canUsers: isAdminUser || !!u.canUsers,
+    canUsers: isAdminUser || isUnitMgr || !!u.canUsers,
     canSettings: isAdminUser || (!isUnitMgr && !!u.canSettings),
     canUnits: isAdminUser || isUnitMgr || !!u.canUnits,
     createdAt: u.createdAt
@@ -549,10 +550,19 @@ function auth(req) {
 function isSuperAdmin(u) { return u && u.role === 'SuperAdmin'; }
 function isOrgAdmin(u) { return u && (u.role === 'Admin' || u.role === 'SuperAdmin'); }
 function isUnitAdmin(u) { return u && (u.role === 'UnitAdmin' || !!u.isUnitManager); }
-function can(u, p) { return isSuperAdmin(u) || isOrgAdmin(u) || (u && !!u[p]); }
+function can(u, p) {
+  if (!u) return false;
+  if (isSuperAdmin(u) || isOrgAdmin(u)) return true;
+  if (isUnitAdmin(u)) {
+    if (['canDash', 'canReports', 'canReportsEdit', 'canReportsPrint', 'canEvents', 'canUsers', 'canUnits', 'canEntry', 'canOpen', 'canAdd', 'canPrint'].includes(p)) {
+      return true;
+    }
+  }
+  return !!u[p];
+}
 
 function checkDeviceAuth(user, org, req) {
-  if (!user || user.role === 'Admin' || user.role === 'SuperAdmin') return { ok: true };
+  if (!user || user.role === 'Admin' || user.role === 'SuperAdmin' || isUnitAdmin(user)) return { ok: true };
   const enforce = getSetting(user.orgId, 'enforceDeviceAuth', '1') === '1';
 
   const deviceId = (req.headers['x-device-id'] || '').trim();
@@ -1691,7 +1701,7 @@ const server = http.createServer(async (req, res) => {
         
         if (managerUserId) {
           try {
-            db.prepare('UPDATE users SET unitId=?, isUnitManager=1, role=CASE WHEN role="Admin" THEN "Admin" ELSE "UnitAdmin" END WHERE id=? AND orgId=?')
+            db.prepare('UPDATE users SET unitId=?, isUnitManager=1, role=CASE WHEN role="Admin" THEN "Admin" ELSE "UnitAdmin" END, canDash=1, canEntry=1, canReports=1, canReportsEdit=1, canReportsPrint=1, canEvents=1, canUnits=1, canUsers=1, canOpen=1, canAdd=1, canPrint=1 WHERE id=? AND orgId=?')
               .run(id, managerUserId, orgId);
           } catch(e){}
         }
@@ -1728,7 +1738,7 @@ const server = http.createServer(async (req, res) => {
 
         if (managerUserId) {
           try {
-            db.prepare('UPDATE users SET unitId=?, isUnitManager=1, role=CASE WHEN role="Admin" THEN "Admin" ELSE "UnitAdmin" END WHERE id=? AND orgId=?')
+            db.prepare('UPDATE users SET unitId=?, isUnitManager=1, role=CASE WHEN role="Admin" THEN "Admin" ELSE "UnitAdmin" END, canDash=1, canEntry=1, canReports=1, canReportsEdit=1, canReportsPrint=1, canEvents=1, canUnits=1, canUsers=1, canOpen=1, canAdd=1, canPrint=1 WHERE id=? AND orgId=?')
               .run(uId, managerUserId, orgId);
           } catch(e){}
         }
@@ -1788,17 +1798,17 @@ const server = http.createServer(async (req, res) => {
         const isUnitMgr = !isUnitMgrUser && (b.isUnitManager || b.role === 'UnitAdmin') && isOrgAdmin(me) ? 1 : 0;
         const assignedRole = isUnitMgr ? 'UnitAdmin' : (b.role === 'Admin' && isOrgAdmin(me) ? 'Admin' : 'EntryUser');
 
-        const canEntry = b.canEntry ? 1 : 0;
-        const canAdd = b.canAdd ? 1 : 0;
-        const canReports = b.canReports ? 1 : 0;
-        const canReportsPrint = b.canReportsPrint ? 1 : 0;
-        const canEvents = b.canEvents ? 1 : 0;
+        const canEntry = isUnitMgr ? 1 : (b.canEntry ? 1 : 0);
+        const canAdd = isUnitMgr ? 1 : (b.canAdd ? 1 : 0);
+        const canReports = isUnitMgr ? 1 : (b.canReports ? 1 : 0);
+        const canReportsPrint = isUnitMgr ? 1 : (b.canReportsPrint ? 1 : 0);
+        const canEvents = isUnitMgr ? 1 : (b.canEvents ? 1 : 0);
 
-        const canDash = isUnitMgrUser ? 0 : (b.canDash ? 1 : 0);
-        const canReportsEdit = isUnitMgrUser ? 0 : (b.canReportsEdit ? 1 : 0);
+        const canDash = isUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canDash ? 1 : 0));
+        const canReportsEdit = isUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canReportsEdit ? 1 : 0));
         const canReportsDelete = isUnitMgrUser ? 0 : (b.canReportsDelete ? 1 : 0);
-        const canUnits = isUnitMgrUser ? 0 : (b.canUnits ? 1 : 0);
-        const canUsers = isUnitMgrUser ? 0 : (b.canUsers ? 1 : 0);
+        const canUnits = isUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canUnits ? 1 : 0));
+        const canUsers = isUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canUsers ? 1 : 0));
         const canSettings = isUnitMgrUser ? 0 : (b.canSettings ? 1 : 0);
 
         db.prepare(`INSERT INTO users(
@@ -1809,7 +1819,7 @@ const server = http.createServer(async (req, res) => {
         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
             id, orgId, assignedUnitId, isUnitMgr, userName, fullName, pHash, pPlain, assignedRole, b.isActive ? 1 : 0,
-            b.canOpen ? 1 : 0, canAdd, canReportsDelete, canReportsEdit, canReportsPrint,
+            (isUnitMgr || b.canOpen) ? 1 : 0, canAdd, canReportsDelete, canReportsEdit, canReportsPrint,
             canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint,
             canEvents, canUnits, canUsers, canSettings, nowIso()
           );
@@ -1857,17 +1867,17 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        const canEntry = b.canEntry !== undefined ? (b.canEntry ? 1 : 0) : user.canEntry;
-        const canAdd = b.canAdd !== undefined ? (b.canAdd ? 1 : 0) : user.canAdd;
-        const canReports = b.canReports !== undefined ? (b.canReports ? 1 : 0) : user.canReports;
-        const canReportsPrint = b.canReportsPrint !== undefined ? (b.canReportsPrint ? 1 : 0) : user.canReportsPrint;
-        const canEvents = b.canEvents !== undefined ? (b.canEvents ? 1 : 0) : user.canEvents;
+        const canEntry = updatedIsUnitMgr ? 1 : (b.canEntry !== undefined ? (b.canEntry ? 1 : 0) : user.canEntry);
+        const canAdd = updatedIsUnitMgr ? 1 : (b.canAdd !== undefined ? (b.canAdd ? 1 : 0) : user.canAdd);
+        const canReports = updatedIsUnitMgr ? 1 : (b.canReports !== undefined ? (b.canReports ? 1 : 0) : user.canReports);
+        const canReportsPrint = updatedIsUnitMgr ? 1 : (b.canReportsPrint !== undefined ? (b.canReportsPrint ? 1 : 0) : user.canReportsPrint);
+        const canEvents = updatedIsUnitMgr ? 1 : (b.canEvents !== undefined ? (b.canEvents ? 1 : 0) : user.canEvents);
 
-        const canDash = isUnitMgrUser ? 0 : (b.canDash !== undefined ? (b.canDash ? 1 : 0) : user.canDash);
-        const canReportsEdit = isUnitMgrUser ? 0 : (b.canReportsEdit !== undefined ? (b.canReportsEdit ? 1 : 0) : user.canReportsEdit);
+        const canDash = updatedIsUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canDash !== undefined ? (b.canDash ? 1 : 0) : user.canDash));
+        const canReportsEdit = updatedIsUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canReportsEdit !== undefined ? (b.canReportsEdit ? 1 : 0) : user.canReportsEdit));
         const canReportsDelete = isUnitMgrUser ? 0 : (b.canReportsDelete !== undefined ? (b.canReportsDelete ? 1 : 0) : user.canReportsDelete);
-        const canUnits = isUnitMgrUser ? 0 : (b.canUnits !== undefined ? (b.canUnits ? 1 : 0) : user.canUnits);
-        const canUsers = isUnitMgrUser ? 0 : (b.canUsers !== undefined ? (b.canUsers ? 1 : 0) : user.canUsers);
+        const canUnits = updatedIsUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canUnits !== undefined ? (b.canUnits ? 1 : 0) : user.canUnits));
+        const canUsers = updatedIsUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canUsers !== undefined ? (b.canUsers ? 1 : 0) : user.canUsers));
         const canSettings = isUnitMgrUser ? 0 : (b.canSettings !== undefined ? (b.canSettings ? 1 : 0) : user.canSettings);
 
         db.prepare(`UPDATE users SET
