@@ -246,6 +246,75 @@ async function syncOrgQueue(db, org, cloudToken) {
       }
     } catch(e){}
 
+    // 7. Pull units from cloud into local SQLite
+    try {
+      const cloudUnitsRes = await httpRequest(CLOUD_URL + '/api/units', {
+        method: 'GET',
+        headers: { 'Authorization': 'Bearer ' + cloudToken }
+      });
+      if (cloudUnitsRes.status === 200 && Array.isArray(cloudUnitsRes.data.units)) {
+        for (const cu of cloudUnitsRes.data.units) {
+          db.prepare(`INSERT OR REPLACE INTO units(
+            id, orgId, unitName, unitCode, managerUserId, managerName, phone, notes, status, createdAt
+          ) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+            .run(
+              cu.id, org.id, cu.unitName, cu.unitCode || '',
+              cu.managerUserId || null, cu.managerName || '',
+              cu.phone || '', cu.notes || '', cu.status || 'active',
+              cu.createdAt || new Date().toISOString()
+            );
+        }
+      }
+    } catch(e){}
+
+    // 8. Pull users from cloud into local SQLite
+    try {
+      const cloudUsersRes = await httpRequest(CLOUD_URL + '/api/users', {
+        method: 'GET',
+        headers: { 'Authorization': 'Bearer ' + cloudToken }
+      });
+      if (cloudUsersRes.status === 200 && Array.isArray(cloudUsersRes.data.users)) {
+        for (const usr of cloudUsersRes.data.users) {
+          const existing = db.prepare('SELECT id FROM users WHERE id=?').get(usr.id);
+          if (!existing) {
+            db.prepare(`INSERT INTO users(
+              id, orgId, unitId, isUnitManager, userName, fullName, passwordHash, plainPassword, role, isActive,
+              canOpen, canAdd, canDelete, canEdit, canPrint, canDash, canEntry, canReports, canReportsEdit, canReportsDelete,
+              canReportsPrint, canEvents, canUnits, canUsers, canSettings, createdAt
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+              .run(
+                usr.id, org.id, usr.unitId || null, usr.isUnitManager ? 1 : 0,
+                usr.userName, usr.fullName, usr.passwordHash || '', usr.plainPassword || '',
+                usr.role || 'EntryUser', usr.isActive ? 1 : 0,
+                usr.canOpen ? 1 : 0, usr.canAdd ? 1 : 0, usr.canDelete ? 1 : 0,
+                usr.canEdit ? 1 : 0, usr.canPrint ? 1 : 0, usr.canDash ? 1 : 0,
+                usr.canEntry ? 1 : 0, usr.canReports ? 1 : 0, usr.canReportsEdit ? 1 : 0,
+                usr.canReportsDelete ? 1 : 0, usr.canReportsPrint ? 1 : 0, usr.canEvents ? 1 : 0,
+                usr.canUnits ? 1 : 0, usr.canUsers ? 1 : 0, usr.canSettings ? 1 : 0,
+                usr.createdAt || new Date().toISOString()
+              );
+          } else {
+            db.prepare(`UPDATE users SET
+              unitId=?, isUnitManager=?, userName=?, fullName=?, role=?, isActive=?,
+              canOpen=?, canAdd=?, canDelete=?, canEdit=?, canPrint=?, canDash=?, canEntry=?,
+              canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?, canEvents=?,
+              canUnits=?, canUsers=?, canSettings=?
+              WHERE id=?`)
+              .run(
+                usr.unitId || null, usr.isUnitManager ? 1 : 0,
+                usr.userName, usr.fullName, usr.role || 'EntryUser', usr.isActive ? 1 : 0,
+                usr.canOpen ? 1 : 0, usr.canAdd ? 1 : 0, usr.canDelete ? 1 : 0,
+                usr.canEdit ? 1 : 0, usr.canPrint ? 1 : 0, usr.canDash ? 1 : 0,
+                usr.canEntry ? 1 : 0, usr.canReports ? 1 : 0, usr.canReportsEdit ? 1 : 0,
+                usr.canReportsDelete ? 1 : 0, usr.canReportsPrint ? 1 : 0, usr.canEvents ? 1 : 0,
+                usr.canUnits ? 1 : 0, usr.canUsers ? 1 : 0, usr.canSettings ? 1 : 0,
+                usr.id
+              );
+          }
+        }
+      }
+    } catch(e){}
+
   } catch(err) {
     // offline or timeout
   }

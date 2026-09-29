@@ -25,17 +25,19 @@
   const $ = id => document.getElementById(id);
   const draftBox = $('draftBox'), formCard = $('formCard');
   const org = me.organization;
-  if (org) {
+  if (me.unit) {
+    if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = '🏢 ' + me.unit.unitName;
+    if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الوحدة: ' + (me.unit.unitCode || '') + (org ? ' | الفرع: ' + org.orgName : '');
+    if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = me.unit.unitName + ' (' + (me.unit.unitCode || '') + ')';
+    document.title = me.unit.unitName + ' — إدخال البيانات والتقارير';
+  } else if (org) {
     if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = org.orgName || 'إدخال البيانات';
     if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'منظومة: ' + (org.orgName || '') + ' (' + (org.orgCode || '') + ')';
-    if (document.getElementById('orgBadgeText')) {
-      const unitPart = me.unit ? (' — 🏢 ' + me.unit.unitName) : '';
-      document.getElementById('orgBadgeText').textContent = org.orgName + ' (' + (org.orgCode || '') + ')' + unitPart;
-    }
-    const logoEl = document.getElementById('orgBrandLogoImg');
-    if (logoEl) {
-      logoEl.src = (org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg';
-    }
+    if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = org.orgName + ' (' + (org.orgCode || '') + ')';
+  }
+  const logoEl = document.getElementById('orgBrandLogoImg');
+  if (logoEl && org) {
+    logoEl.src = (org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg';
   }
   $('userNameTop').textContent = u.fullName + (u.role === 'Admin' ? ' (مدير)' : '');
   if (u.role === 'Admin') $('userAv').textContent = '👑';

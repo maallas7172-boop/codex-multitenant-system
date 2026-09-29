@@ -13,14 +13,24 @@
   try { me = await currentMe(); } catch (e) { location.replace('login.html'); return; }
   const u = me.user;
   const org = me.organization;
-  if (org) {
+  const isBranchAdmin = u.role === 'Admin' || u.role === 'SuperAdmin';
+  const isUnitMgr = (u.isUnitManager || u.role === 'UnitAdmin' || (u.unitId && !isBranchAdmin)) && !isBranchAdmin;
+  const unitObj = me.unit;
+
+  if (isUnitMgr && unitObj) {
+    if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = '🏢 ' + unitObj.unitName;
+    if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الوحدة: ' + (unitObj.unitCode || '') + (org ? ' | الفرع: ' + org.orgName : '');
+    if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = unitObj.unitName + ' (' + (unitObj.unitCode || '') + ')';
+    document.title = unitObj.unitName + ' — لوحة التحكم';
+  } else if (org) {
     if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = org.orgName || 'إدارة المنظومة';
     if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الجهة: ' + (org.orgCode || '');
     if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = org.orgName + ' (' + org.orgCode + ')';
-    const logoEl = document.getElementById('orgBrandLogoImg');
-    if (logoEl) {
-      logoEl.src = (org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg';
-    }
+  }
+
+  const logoEl = document.getElementById('orgBrandLogoImg');
+  if (logoEl && org) {
+    logoEl.src = (org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg';
   }
   const canAccessAdmin = u.role === 'Admin' || u.role === 'SuperAdmin' || u.isUnitManager || u.role === 'UnitAdmin';
   if (!canAccessAdmin) {
@@ -31,15 +41,14 @@
     updateReportHeaderConfig(me.settings.reportHeaderConfig);
   }
 
-  const isBranchAdmin = u.role === 'Admin' || u.role === 'SuperAdmin';
-  const isUnitMgr = (u.isUnitManager || u.role === 'UnitAdmin') && !isBranchAdmin;
-  const unitObj = me.unit;
-
   const $ = id => document.getElementById(id);
   const PRINTS = ['printView', 'printFrame'];
   $('adminName').textContent = u.fullName + (isBranchAdmin ? ' (مدير الفرع)' : (unitObj ? ` (مدير وحدة ${unitObj.unitName})` : ' (مدير وحدة)'));
-  if (unitObj && $('orgBadgeText')) {
-    $('orgBadgeText').textContent = org.orgName + ' — ' + unitObj.unitName;
+  if (isUnitMgr && unitObj) {
+    const dashHeadH2 = document.querySelector('#dashPage .page-head h2');
+    if (dashHeadH2) dashHeadH2.textContent = 'لوحة التحكم — وحدة ' + unitObj.unitName;
+    const dashHeadP = document.querySelector('#dashPage .page-head p');
+    if (dashHeadP) dashHeadP.textContent = `إحصائيات حية لتقارير وموظفي وحدة ${unitObj.unitName} (رمز الوحدة: ${unitObj.unitCode}) التابعة لـ ${org ? org.orgName : ''}`;
   }
 
   // إخفاء أزرار أدوات الفرع السفلية لمدير الوحدة
@@ -68,6 +77,9 @@
     }
   }
   if (navSettings) navSettings.style.display = isBranchAdmin ? 'flex' : 'none';
+
+  let allOrgUnits = [];
+  let allOrgUsers = [];
 
   /* ---------- التنقل ---------- */
   const NAVS = {
@@ -1564,18 +1576,26 @@
   }
 
   /* ================= إدارة الوحدات (Units Management) ================= */
-  let allOrgUnits = [];
-
   async function loadUnitsSelects() {
     try {
       const res = await api('/units');
-      allOrgUnits = res.units || [];
+      allOrgUnits = (res.units || []).map(u => {
+        const uCount = Number(u.usersCount ?? u.userCount ?? 0);
+        const rCount = Number(u.reportsCount ?? u.reportCount ?? 0);
+        return { ...u, usersCount: uCount, userCount: uCount, reportsCount: rCount, reportCount: rCount };
+      });
       if (org) localStorage.setItem('codex_mt_cached_units_' + org.id, JSON.stringify(allOrgUnits));
     } catch(err) {
       if (org) {
         try {
           const cached = localStorage.getItem('codex_mt_cached_units_' + org.id);
-          if (cached) allOrgUnits = JSON.parse(cached);
+          if (cached) {
+            allOrgUnits = JSON.parse(cached).map(u => {
+              const uCount = Number(u.usersCount ?? u.userCount ?? 0);
+              const rCount = Number(u.reportsCount ?? u.reportCount ?? 0);
+              return { ...u, usersCount: uCount, userCount: uCount, reportsCount: rCount, reportCount: rCount };
+            });
+          }
         } catch(e){}
       }
     }
@@ -1610,19 +1630,75 @@
     try {
       try {
         const res = await api('/units');
-        allOrgUnits = res.units || [];
+        allOrgUnits = (res.units || []).map(u => {
+          const uCount = Number(u.usersCount ?? u.userCount ?? 0);
+          const rCount = Number(u.reportsCount ?? u.reportCount ?? 0);
+          return { ...u, usersCount: uCount, userCount: uCount, reportsCount: rCount, reportCount: rCount };
+        });
         if (org) localStorage.setItem('codex_mt_cached_units_' + org.id, JSON.stringify(allOrgUnits));
       } catch(apiErr) {
         if (org) {
           const cached = localStorage.getItem('codex_mt_cached_units_' + org.id);
-          if (cached) allOrgUnits = JSON.parse(cached);
+          if (cached) {
+            allOrgUnits = JSON.parse(cached).map(u => {
+              const uCount = Number(u.usersCount ?? u.userCount ?? 0);
+              const rCount = Number(u.reportsCount ?? u.reportCount ?? 0);
+              return { ...u, usersCount: uCount, userCount: uCount, reportsCount: rCount, reportCount: rCount };
+            });
+          }
         }
       }
-      
+
+      // التأكد من توفر قائمة المستخدمين لحساب أعداد موظفي الوحدات بدقة تامة
+      if (!allOrgUsers || allOrgUsers.length === 0) {
+        try {
+          const ud = await api('/users');
+          if (ud && ud.users) allOrgUsers = ud.users;
+        } catch(e) {
+          if (org) {
+            try {
+              const cachedUsrs = localStorage.getItem('codex_mt_cached_users_' + org.id);
+              if (cachedUsrs) allOrgUsers = JSON.parse(cachedUsrs);
+            } catch(ce){}
+          }
+        }
+      }
+
+      // التأكد من توفر قائمة التقارير لحساب إجمالي تقارير كل وحدة
+      if (!currentReports || currentReports.length === 0) {
+        try {
+          const rd = await api('/reports');
+          if (rd && rd.reports) currentReports = (rd.reports || []).map(r => (typeof decryptReportData === 'function' ? decryptReportData(r) : r));
+        } catch(e) {
+          if (org) {
+            try {
+              const cachedReps = localStorage.getItem('codex_mt_cached_reports_' + org.id);
+              if (cachedReps) currentReports = JSON.parse(cachedReps);
+            } catch(ce){}
+          }
+        }
+      }
+
+      function getUnitUsersCount(un) {
+        let cnt = Number(un.usersCount ?? un.userCount ?? 0);
+        if (cnt === 0 && Array.isArray(allOrgUsers) && allOrgUsers.length > 0) {
+          cnt = allOrgUsers.filter(x => x.unitId === un.id).length;
+        }
+        return cnt;
+      }
+
+      function getUnitReportsCount(un) {
+        let cnt = Number(un.reportsCount ?? un.reportCount ?? 0);
+        if (cnt === 0 && Array.isArray(currentReports) && currentReports.length > 0) {
+          cnt = currentReports.filter(r => r.unitId === un.id || (allOrgUsers && allOrgUsers.some(x => x.unitId === un.id && (x.id === r.enteredByUserId || x.fullName === r.enteredBy)))).length;
+        }
+        return cnt;
+      }
+
       const total = allOrgUnits.length;
-      const managersCount = allOrgUnits.filter(u => u.managerUserId || u.managerName).length;
-      const totalUsers = allOrgUnits.reduce((acc, u) => acc + (u.userCount || 0), 0);
-      const totalReports = allOrgUnits.reduce((acc, u) => acc + (u.reportCount || 0), 0);
+      const managersCount = allOrgUnits.filter(u => u.managerUserId || (u.managerName && u.managerName.trim())).length;
+      const totalUsers = allOrgUnits.reduce((acc, u) => acc + getUnitUsersCount(u), 0);
+      const totalReports = allOrgUnits.reduce((acc, u) => acc + getUnitReportsCount(u), 0);
 
       if ($('unKpiTotal')) $('unKpiTotal').textContent = total;
       if ($('unKpiManagers')) $('unKpiManagers').textContent = managersCount;
@@ -1654,7 +1730,10 @@
         return;
       }
 
-      tbody.innerHTML = list.map(un => `
+      tbody.innerHTML = list.map(un => {
+        const uUsersCount = getUnitUsersCount(un);
+        const uReportsCount = getUnitReportsCount(un);
+        return `
         <tr>
           <td>
             <div style="font-weight:800;color:var(--text);font-size:14px">🏢 ${esc(un.unitName)}</div>
@@ -1671,8 +1750,8 @@
           </td>
           <td>
             <div style="display:flex;gap:6px;align-items:center">
-              <span class="badge blue" title="عدد الموظفين بالوحدة">👥 ${un.userCount || 0} موظف</span>
-              <span class="badge green" title="عدد التقارير المنجزة">📄 ${un.reportCount || 0} تقرير</span>
+              <span class="badge blue" title="عدد الموظفين بالوحدة">👥 ${uUsersCount} موظف</span>
+              <span class="badge green" title="عدد التقارير المنجزة">📄 ${uReportsCount} تقرير</span>
             </div>
           </td>
           <td>${badgeStatus(un.status === 'active' ? 'نشط' : 'غير نشط')}</td>
@@ -1685,7 +1764,7 @@
             </div>
           </td>
         </tr>
-      `).join('');
+      `}).join('');
 
       tbody.querySelectorAll('[data-un-qr]').forEach(b => {
         b.onclick = () => {
@@ -1735,7 +1814,7 @@
     }
   }
 
-  function openUnitEditor(un) {
+  async function openUnitEditor(un) {
     const card = $('unitFormCard');
     if (!card) return;
     $('unitFormTitle').textContent = un ? `✏️ تعديل الوحدة: ${un.unitName}` : '➕ إضافة وحدة جديدة';
@@ -1747,6 +1826,12 @@
     $('unStatus').value = un ? (un.status || 'active') : 'active';
 
     if ($('unManagerSel')) {
+      if (!allOrgUsers || allOrgUsers.length === 0) {
+        try {
+          const ud = await api('/users');
+          if (ud && ud.users) allOrgUsers = ud.users;
+        } catch(e){}
+      }
       const activeUsers = (allOrgUsers || []).filter(x => x.isActive);
       const opts = activeUsers.map(u => `<option value="${u.id}">${esc(u.fullName)} (${esc(u.userName)})</option>`).join('');
       $('unManagerSel').innerHTML = '<option value="">-- اختر مدير الوحدة --</option>' + opts;
@@ -1791,6 +1876,8 @@
         const isOfflineErr = !navigator.onLine || err.message.includes('تعذر الاتصال') || err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('عدم الاتصال');
         if (isOfflineErr) {
           const targetId = id || ('unit_local_' + Date.now().toString(36));
+          const existingIdx = allOrgUnits.findIndex(x => x.id === targetId);
+          const prev = existingIdx >= 0 ? allOrgUnits[existingIdx] : {};
           const mgrObj = (allOrgUsers || []).find(u => u.id === managerUserId);
           const localUnit = {
             id: targetId,
@@ -1802,13 +1889,14 @@
             phone,
             notes,
             status,
-            userCount: 0,
-            reportCount: 0,
-            createdAt: new Date().toISOString(),
+            usersCount: prev.usersCount ?? prev.userCount ?? 0,
+            userCount: prev.usersCount ?? prev.userCount ?? 0,
+            reportsCount: prev.reportsCount ?? prev.reportCount ?? 0,
+            reportCount: prev.reportsCount ?? prev.reportCount ?? 0,
+            createdAt: prev.createdAt || new Date().toISOString(),
             isLocalDraft: true
           };
           
-          const existingIdx = allOrgUnits.findIndex(x => x.id === targetId);
           if (existingIdx >= 0) {
             allOrgUnits[existingIdx] = { ...allOrgUnits[existingIdx], ...localUnit };
           } else {
@@ -1833,7 +1921,7 @@
   if ($('uFilterUnit')) $('uFilterUnit').onchange = renderUsers;
 
   /* ================= المستخدمون والصلاحيات ================= */
-  let allOrgUsers = [];
+  allOrgUsers = [];
   async function renderUsers() {
     try {
       const d = await api('/users');

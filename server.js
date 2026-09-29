@@ -885,9 +885,9 @@ function checkDeviceAuth(user, org, req) {
   return { ok: true };
 }
 
-function buildMe(user) {
+function buildMe(user, explicitUnit = null) {
   let org = null;
-  let userUnit = null;
+  let userUnit = explicitUnit || null;
   let orgUnits = [];
   if (user.orgId) {
     org = db.prepare('SELECT * FROM organizations WHERE id=?').get(user.orgId);
@@ -896,8 +896,11 @@ function buildMe(user) {
       try { db.prepare('UPDATE organizations SET encKey=? WHERE id=?').run(k, org.id); org.encKey = k; } catch(e){}
     }
     try {
-      if (user.unitId) {
+      if (!userUnit && user.unitId) {
         userUnit = db.prepare('SELECT * FROM units WHERE id=?').get(user.unitId) || null;
+      }
+      if (!userUnit && (user.isUnitManager || user.role === 'UnitAdmin')) {
+        userUnit = db.prepare('SELECT * FROM units WHERE orgId=? AND managerUserId=?').get(user.orgId, user.id) || null;
       }
       if (isOrgAdmin(user) || isSuperAdmin(user)) {
         orgUnits = db.prepare('SELECT id, unitName, unitCode, managerName, status FROM units WHERE orgId=? ORDER BY unitName').all(user.orgId);
@@ -909,9 +912,10 @@ function buildMe(user) {
 
   let entryUsers = [];
   if (user.orgId) {
-    const isUnitMgr = isUnitAdmin(user) && user.unitId;
-    if (isUnitMgr) {
-      entryUsers = db.prepare("SELECT id, userName, fullName, role, unitId FROM users WHERE orgId=? AND unitId=? AND role IN ('EntryUser', 'UnitAdmin') ORDER BY fullName").all(user.orgId, user.unitId);
+    const isUnitMgr = (isUnitAdmin(user) || user.isUnitManager) && (user.unitId || (userUnit && userUnit.id));
+    const activeUnitId = user.unitId || (userUnit && userUnit.id);
+    if (isUnitMgr && !isOrgAdmin(user)) {
+      entryUsers = db.prepare("SELECT id, userName, fullName, role, unitId FROM users WHERE orgId=? AND unitId=? AND role IN ('EntryUser', 'UnitAdmin') ORDER BY fullName").all(user.orgId, activeUnitId);
     } else {
       entryUsers = db.prepare("SELECT id, userName, fullName, role, unitId FROM users WHERE orgId=? AND role IN ('EntryUser', 'UnitAdmin') ORDER BY fullName").all(user.orgId);
     }
@@ -940,8 +944,8 @@ function buildMe(user) {
 }
 
 function buildStats(orgId, me = null, requestedUnitId = null) {
-  const isUnitMgr = me && isUnitAdmin(me) && me.unitId && !isOrgAdmin(me);
-  const unitFilter = isUnitMgr ? me.unitId : (requestedUnitId || null);
+  const isUnitScoped = me && me.unitId && !isOrgAdmin(me) && !isSuperAdmin(me);
+  const unitFilter = isUnitScoped ? me.unitId : (requestedUnitId || null);
 
   let usersTotal = 0, usersActive = 0, reportsTotal = 0, reportsToday = 0;
   const today = new Date().toISOString().slice(0, 10);
@@ -1167,7 +1171,7 @@ const server = http.createServer(async (req, res) => {
           org = { id: unit.orgId, orgCode: unit.orgCode, orgName: unit.orgName + ' — ' + unit.unitName, logoUrl: unit.logoUrl, status: unit.status, unitName: unit.unitName, unitId: unit.id, unitCode: unit.unitCode };
         }
       }
-      if (!org) { send(res, 200, { found: false, error: 'رمز الفرع أو الوحدة غير صحيح أو غير مسجل' }); return; }
+      if (!org) { send(res, 200, { found: false, error: 'الرمز غير موجود يرجى التأكد من صحة الرمز' }); return; }
       if (org.status === 'suspended') {
         send(res, 200, { found: true, suspended: true, org, error: 'حساب هذه الجهة موقف حالياً. يرجى مراجعة إدارة كودكس.' });
         return;
@@ -1250,7 +1254,7 @@ const server = http.createServer(async (req, res) => {
           org = db.prepare('SELECT * FROM organizations WHERE id=?').get(targetUnit.orgId);
         }
       }
-      if (!org) { sendError(res, 404, 'رمز الفرع أو الوحدة غير صحيح أو غير مسجل في النظام'); return; }
+      if (!org) { sendError(res, 404, 'الرمز غير موجود يرجى التأكد من صحة الرمز'); return; }
       if (org.status === 'suspended') {
         sendError(res, 403, '⛔ تم تجميد اشتراك هذه الجهة. يرجى التواصل مع إدارة شركة كودكس للبرمجيات.');
         return;
@@ -1268,6 +1272,40 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      /* ---- التحقق الصارم من الفصل في الوصول وصلاحيات الوحدات والفرع ---- */
+      if (targetUnit) {
+        // تم الدخول برمز وحدة فرعية (مثل US2021 أو U1965)
+        // 1. مدير الفرع العام لا يدخل برمز الوحدة منعاً للتداخل وإظهار بيانات الوحدة المستقلة
+        if (user.role === 'Admin' || user.role === 'SuperAdmin') {
+          sendError(res, 403, 'الرمز غير موجود يرجى التأكد من صحة الرمز');
+          return;
+        }
+
+        // 2. التحقق من انتماء المستخدم لهذه الوحدة تحديداً
+        const isAssignedToThisUnit = (user.unitId === targetUnit.id) || (targetUnit.managerUserId === user.id);
+        if (!isAssignedToThisUnit) {
+          sendError(res, 403, 'الرمز غير موجود يرجى التأكد من صحة الرمز');
+          return;
+        }
+
+        // تثبيت صفة مدير الوحدة إذا كان هذا المستخدم هو المعين مديراً لها
+        if (targetUnit.managerUserId === user.id && (!user.isUnitManager || user.unitId !== targetUnit.id)) {
+          user.unitId = targetUnit.id;
+          user.isUnitManager = 1;
+          user.role = 'UnitAdmin';
+          try {
+            db.prepare("UPDATE users SET unitId=?, isUnitManager=1, role='UnitAdmin' WHERE id=?").run(targetUnit.id, user.id);
+          } catch(e){}
+        }
+      } else {
+        // تم الدخول برمز الفرع العام (مثل DEMO)
+        // موظفو ومدراء الوحدات ملزمون بالدخول برمز وحدتهم لضمان عزل البيانات
+        if (user.unitId && user.role !== 'Admin' && user.role !== 'SuperAdmin') {
+          sendError(res, 403, 'الرمز غير موجود يرجى التأكد من صحة الرمز');
+          return;
+        }
+      }
+
       const devAuth = checkDeviceAuth(user, org, req);
       if (!devAuth.ok) {
         send(res, 403, { error: devAuth.message, code: devAuth.code, deviceId: req.headers['x-device-id'] });
@@ -1275,7 +1313,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const token = createSession(user.id, org.id);
-      send(res, 200, { token, isSuperAdmin: false, ...buildMe(user) });
+      send(res, 200, { token, isSuperAdmin: false, ...buildMe(user, targetUnit) });
       return;
     }
 
@@ -2051,7 +2089,30 @@ const server = http.createServer(async (req, res) => {
             usersCount = db.prepare('SELECT COUNT(*) c FROM users WHERE orgId=? AND unitId=?').get(orgId, un.id).c;
             reportsCount = db.prepare('SELECT COUNT(*) c FROM reports WHERE orgId=? AND (unitId=? OR enteredByUserId IN (SELECT id FROM users WHERE unitId=?))').get(orgId, un.id, un.id).c;
           } catch(e){}
-          return { ...un, usersCount, reportsCount };
+
+          // حل تلقائي لاسم ومعرف مدير الوحدة إن كان مفقوداً في سجل الوحدة
+          let managerUserId = un.managerUserId;
+          let managerName = (un.managerName || '').trim();
+          if (!managerUserId || !managerName) {
+            try {
+              const mgr = db.prepare("SELECT id, fullName FROM users WHERE orgId=? AND unitId=? AND (isUnitManager=1 OR role='UnitAdmin') LIMIT 1").get(orgId, un.id);
+              if (mgr) {
+                managerUserId = mgr.id;
+                managerName = mgr.fullName;
+                db.prepare('UPDATE units SET managerUserId=?, managerName=? WHERE id=?').run(managerUserId, managerName, un.id);
+              }
+            } catch(e){}
+          }
+
+          return {
+            ...un,
+            managerUserId,
+            managerName,
+            usersCount,
+            userCount: usersCount,
+            reportsCount,
+            reportCount: reportsCount
+          };
         });
         send(res, 200, { ok: true, units });
         return;
@@ -2063,7 +2124,7 @@ const server = http.createServer(async (req, res) => {
         if (!unitName) { sendError(res, 400, 'اسم الوحدة مطلوب'); return; }
         const id = uid();
         const unitCode = String(b.unitCode || ('U' + Date.now().toString().slice(-4))).trim().toUpperCase();
-        const managerUserId = b.managerUserId ? String(b.managerUserId) : null;
+        const managerUserId = b.managerUserId ? String(b.managerUserId).trim() : null;
         let managerName = String(b.managerName || '').trim();
         if (managerUserId && !managerName) {
           try {
@@ -2097,13 +2158,15 @@ const server = http.createServer(async (req, res) => {
         const b = await readBody(req);
         const unitName = String(b.unitName || unit.unitName).trim();
         const unitCode = String(b.unitCode || unit.unitCode).trim().toUpperCase();
-        const managerUserId = b.managerUserId !== undefined ? (b.managerUserId ? String(b.managerUserId) : null) : unit.managerUserId;
+        const managerUserId = b.managerUserId !== undefined ? (b.managerUserId ? String(b.managerUserId).trim() : null) : unit.managerUserId;
         let managerName = String(b.managerName || unit.managerName || '').trim();
         if (managerUserId) {
           try {
             const mu = db.prepare('SELECT fullName FROM users WHERE id=?').get(managerUserId);
             if (mu) managerName = mu.fullName;
           } catch(e){}
+        } else if (b.managerUserId === null || b.managerUserId === '') {
+          managerName = '';
         }
         const phone = b.phone !== undefined ? String(b.phone) : unit.phone;
         const notes = b.notes !== undefined ? String(b.notes) : unit.notes;
@@ -2114,8 +2177,17 @@ const server = http.createServer(async (req, res) => {
 
         if (managerUserId) {
           try {
+            // إلغاء صفة المدير عن المدير السابق لهذه الوحدة
+            db.prepare('UPDATE users SET isUnitManager=0, role=CASE WHEN role="Admin" THEN "Admin" ELSE "EntryUser" END WHERE orgId=? AND unitId=? AND id<>? AND isUnitManager=1')
+              .run(orgId, uId, managerUserId);
+            // تعيين المدير الجديد
             db.prepare('UPDATE users SET unitId=?, isUnitManager=1, role=CASE WHEN role="Admin" THEN "Admin" ELSE "UnitAdmin" END, canDash=1, canEntry=1, canReports=1, canReportsEdit=1, canReportsPrint=1, canEvents=1, canUnits=1, canUsers=1, canOpen=1, canAdd=1, canPrint=1 WHERE id=? AND orgId=?')
               .run(uId, managerUserId, orgId);
+          } catch(e){}
+        } else if (b.managerUserId === null || b.managerUserId === '') {
+          try {
+            db.prepare('UPDATE users SET isUnitManager=0, role=CASE WHEN role="Admin" THEN "Admin" ELSE "EntryUser" END WHERE orgId=? AND unitId=? AND isUnitManager=1')
+              .run(orgId, uId);
           } catch(e){}
         }
 
@@ -2200,6 +2272,13 @@ const server = http.createServer(async (req, res) => {
             canEvents, canUnits, canUsers, canSettings, nowIso()
           );
 
+        if (assignedUnitId && isUnitMgr) {
+          try {
+            db.prepare('UPDATE units SET managerUserId=?, managerName=? WHERE id=? AND orgId=?')
+              .run(id, fullName, assignedUnitId, orgId);
+          } catch(e){}
+        }
+
         send(res, 200, { user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(id)) });
         return;
       }
@@ -2256,11 +2335,12 @@ const server = http.createServer(async (req, res) => {
         const canUsers = updatedIsUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canUsers !== undefined ? (b.canUsers ? 1 : 0) : user.canUsers));
         const canSettings = isUnitMgrUser ? 0 : (b.canSettings !== undefined ? (b.canSettings ? 1 : 0) : user.canSettings);
 
+        const finalFullName = String(b.fullName ?? user.fullName);
         db.prepare(`UPDATE users SET
           fullName=?, unitId=?, isUnitManager=?, role=?, isActive=?, canDash=?, canEntry=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?, canEvents=?, canUnits=?, canUsers=?, canSettings=?
           WHERE id=?`)
           .run(
-            String(b.fullName ?? user.fullName),
+            finalFullName,
             updatedUnitId, updatedIsUnitMgr, updatedRole,
             b.isActive !== undefined ? (b.isActive ? 1 : 0) : user.isActive,
             canDash, canEntry, canReports,
@@ -2269,6 +2349,19 @@ const server = http.createServer(async (req, res) => {
             canUsers, canSettings,
             user.id
           );
+
+        // المزامنة الفورية مع جدول الوحدات
+        if (updatedUnitId && updatedIsUnitMgr) {
+          try {
+            db.prepare('UPDATE units SET managerUserId=?, managerName=? WHERE id=? AND orgId=?')
+              .run(user.id, finalFullName, updatedUnitId, orgId);
+          } catch(e){}
+        } else if (!updatedIsUnitMgr && user.unitId) {
+          try {
+            db.prepare('UPDATE units SET managerUserId=NULL, managerName="" WHERE id=? AND orgId=? AND managerUserId=?')
+              .run(user.unitId, orgId, user.id);
+          } catch(e){}
+        }
 
         const newPlain = b.plainPassword !== undefined ? String(b.plainPassword).trim() : null;
         if (newPlain) {
@@ -2286,6 +2379,12 @@ const server = http.createServer(async (req, res) => {
             return;
           }
         }
+        if (user.unitId && user.isUnitManager) {
+          try {
+            db.prepare('UPDATE units SET managerUserId=NULL, managerName="" WHERE id=? AND orgId=? AND managerUserId=?')
+              .run(user.unitId, orgId, user.id);
+          } catch(e){}
+        }
         db.prepare('DELETE FROM users WHERE id=?').run(user.id);
         send(res, 200, { ok: true });
         return;
@@ -2300,9 +2399,13 @@ const server = http.createServer(async (req, res) => {
         let sql = 'SELECT * FROM reports WHERE orgId=?';
         const params = [orgId];
 
-        if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+        if (me.unitId && !isOrgAdmin(me) && !isSuperAdmin(me)) {
           sql += ' AND (unitId=? OR (unitId IS NULL AND enteredByUserId IN (SELECT id FROM users WHERE unitId=?)))';
           params.push(me.unitId, me.unitId);
+          if (!can(me, 'canReports')) {
+            sql += ' AND enteredByUserId=?';
+            params.push(me.id);
+          }
         } else if (filterUnit) {
           sql += ' AND (unitId=? OR (unitId IS NULL AND enteredByUserId IN (SELECT id FROM users WHERE unitId=?)))';
           params.push(filterUnit, filterUnit);
@@ -2491,7 +2594,7 @@ const server = http.createServer(async (req, res) => {
         let sql = 'SELECT * FROM events WHERE orgId=?';
         const params = [orgId];
 
-        if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me) && !isMineOnly) {
+        if (me.unitId && !isOrgAdmin(me) && !isSuperAdmin(me) && !isMineOnly) {
           sql += ' AND (unitId=? OR assignedUserId IN (SELECT id FROM users WHERE unitId=?))';
           params.push(me.unitId, me.unitId);
         } else if (filterUnit && !isMineOnly) {

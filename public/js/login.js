@@ -95,11 +95,11 @@
       } else {
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#ef4444';
-        orgStatusText.textContent = '❌ رمز غير صحيح أو غير مسجل في النظام';
+        orgStatusText.textContent = '❌ الرمز غير موجود يرجى التأكد من صحة الرمز';
         mainTitle.textContent = DEFAULT_TITLE;
         subTitle.textContent = DEFAULT_SUBTITLE;
         if (loginTopLogo) loginTopLogo.src = DEFAULT_LOGO;
-        if (showFeedback) show('رمز غير صحيح أو غير مسجل في النظام', 'err');
+        if (showFeedback) show('الرمز غير موجود يرجى التأكد من صحة الرمز', 'err');
       }
     } catch(e) {
       if (showFeedback) show('تعذر فحص الجهة: ' + e.message, 'err');
