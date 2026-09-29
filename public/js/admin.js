@@ -141,11 +141,25 @@
   }
 
   async function renderDash() {
+    const org = (getCachedMe() && getCachedMe().organization) || null;
+    const orgCode = org ? org.orgCode : (getOrgCode() || 'DEMO');
+    const CACHE_KEY = 'codex_mt_cached_stats_' + orgCode;
     try {
       const s = await api('/stats');
       dashStatsData = s;
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(s)); } catch(e){}
       updateDashUI(s);
-    } catch (err) { toast(err.message, 'err'); }
+    } catch (err) {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          dashStatsData = JSON.parse(cached);
+          updateDashUI(dashStatsData);
+          return;
+        }
+      } catch(e){}
+      toast(err.message, 'err');
+    }
   }
 
   window.renderDash = renderDash;
@@ -363,6 +377,10 @@
   }
 
   async function renderReports() {
+    const org = (getCachedMe() && getCachedMe().organization) || null;
+    const orgCode = org ? org.orgCode : (getOrgCode() || 'DEMO');
+    const CACHE_KEY = 'codex_mt_cached_reports_' + orgCode;
+
     const q = {};
     const from = $('rFrom').value, to = $('rTo').value, uId = $('rUser').value, rt = $('rRating').value;
     const unitId = isUnitMgr && unitObj ? unitObj.id : ($('rUnit') ? $('rUnit').value : '');
@@ -380,66 +398,80 @@
     try {
       const d = await api('/reports?' + new URLSearchParams(q));
       currentReports = (d.reports || []).map(r => (typeof decryptReportData === 'function' ? decryptReportData(r) : r));
-      if (isUnitMgr && unitObj) {
-        currentReports = currentReports.filter(r => !r.unitId || r.unitId === unitObj.id);
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(currentReports)); } catch(e){}
+    } catch (err) {
+      console.warn('Reports API Notice:', err.message);
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          currentReports = JSON.parse(cached);
+        } else {
+          toast(err.message, 'err');
+        }
+      } catch(e) {
+        toast(err.message, 'err');
       }
-      const searchVal = $('rSearch') ? $('rSearch').value.trim().toLowerCase() : '';
-      if (searchVal) {
-        currentReports = currentReports.filter(r =>
-          (r.reportNumber || '').toLowerCase().includes(searchVal) ||
-          (r.subject || '').toLowerCase().includes(searchVal) ||
-          (r.target || '').toLowerCase().includes(searchVal) ||
-          (r.details || '').toLowerCase().includes(searchVal) ||
-          (r.location || '').toLowerCase().includes(searchVal) ||
-          (r.unitName || '').toLowerCase().includes(searchVal) ||
-          (r.enteredBy || '').toLowerCase().includes(searchVal)
-        );
-      }
-      $('repCount').textContent = 'عدد التقارير: ' + currentReports.length;
-      $('reportsTableBody').innerHTML = currentReports.length ? currentReports.map(r => {
-        const chkCell = canDeleteReports
-          ? `<td style="text-align:center"><input type="checkbox" class="report-select-chk" data-id="${r.id}" style="cursor:pointer;width:16px;height:16px" /></td>`
-          : '';
-        const delBtn = canDeleteReports
-          ? `<button class="btn btn-danger btn-xs" data-del="${r.id}" title="حذف هذا التقرير نهائياً">🗑️ حذف</button>`
-          : '';
-        const encBadge = r._wasEncrypted || r.isEncrypted
-          ? `<span class="badge green" style="font-size:10.5px;padding:2px 6px;margin-right:4px" title="هذا التقرير مشفر ومحمي بتقنية E2EE">🔒 مشفر</span>`
-          : '';
-        const unitBadge = r.unitName
-          ? `<span class="badge purple" style="font-size:10.5px;padding:2px 6px;margin-top:4px;display:inline-block" title="الوحدة: ${esc(r.unitName)}">🏢 ${esc(r.unitName)}</span>`
-          : '';
+    }
 
-        return `<tr>
-          ${chkCell}
-          <td><b>${esc(r.reportNumber)}</b> ${encBadge}</td>
-          <td class="det" style="min-width:200px">
-            <div>${esc(r.subject)}</div>
-            ${unitBadge}
-          </td>
-          <td>${esc(r.target || '—')}</td>
-          <td>${esc(r.reportDate)}</td>
-          <td>
-            <select class="rating-select" data-id="${r.id}" style="width:auto;padding:6px 10px;font-size:12.5px;border-radius:9px" title="تقييم التقرير (خاص بالمدير)">
-              <option value="">بدون تقييم</option>
-              ${RATING_OPTS.map(o => `<option ${r.rating === o ? 'selected' : ''}>${o}</option>`).join('')}
-            </select>
-          </td>
-          <td>${r.imageCount > 0 ? `<span class="badge blue">📎 ${r.imageCount}</span>` : '<span class="badge gray">—</span>'}</td>
-          <td>
-            <div class="btn-row" style="gap:6px">
-              <button class="btn btn-outline btn-xs" data-view="${r.id}">👁 عرض</button>
-              <button class="btn btn-primary btn-xs" data-print="${r.id}">🖨 طباعة</button>
-              ${delBtn}
-            </div>
-          </td>
-        </tr>`;
-      }).join('') : `<tr><td colspan="${canDeleteReports ? 8 : 7}" class="empty"><span class="ic">📄</span>لا توجد تقارير مطابقة للتصفية</td></tr>`;
+    if (isUnitMgr && unitObj) {
+      currentReports = currentReports.filter(r => !r.unitId || r.unitId === unitObj.id);
+    }
+    const searchVal = $('rSearch') ? $('rSearch').value.trim().toLowerCase() : '';
+    if (searchVal) {
+      currentReports = currentReports.filter(r =>
+        (r.reportNumber || '').toLowerCase().includes(searchVal) ||
+        (r.subject || '').toLowerCase().includes(searchVal) ||
+        (r.target || '').toLowerCase().includes(searchVal) ||
+        (r.details || '').toLowerCase().includes(searchVal) ||
+        (r.location || '').toLowerCase().includes(searchVal) ||
+        (r.unitName || '').toLowerCase().includes(searchVal) ||
+        (r.enteredBy || '').toLowerCase().includes(searchVal)
+      );
+    }
+    $('repCount').textContent = 'عدد التقارير: ' + currentReports.length;
+    $('reportsTableBody').innerHTML = currentReports.length ? currentReports.map(r => {
+      const chkCell = canDeleteReports
+        ? `<td style="text-align:center"><input type="checkbox" class="report-select-chk" data-id="${r.id}" style="cursor:pointer;width:16px;height:16px" /></td>`
+        : '';
+      const delBtn = canDeleteReports
+        ? `<button class="btn btn-danger btn-xs" data-del="${r.id}" title="حذف هذا التقرير نهائياً">🗑️ حذف</button>`
+        : '';
+      const encBadge = r._wasEncrypted || r.isEncrypted
+        ? `<span class="badge green" style="font-size:10.5px;padding:2px 6px;margin-right:4px" title="هذا التقرير مشفر ومحمي بتقنية E2EE">🔒 مشفر</span>`
+        : '';
+      const unitBadge = r.unitName
+        ? `<span class="badge purple" style="font-size:10.5px;padding:2px 6px;margin-top:4px;display:inline-block" title="الوحدة: ${esc(r.unitName)}">🏢 ${esc(r.unitName)}</span>`
+        : '';
 
-      bindRatingSelects();
-      bindReportActions();
-      bindSelectionEvents();
-    } catch (err) { toast(err.message, 'err'); }
+      return `<tr>
+        ${chkCell}
+        <td><b>${esc(r.reportNumber)}</b> ${encBadge}</td>
+        <td class="det" style="min-width:200px">
+          <div>${esc(r.subject)}</div>
+          ${unitBadge}
+        </td>
+        <td>${esc(r.target || '—')}</td>
+        <td>${esc(r.reportDate)}</td>
+        <td>
+          <select class="rating-select" data-id="${r.id}" style="width:auto;padding:6px 10px;font-size:12.5px;border-radius:9px" title="تقييم التقرير (خاص بالمدير)">
+            <option value="">بدون تقييم</option>
+            ${RATING_OPTS.map(o => `<option ${r.rating === o ? 'selected' : ''}>${o}</option>`).join('')}
+          </select>
+        </td>
+        <td>${r.imageCount > 0 ? `<span class="badge blue">📎 ${r.imageCount}</span>` : '<span class="badge gray">—</span>'}</td>
+        <td>
+          <div class="btn-row" style="gap:6px">
+            <button class="btn btn-outline btn-xs" data-view="${r.id}">👁 عرض</button>
+            <button class="btn btn-primary btn-xs" data-print="${r.id}">🖨 طباعة</button>
+            ${delBtn}
+          </div>
+        </td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="${canDeleteReports ? 8 : 7}" class="empty"><span class="ic">📄</span>لا توجد تقارير مطابقة للتصفية</td></tr>`;
+
+    bindRatingSelects();
+    bindReportActions();
+    bindSelectionEvents();
   }
   if ($('rSearch')) $('rSearch').oninput = () => renderReports();
 
@@ -1233,8 +1265,127 @@
     return `<span class="badge warn">⏳ بانتظار استلام الموظف</span>`;
   }
 
+  function drawEventsUI(list) {
+    if (!list) list = [];
+    const total = list.filter(x => !x.isArchived).length;
+    const pending = list.filter(x => x.status === 'pending' && !x.isArchived).length;
+    const received = list.filter(x => (x.status === 'received' || x.status === 'in_progress') && !x.isArchived).length;
+    const completed = list.filter(x => x.status === 'completed' && !x.isArchived).length;
+
+    if ($('evKpiTotal')) $('evKpiTotal').textContent = total;
+    if ($('evKpiPending')) $('evKpiPending').textContent = pending;
+    if ($('evKpiReceived')) $('evKpiReceived').textContent = received;
+    if ($('evKpiCompleted')) $('evKpiCompleted').textContent = completed;
+
+    if ($('sideEventsBadge')) {
+      $('sideEventsBadge').textContent = pending;
+      $('sideEventsBadge').style.display = pending > 0 ? 'inline-block' : 'none';
+    }
+
+    if ($('evCountLabel')) {
+      $('evCountLabel').textContent = `عرض (${list.length}) مهمة وحدث`;
+    }
+
+    const tbody = $('eventsTableBody');
+    if (!tbody) return;
+
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">لا توجد مهام أو أحداث تطابق البحث والتصفية</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = list.map(e => `
+      <tr style="${e.isArchived ? 'opacity:0.65;background:#f8fafc' : ''}">
+        <td>
+          <div style="font-weight:800;color:var(--text);font-size:13.5px">${esc(e.title)}</div>
+          ${e.unitName ? `<span class="badge purple" style="font-size:10px;margin-top:2px;display:inline-block">🏢 ${esc(e.unitName)}</span>` : ''}
+          ${e.isArchived ? '<span class="badge gray" style="font-size:10px;margin-top:2px">📦 مؤرشفة</span>' : ''}
+          <div style="font-size:11.5px;color:var(--muted);margin-top:2px">كُلفت بواسطة: ${esc(e.createdBy || 'المدير')} • ${fmtDate(e.createdDate)}</div>
+        </td>
+        <td>${getEventTypeBadge(e.eventType)}</td>
+        <td>
+          <div style="font-weight:700">👤 ${esc(e.assignedUserName || 'غير محدد')}</div>
+        </td>
+        <td>
+          <div style="font-weight:700">${esc(e.eventDate || '—')}</div>
+          <div style="font-size:11.5px;color:var(--muted)">⏰ ${esc(e.eventTime || 'غير محدد')}</div>
+        </td>
+        <td>
+          <div style="font-size:12.5px">${esc(e.location || '—')}</div>
+        </td>
+        <td>
+          ${getEventStatusBadge(e)}
+          ${e.feedbackNotes ? `<div style="font-size:11.5px;color:var(--secondary);margin-top:3px;font-weight:700">💬 ملاحظات: ${esc(e.feedbackNotes.slice(0, 30))}${e.feedbackNotes.length > 30 ? '...' : ''}</div>` : ''}
+        </td>
+        <td>
+          <div class="btn-row" style="gap:4px">
+            <button class="btn btn-outline btn-xs" data-ev-detail="${e.id}" title="عرض كامل التفاصيل والتغذية الراجعة">👁️ عرض</button>
+            <button class="btn btn-primary btn-xs" data-ev-edit="${e.id}" title="تعديل بيانات المهمة">✏️</button>
+            <button class="btn btn-outline btn-xs" data-ev-archive="${e.id}" title="${e.isArchived ? 'استعادة من الأرشيف' : 'أرشفة المهمة'}">${e.isArchived ? '📤' : '📦'}</button>
+            <button class="btn btn-danger btn-xs" data-ev-del="${e.id}" title="حذف المهمة تماماً">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+
+    // ربط أزرار الأحداث
+    tbody.querySelectorAll('[data-ev-detail]').forEach(b => {
+      b.onclick = () => {
+        const item = currentEvents.find(x => x.id === b.dataset.evDetail);
+        if (item) showEventDetail(item);
+      };
+    });
+
+    tbody.querySelectorAll('[data-ev-edit]').forEach(b => {
+      b.onclick = () => {
+        const item = currentEvents.find(x => x.id === b.dataset.evEdit);
+        if (item) openEventEditor(item);
+      };
+    });
+
+    tbody.querySelectorAll('[data-ev-archive]').forEach(b => {
+      b.onclick = async () => {
+        const item = currentEvents.find(x => x.id === b.dataset.evArchive);
+        if (!item) return;
+        try {
+          const resArch = await api(`/events/${item.id}/archive`, { method: 'PUT' });
+          toast(resArch.message || 'تم تحديث حالة أرشفة المهمة ✔');
+          renderEvents();
+        } catch(err) { toast(err.message, 'err'); }
+      };
+    });
+
+    tbody.querySelectorAll('[data-ev-del]').forEach(b => {
+      b.onclick = async () => {
+        const item = currentEvents.find(x => x.id === b.dataset.evDel);
+        if (!item) return;
+        if (!confirm(`هل أنت متأكد من حذف المهمة «${item.title}» تماماً من النظام والتطبيق؟`)) return;
+        try {
+          await api(`/events/${item.id}`, { method: 'DELETE' });
+          toast('تم حذف المهمة بنجاح ✔');
+          renderEvents();
+        } catch(err) { toast(err.message, 'err'); }
+      };
+    });
+  }
+
   async function renderEvents() {
     await loadUserSelects();
+    const org = (getCachedMe() && getCachedMe().organization) || null;
+    const orgCode = org ? org.orgCode : (getOrgCode() || 'DEMO');
+    const CACHE_KEY = 'codex_mt_cached_events_' + orgCode;
+
+    // محاولة العرض الفوري من الذاكرة المحلية لتفادي أي وميض أوفلاين
+    if (!currentEvents || currentEvents.length === 0) {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          currentEvents = JSON.parse(cached);
+          drawEventsUI(currentEvents);
+        }
+      } catch(e){}
+    }
+
     const params = new URLSearchParams();
     if ($('evSearch') && $('evSearch').value.trim()) params.set('q', $('evSearch').value.trim());
     if ($('evFilterUnit') && $('evFilterUnit').value) params.set('unitId', $('evFilterUnit').value);
@@ -1248,110 +1399,20 @@
     try {
       const res = await api('/events?' + params.toString());
       currentEvents = res.events || [];
-
-      // تحديث شارات الـ KPIs
-      const total = currentEvents.filter(x => !x.isArchived).length;
-      const pending = currentEvents.filter(x => x.status === 'pending' && !x.isArchived).length;
-      const received = currentEvents.filter(x => (x.status === 'received' || x.status === 'in_progress') && !x.isArchived).length;
-      const completed = currentEvents.filter(x => x.status === 'completed' && !x.isArchived).length;
-
-      if ($('evKpiTotal')) $('evKpiTotal').textContent = total;
-      if ($('evKpiPending')) $('evKpiPending').textContent = pending;
-      if ($('evKpiReceived')) $('evKpiReceived').textContent = received;
-      if ($('evKpiCompleted')) $('evKpiCompleted').textContent = completed;
-
-      if ($('sideEventsBadge')) {
-        $('sideEventsBadge').textContent = pending;
-        $('sideEventsBadge').style.display = pending > 0 ? 'inline-block' : 'none';
-      }
-
-      if ($('evCountLabel')) {
-        $('evCountLabel').textContent = `عرض (${currentEvents.length}) مهمة وحدث`;
-      }
-
-      const tbody = $('eventsTableBody');
-      if (!tbody) return;
-
-      if (!currentEvents.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty">لا توجد مهام أو أحداث تطابق البحث والتصفية</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = currentEvents.map(e => `
-        <tr style="${e.isArchived ? 'opacity:0.65;background:#f8fafc' : ''}">
-          <td>
-            <div style="font-weight:800;color:var(--text);font-size:13.5px">${esc(e.title)}</div>
-            ${e.unitName ? `<span class="badge purple" style="font-size:10px;margin-top:2px;display:inline-block">🏢 ${esc(e.unitName)}</span>` : ''}
-            ${e.isArchived ? '<span class="badge gray" style="font-size:10px;margin-top:2px">📦 مؤرشفة</span>' : ''}
-            <div style="font-size:11.5px;color:var(--muted);margin-top:2px">كُلفت بواسطة: ${esc(e.createdBy || 'المدير')} • ${fmtDate(e.createdDate)}</div>
-          </td>
-          <td>${getEventTypeBadge(e.eventType)}</td>
-          <td>
-            <div style="font-weight:700">👤 ${esc(e.assignedUserName || 'غير محدد')}</div>
-          </td>
-          <td>
-            <div style="font-weight:700">${esc(e.eventDate || '—')}</div>
-            <div style="font-size:11.5px;color:var(--muted)">⏰ ${esc(e.eventTime || 'غير محدد')}</div>
-          </td>
-          <td>
-            <div style="font-size:12.5px">${esc(e.location || '—')}</div>
-          </td>
-          <td>
-            ${getEventStatusBadge(e)}
-            ${e.feedbackNotes ? `<div style="font-size:11.5px;color:var(--secondary);margin-top:3px;font-weight:700">💬 ملاحظات: ${esc(e.feedbackNotes.slice(0, 30))}${e.feedbackNotes.length > 30 ? '...' : ''}</div>` : ''}
-          </td>
-          <td>
-            <div class="btn-row" style="gap:4px">
-              <button class="btn btn-outline btn-xs" data-ev-detail="${e.id}" title="عرض كامل التفاصيل والتغذية الراجعة">👁️ عرض</button>
-              <button class="btn btn-primary btn-xs" data-ev-edit="${e.id}" title="تعديل بيانات المهمة">✏️</button>
-              <button class="btn btn-outline btn-xs" data-ev-archive="${e.id}" title="${e.isArchived ? 'استعادة من الأرشيف' : 'أرشفة المهمة'}">${e.isArchived ? '📤' : '📦'}</button>
-              <button class="btn btn-danger btn-xs" data-ev-del="${e.id}" title="حذف المهمة تماماً">🗑️</button>
-            </div>
-          </td>
-        </tr>
-      `).join('');
-
-      // ربط أزرار الأحداث
-      tbody.querySelectorAll('[data-ev-detail]').forEach(b => {
-        b.onclick = () => {
-          const item = currentEvents.find(x => x.id === b.dataset.evDetail);
-          if (item) showEventDetail(item);
-        };
-      });
-
-      tbody.querySelectorAll('[data-ev-edit]').forEach(b => {
-        b.onclick = () => {
-          const item = currentEvents.find(x => x.id === b.dataset.evEdit);
-          if (item) openEventEditor(item);
-        };
-      });
-
-      tbody.querySelectorAll('[data-ev-archive]').forEach(b => {
-        b.onclick = async () => {
-          const item = currentEvents.find(x => x.id === b.dataset.evArchive);
-          if (!item) return;
-          try {
-            const resArch = await api(`/events/${item.id}/archive`, { method: 'PUT' });
-            toast(resArch.message || 'تم تحديث حالة أرشفة المهمة ✔');
-            renderEvents();
-          } catch(err) { toast(err.message, 'err'); }
-        };
-      });
-
-      tbody.querySelectorAll('[data-ev-del]').forEach(b => {
-        b.onclick = async () => {
-          const item = currentEvents.find(x => x.id === b.dataset.evDel);
-          if (!item) return;
-          if (!confirm(`هل أنت متأكد من حذف المهمة «${item.title}» تماماً من النظام والتطبيق؟`)) return;
-          try {
-            await api(`/events/${item.id}`, { method: 'DELETE' });
-            toast('تم حذف المهمة بنجاح ✔');
-            renderEvents();
-          } catch(err) { toast(err.message, 'err'); }
-        };
-      });
-
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(currentEvents)); } catch(e){}
+      drawEventsUI(currentEvents);
     } catch(err) {
+      console.warn('Events API Notice:', err.message);
+      if (!currentEvents || currentEvents.length === 0) {
+        try {
+          const cached = localStorage.getItem(CACHE_KEY);
+          if (cached) {
+            currentEvents = JSON.parse(cached);
+            drawEventsUI(currentEvents);
+            return;
+          }
+        } catch(e){}
+      }
       toast('تعذر جلب المهام والأحداث: ' + err.message, 'err');
     }
   }

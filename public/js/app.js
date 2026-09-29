@@ -190,23 +190,51 @@ function isNativeMobileApp() {
   );
 }
 
+function isLocalHost() {
+  if (typeof location === 'undefined') return false;
+  const h = (location.hostname || '').toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]';
+}
+
+function isBrowserWebEnvironment() {
+  if (typeof location === 'undefined') return false;
+  return (location.protocol === 'http:' || location.protocol === 'https:') && !isNativeMobileApp();
+}
+
 function getServerBaseUrl() {
+  // 1. إذا كان المتصفح يعمل على نفس جهاز المدير (localhost / 127.0.0.1):
+  // فقاعدة البيانات والـ API موجودة محلياً 100% على نفس الجهاز ولا حاجة للإنترنت نهائياً لكافة العمليات
+  if (isLocalHost()) {
+    // تنظيف أي رابط سحابي خارجي تم تخزينه سابقاً بالخطأ في ذاكرة المتصفح المحلي
+    try {
+      const saved = (localStorage.getItem(SERVER_URL_KEY) || '').trim();
+      if (saved && (saved.includes('onrender.com') || (typeof APP_CONFIG !== 'undefined' && saved === APP_CONFIG.defaultServerUrl))) {
+        localStorage.removeItem(SERVER_URL_KEY);
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  // 2. إذا كان المتصفح يعمل عبر الويب (http/https) من الشبكة الداخلية (LAN IP مثل 192.168.x أو 172.x):
+  // فالمتصفح متصل بخادم المنظومة المحلي والـ API موجود مباشرة على نفس العنوان
+  if (isBrowserWebEnvironment()) {
+    const custom = (localStorage.getItem(SERVER_URL_KEY) || '').trim();
+    // إذا كان الرابط المخصص هو رابط السحابة الافتراضي، تفضل واجهة الويب دائماً الخادم المحلي الذي قدم الصفحة
+    if (custom && !custom.includes('onrender.com') && (typeof APP_CONFIG === 'undefined' || custom !== APP_CONFIG.defaultServerUrl)) {
+      return formatServerUrl(custom);
+    }
+    return '';
+  }
+
+  // 3. في تطبيق الهواتف الأصلي (Android Native App):
   const custom = (localStorage.getItem(SERVER_URL_KEY) || '').trim();
   if (custom) return formatServerUrl(custom);
 
-  // إذا كان التطبيق يعمل داخل تطبيق الهواتف الأصلي (Android App / Capacitor)
-  if (isNativeMobileApp() && typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) {
+  if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) {
     return formatServerUrl(APP_CONFIG.defaultServerUrl);
   }
 
-  // إذا كان المتصفح يعمل على localhost أو السيرفر الحالي
-  if (typeof location !== 'undefined' && location.origin && (location.protocol === 'http:' || location.protocol === 'https:')) {
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.port === '80' || location.port === '8080') {
-      return '';
-    }
-  }
-
-  return (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) ? formatServerUrl(APP_CONFIG.defaultServerUrl) : '';
+  return '';
 }
 
 function setCustomServerUrl(url) {
@@ -243,7 +271,7 @@ async function testServerConnection(url) {
     try {
       data = JSON.parse(raw);
     } catch (e) {
-      throw new Error('الخادم لم يعد استجابة JSON صحيحة. يرجى التأكد من كتابة الرابط كاملاً: https://codex-multitenant-system.onrender.com');
+      throw new Error('الخادم لم يعد استجابة JSON صحيحة. يرجى التأكد من كتابة الرابط كاملاً.');
     }
     return { ok: true, org: data.org };
   } catch (err) {
@@ -270,7 +298,11 @@ async function api(pathname, opts = {}) {
   try {
     res = await fetch(fullUrl, { ...opts, headers });
   } catch (e) {
-    throw new Error('تعذر الاتصال بالخادم المركزي (' + (baseUrl || location.origin) + '). تأكد من تشغيل الخادم واتصال الإنترنت.');
+    if (isLocalHost() || !baseUrl) {
+      throw new Error('تعذر الاتصال بالخادم المحلي (' + (baseUrl || location.origin) + '). تأكد من تشغيل برنامج المنظومة (ReportsSystem.exe).');
+    } else {
+      throw new Error('تعذر الاتصال بالخادم (' + baseUrl + '). تأكد من تشغيل الخادم وتوفر اتصال بالإنترنت.');
+    }
   }
 
   let data = null;
@@ -509,22 +541,25 @@ function openServerConfigModal() {
     div.id = 'serverConfigModalBack';
     div.className = 'modal-back';
     div.innerHTML = `
-      <div class="modal" style="max-width:480px">
+      <div class="modal" style="max-width:500px">
         <div class="modal-h">
-          <h3>🌐 ضبط عنوان الخادم المركزي (Server Connection)</h3>
+          <h3>🌐 إعدادات خادم النظام والربط السحابي</h3>
           <button class="modal-x" type="button" onclick="document.getElementById('serverConfigModalBack').classList.remove('show')">✕</button>
         </div>
         <div style="padding:16px 20px 24px">
-          <p style="font-size:13px;color:var(--muted);line-height:1.8;margin-bottom:14px">
-            إذا كنت تستخدم التطبيق من هاتف أندرويد أو كمبيوتر آخر، أدخل عنوان IP أو رابط السيرفر السحابي.
-          </p>
+          <div style="background:var(--surface-soft,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
+            <div style="color:var(--text);font-weight:700">🟢 قاعدة البيانات المحلية (Local Database):</div>
+            <div style="color:var(--muted,#64748b);font-size:12px;margin-bottom:6px">تعمل محلياً 100% على هذا الكمبيوتر دون أي حاجة للإنترنت لكافة العمليات اليومية.</div>
+            <div style="color:var(--text);font-weight:700">☁️ خادم المزامنة السحابي (Cloud Sync Relay):</div>
+            <div style="color:var(--muted,#64748b);font-size:12px">يُستخدم فقط كطابور ترحيل لاستقبال تقارير الهواتف الميدانية ومزامنة التكليفات عند توفر الإنترنت.</div>
+          </div>
           <div class="field" style="margin-bottom:12px">
-            <span style="font-weight:700;font-size:13px">عنوان الخادم (URL / IP):</span>
-            <input type="text" id="cfgServerUrlInput" placeholder="مثال: https://codex-multitenant-system.onrender.com" style="direction:ltr;text-align:left;font-family:monospace;font-size:14px" />
+            <span style="font-weight:700;font-size:13px">عنوان خادم المزامنة السحابي أو عنوان IP:</span>
+            <input type="text" id="cfgServerUrlInput" placeholder="https://codex-multitenant-system.onrender.com" style="direction:ltr;text-align:left;font-family:monospace;font-size:14px" />
           </div>
           <div style="display:flex;gap:8px;margin-bottom:14px">
-            <button class="btn btn-secondary btn-sm" style="flex:1;font-size:12px" type="button" onclick="document.getElementById('cfgServerUrlInput').value='http://' + (location.hostname || 'localhost') + (location.port ? ':' + location.port : '')">📍 العنوان الحالي</button>
-            <button class="btn btn-outline btn-sm" style="flex:1;font-size:12px" type="button" onclick="document.getElementById('cfgServerUrlInput').value=''">🔄 افتراضي</button>
+            <button class="btn btn-secondary btn-sm" style="flex:1;font-size:12px" type="button" onclick="document.getElementById('cfgServerUrlInput').value='http://' + (location.hostname || 'localhost') + (location.port ? ':' + location.port : '')">📍 استخدام المحلي (أوفلاين)</button>
+            <button class="btn btn-outline btn-sm" style="flex:1;font-size:12px" type="button" onclick="document.getElementById('cfgServerUrlInput').value=(typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.defaultServerUrl : '')">☁️ سحابة كودكس للمزامنة</button>
           </div>
           <div id="cfgServerTestStatus" style="font-size:13px;font-weight:700;min-height:24px;margin-bottom:14px;padding:8px 12px;border-radius:6px;display:none;line-height:1.6"></div>
           <div style="display:flex;gap:10px">
@@ -548,7 +583,7 @@ function openServerConfigModal() {
         const res = await testServerConnection(url);
         statusDiv.style.background = '#dcfce7';
         statusDiv.style.color = '#15803d';
-        statusDiv.textContent = '🟢 تم الاتصال بالخادم المركزي بنجاح!';
+        statusDiv.textContent = '🟢 تم الاتصال بالخادم بنجاح!';
       } catch (err) {
         statusDiv.style.background = '#fee2e2';
         statusDiv.style.color = '#b91c1c';
@@ -558,15 +593,20 @@ function openServerConfigModal() {
 
     document.getElementById('cfgSaveServerBtn').onclick = () => {
       const url = document.getElementById('cfgServerUrlInput').value.trim();
-      setCustomServerUrl(url);
-      toast('تم حفظ إعدادات الخادم المركزي بنجاح ✔', 'ok');
+      if (isLocalHost() && (!url || url.includes('localhost') || url.includes('127.0.0.1') || url === (typeof APP_CONFIG !== 'undefined' ? APP_CONFIG.defaultServerUrl : ''))) {
+        // على الجهاز المحلي يتم البقاء على قاعدة البيانات المحلية 100%
+        localStorage.removeItem(SERVER_URL_KEY);
+      } else {
+        setCustomServerUrl(url);
+      }
+      toast('تم حفظ إعدادات الخادم بنجاح ✔', 'ok');
       m.classList.remove('show');
       setTimeout(() => location.reload(), 600);
     };
   }
 
   const defaultUrl = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) ? APP_CONFIG.defaultServerUrl : '';
-  const current = getServerBaseUrl() || defaultUrl;
+  const current = (localStorage.getItem(SERVER_URL_KEY) || '').trim() || (isLocalHost() ? 'http://localhost' : (getServerBaseUrl() || defaultUrl));
   const inputEl = document.getElementById('cfgServerUrlInput');
   if (inputEl) inputEl.value = current;
   const statusDiv = document.getElementById('cfgServerTestStatus');
