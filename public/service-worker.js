@@ -1,7 +1,7 @@
 /* =========================================================
    service-worker.js — دعم التثبيت والعمل أوفلاين للمنظومة المتعددة (PWA)
    ========================================================= */
-const CACHE_NAME = 'reports-multitenant-v4.3';
+const CACHE_NAME = 'reports-multitenant-v5.0';
 const STATIC_ASSETS = [
   './',
   './index.html',

@@ -1,3 +1,10 @@
+
+  function ensureBase64LogoInHtml(html) {
+    if (!html) return html;
+    const b64 = (typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '';
+    if (!b64) return html;
+    return html.replace(/src=["'](?:(?:.\/|\/)?Image\/[^"']+|default)["']/gi, 'src="' + b64 + '"');
+  }
 /* =========================================================
    admin.js — لوحة مدير النظام (الواجهة الكاملة)
    ========================================================= */
@@ -488,7 +495,8 @@
   /* نافذة تفاصيل التقرير */
   function showReportDetail(r) {
     if (!r) return;
-    const headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML(r) : '';
+    let headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML(r) : ('<div style="font-size:20px;font-weight:900;color:#1f6feb;border-bottom:2px solid #1f6feb;padding-bottom:10px;margin-bottom:20px">تقرير ' + esc(r.reportNumber) + '</div>');
+    headerHtml = ensureBase64LogoInHtml(headerHtml);
     const rawImages = (r.images && Array.isArray(r.images)) ? r.images : [];
     const attachments = rawImages.map(normalizeAttachment);
 
@@ -610,7 +618,8 @@
     if (includeMedia === undefined) {
       includeMedia = $('mIncludeMediaCheck') ? $('mIncludeMediaCheck').checked : true;
     }
-    const headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML(r) : `<div style="font-size:20px;font-weight:900;color:#1f6feb;border-bottom:2px solid #1f6feb;padding-bottom:10px;margin-bottom:20px">تقرير ${esc(r.reportNumber)}</div>`;
+    let headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML(r) : ('<div style="font-size:20px;font-weight:900;color:#1f6feb;border-bottom:2px solid #1f6feb;padding-bottom:10px;margin-bottom:20px">تقرير ' + esc(r.reportNumber) + '</div>');
+    headerHtml = ensureBase64LogoInHtml(headerHtml);
     const headerCss = typeof getReportHeaderCSS === 'function' ? getReportHeaderCSS() : '';
     const rawImages = (r.images && Array.isArray(r.images)) ? r.images : (typeof r.images === 'string' ? JSON.parse(r.images || '[]') : []);
     const attachments = rawImages.map(normalizeAttachment);
@@ -717,7 +726,8 @@
   /* 1. طباعة إجمالية (كشف ملخص بجدول منظم) */
   function printReportsSummary() {
     if (!currentReports.length) { toast('لا توجد تقارير للطباعة', 'err'); return; }
-    const headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML({ reportDate: todayStr() }) : '';
+    let headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML({ reportDate: todayStr() }) : '';
+    headerHtml = ensureBase64LogoInHtml(headerHtml);
     const headerCss = typeof getReportHeaderCSS === 'function' ? getReportHeaderCSS() : '';
     const rows = currentReports.map(r => `
       <tr>
@@ -770,7 +780,8 @@
     if (!currentReports.length) { toast('لا توجد تقارير للطباعة', 'err'); return; }
     const headerCss = typeof getReportHeaderCSS === 'function' ? getReportHeaderCSS() : '';
     const reportsHtml = currentReports.map((r, idx) => {
-      const headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML(r) : '';
+      let headerHtml = typeof renderReportHeaderHTML === 'function' ? renderReportHeaderHTML(r) : ('<div style="font-size:20px;font-weight:900;color:#1f6feb;border-bottom:2px solid #1f6feb;padding-bottom:10px;margin-bottom:20px">تقرير ' + esc(r.reportNumber) + '</div>');
+    headerHtml = ensureBase64LogoInHtml(headerHtml);
       const rawImages = (r.images && Array.isArray(r.images)) ? r.images : [];
       const attachments = rawImages.map(normalizeAttachment);
       const imgList = attachments.filter(a => a.type.startsWith('image/'));
@@ -2189,10 +2200,12 @@
     const rightLines = [line1, line2, line3, line4, line5].filter(Boolean);
 
     let logoSrc = $('hLogoSel') ? $('hLogoSel').value : REPORT_HEADER_CONFIG.logoSrc;
-    if (logoSrc === 'custom' && customLogoBase64) {
+    if (logoSrc === 'Image/1754379379088.jpg' || !logoSrc) {
+      logoSrc = (typeof DEFAULT_LOGO_BASE64 !== 'undefined' ? DEFAULT_LOGO_BASE64 : 'Image/1754379379088.jpg');
+    } else if (logoSrc === 'custom' && customLogoBase64) {
       logoSrc = customLogoBase64;
     } else if (logoSrc === 'custom') {
-      logoSrc = REPORT_HEADER_CONFIG.logoSrc;
+      logoSrc = REPORT_HEADER_CONFIG.logoSrc || (typeof DEFAULT_LOGO_BASE64 !== 'undefined' ? DEFAULT_LOGO_BASE64 : 'Image/1754379379088.jpg');
     }
     const fontFamily = $('hFontSel') ? $('hFontSel').value : (REPORT_HEADER_CONFIG.fontFamily || 'diwani');
     const showBasmala = $('hShowBasmala') ? $('hShowBasmala').checked : (REPORT_HEADER_CONFIG.showBasmala !== false);
@@ -2300,7 +2313,7 @@
           "الهيئة العامة لتنظيم شؤون النقل البري",
           "مكتب رئيس الهيئة"
         ],
-        logoSrc: "Image/1754379379088.jpg",
+        logoSrc: (typeof DEFAULT_LOGO_BASE64 !== 'undefined' ? DEFAULT_LOGO_BASE64 : "Image/1754379379088.jpg"),
         showBasmala: true,
         basmalaText: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
         fontFamily: "diwani",
@@ -2366,8 +2379,10 @@
 
       if ($('hLogoSel')) {
         const currentSrc = cfg.logoSrc || '';
-        if (currentSrc === 'Image/1754379379088.jpg') {
-          $('hLogoSel').value = currentSrc;
+        const isDefault = !currentSrc || currentSrc === 'Image/1754379379088.jpg' || (typeof DEFAULT_LOGO_BASE64 !== 'undefined' && currentSrc === DEFAULT_LOGO_BASE64);
+        if (isDefault) {
+          $('hLogoSel').value = 'Image/1754379379088.jpg';
+          customLogoBase64 = '';
         } else if (currentSrc) {
           $('hLogoSel').value = 'custom';
           customLogoBase64 = currentSrc;
