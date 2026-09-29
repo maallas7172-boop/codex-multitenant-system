@@ -720,6 +720,7 @@ function publicUser(u) {
     canEvents: isAdminUser || isUnitMgr || !!u.canEvents || !!u.canDash || !!u.canReports,
     canUsers: isAdminUser || isUnitMgr || !!u.canUsers,
     canSettings: isAdminUser || (!isUnitMgr && !!u.canSettings),
+    canSmartAi: isAdminUser || u.canSmartAi === undefined || u.canSmartAi === null ? true : !!u.canSmartAi,
     canUnits: isAdminUser || isUnitMgr || !!u.canUnits,
     createdAt: u.createdAt
   };
@@ -1400,6 +1401,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (method === 'GET' && p === '/api/super/smart-correlation') {
+        if (me.role !== 'SuperAdmin' && me.canSmartAi === 0) { sendError(res, 403, 'غير مصرح لك بالوصول إلى مركز التحليل والربط الذكي'); return; }
         const filterOrgId = (u.searchParams.get('orgId') || '').trim();
         const minScore = parseInt(u.searchParams.get('minScore') || '40', 10);
         const days = parseInt(u.searchParams.get('days') || '0', 10);
@@ -1639,12 +1641,12 @@ const server = http.createServer(async (req, res) => {
         const uId = uid();
         const hash = hashHex(pwd);
         db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
-          canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, createdAt)
-          VALUES(?, NULL, ?, ?, ?, ?, 'SuperSupervisor', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, canSmartAi, createdAt)
+          VALUES(?, NULL, ?, ?, ?, ?, 'SuperSupervisor', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
             uId, uName, fName || uName, hash, pwd, b.isActive !== false ? 1 : 0,
             b.canDash ? 1 : 0, b.canEntry ? 1 : 0, b.canReports ? 1 : 0, b.canReportsEdit ? 1 : 0,
             b.canReportsDelete ? 1 : 0, b.canReportsPrint ? 1 : 0, b.canEvents ? 1 : 0,
-            b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, nowIso()
+            b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, b.canSmartAi !== undefined ? (b.canSmartAi ? 1 : 0) : 1, nowIso()
           );
         send(res, 200, { ok: true, message: 'تم إنشاء مستخدم الإدارة المركزية بنجاح ✔' });
         return;
@@ -1666,12 +1668,12 @@ const server = http.createServer(async (req, res) => {
           const fName = String(b.fullName || target.fullName);
           const isActive = b.isActive !== undefined ? (b.isActive ? 1 : 0) : target.isActive;
           db.prepare(`UPDATE users SET fullName=?, passwordHash=?, plainPassword=?, isActive=?,
-            canDash=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?, canEvents=?, canUsers=?, canSettings=?
+            canDash=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?, canEvents=?, canUsers=?, canSettings=?, canSmartAi=?
             WHERE id=?`).run(
               fName, hash, plain, isActive,
               b.canDash ? 1 : 0, b.canReports ? 1 : 0, b.canReportsEdit ? 1 : 0,
               b.canReportsDelete ? 1 : 0, b.canReportsPrint ? 1 : 0, b.canEvents ? 1 : 0,
-              b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, targetUId
+              b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, b.canSmartAi !== undefined ? (b.canSmartAi ? 1 : 0) : (target.canSmartAi !== undefined ? target.canSmartAi : 1), targetUId
             );
           send(res, 200, { ok: true, message: 'تم تحديث بيانات المستخدم بنجاح ✔' });
           return;

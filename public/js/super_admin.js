@@ -1,3 +1,29 @@
+
+function applySuperUserPermissionsUI(user) {
+  if (!user) return;
+  const isMainAdmin = user.role === 'SuperAdmin';
+
+  const canDash = isMainAdmin || !!user.canDash;
+  const canReports = isMainAdmin || !!user.canReports;
+  const canSmartAi = isMainAdmin || (user.canSmartAi !== undefined && user.canSmartAi !== null ? !!user.canSmartAi : true);
+  const canUsers = isMainAdmin || !!user.canUsers;
+  const canSettings = isMainAdmin || !!user.canSettings;
+
+  if (document.getElementById('tabBtnOrgs')) document.getElementById('tabBtnOrgs').style.display = canDash ? 'inline-block' : 'none';
+  if (document.getElementById('tabBtnReports')) document.getElementById('tabBtnReports').style.display = canReports ? 'inline-block' : 'none';
+  if (document.getElementById('tabBtnSmartAi')) document.getElementById('tabBtnSmartAi').style.display = canSmartAi ? 'inline-block' : 'none';
+  if (document.getElementById('tabBtnUsers')) document.getElementById('tabBtnUsers').style.display = canUsers ? 'inline-block' : 'none';
+  if (document.getElementById('tabBtnSettings')) document.getElementById('tabBtnSettings').style.display = canSettings ? 'inline-block' : 'none';
+
+  if (!canDash) {
+    if (canReports) switchSuperTab('reports');
+    else if (canSmartAi) switchSuperTab('smartAi');
+    else if (canUsers) switchSuperTab('users');
+    else if (canSettings) switchSuperTab('settings');
+    else switchSuperTab('profile');
+  }
+}
+
 /* =========================================================
    super_admin.js — لوحة الإدارة العليا لشركة كودكس للبرمجيات
    ========================================================= */
@@ -13,12 +39,13 @@ let currentSuperUser = null;
   try {
     me = await currentMe();
     currentSuperUser = me.user;
+    applySuperUserPermissionsUI(currentSuperUser);
   } catch (e) {
     location.replace('login.html');
     return;
   }
 
-  if (!me.user || me.user.role !== 'SuperAdmin') {
+  if (!me.user || (me.user.role !== 'SuperAdmin' && me.user.role !== 'SuperSupervisor' && me.user.role !== 'CentralUser')) {
     alert('غير مصرح لك بالدخول إلى هذه اللوحة.');
     location.replace('login.html');
     return;
@@ -1111,6 +1138,7 @@ function renderSuperUsersTable(users) {
     } else {
       if (u.canDash) perms.push('الفروع');
       if (u.canReports) perms.push('استعراض التقارير');
+      if (u.canSmartAi !== false && u.canSmartAi !== 0) perms.push('🧠 التحليل الذكي');
       if (u.canReportsPrint) perms.push('طباعة');
       if (u.canReportsDelete) perms.push('حذف التقارير');
       if (u.canUsers) perms.push('المستخدمين');
@@ -1169,6 +1197,7 @@ function openAddSuperUserModal(userId = null) {
 
     document.getElementById('suCanDash').checked = !!user.canDash;
     document.getElementById('suCanReports').checked = !!user.canReports;
+    document.getElementById('suCanSmartAi').checked = user.canSmartAi !== false && user.canSmartAi !== 0;
     document.getElementById('suCanReportsPrint').checked = !!user.canReportsPrint;
     document.getElementById('suCanReportsDelete').checked = !!user.canReportsDelete;
     document.getElementById('suCanUsers').checked = !!user.canUsers;
@@ -1185,6 +1214,7 @@ function openAddSuperUserModal(userId = null) {
 
     document.getElementById('suCanDash').checked = true;
     document.getElementById('suCanReports').checked = true;
+    document.getElementById('suCanSmartAi').checked = true;
     document.getElementById('suCanReportsPrint').checked = true;
     document.getElementById('suCanReportsDelete').checked = false;
     document.getElementById('suCanUsers').checked = false;
