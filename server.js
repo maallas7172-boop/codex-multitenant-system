@@ -1,4 +1,269 @@
 #!/usr/bin/env node
+/* =========================================================
+   محرك التحليل والربط الذكي للأحداث والأنماط (Intelligence Correlation Engine)
+   - يعمل محلياً وآلياً 100% داخل السيرفر بدون إنترنت ولا جهات خارجية
+   - يقوم بربط وتجميع التقارير المتشابهة حسب الأهداف والمواقع والأحداث
+   ========================================================= */
+
+const ARABIC_STOPWORDS = new Set([
+  'في', 'من', 'إلى', 'الى', 'على', 'عن', 'مع', 'هذا', 'هذه', 'تم', 'تمت', 'قام', 'قامت',
+  'بعد', 'قبل', 'خلال', 'أثناء', 'اثناء', 'أن', 'ان', 'كان', 'كانت', 'يكون', 'تكون',
+  'التي', 'الذي', 'الذين', 'اللاتي', 'هو', 'هي', 'هم', 'هن', 'نحن', 'أنا', 'انا',
+  'وقد', 'قد', 'ثم', 'حيث', 'بين', 'حول', 'ضد', 'نحو', 'لدى', 'عند', 'كل', 'جميع',
+  'غير', 'لا', 'ما', 'لم', 'لن', 'ليس', 'ليست', 'إلا', 'الا', 'بل', 'أو', 'او', 'ثم',
+  'ذلك', 'تلك', 'هناك', 'هنا', 'كما', 'حسب', 'وفق', 'نظرا', 'نظراً', 'بشأن', 'بشان',
+  'تقرير', 'رقم', 'عملية', 'مهمة', 'التقرير', 'المذكور', 'المذكورة', 'أعلاه', 'اعلاه'
+]);
+
+function normalizeArabicText(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/[\u064B-\u065F\u0670]/g, '') // إزالة التشكيل
+    .replace(/[ـ]/g, '') // إزالة التطويل
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[^\u0621-\u064Aa-zA-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function extractReportKeywords(report) {
+  const fullText = [
+    report.subject || '',
+    report.target || report.targetSector || '',
+    report.location || '',
+    report.details || report.notes || ''
+  ].join(' ');
+
+  const normalized = normalizeArabicText(fullText);
+  const words = normalized.split(/\s+/).filter(w => w.length >= 3 && !ARABIC_STOPWORDS.has(w));
+  
+  const targetNorm = normalizeArabicText(report.target || report.targetSector || '');
+  const targetTokens = targetNorm.split(/\s+/).filter(w => w.length >= 3 && !ARABIC_STOPWORDS.has(w));
+
+  const locNorm = normalizeArabicText(report.location || '');
+  const locTokens = locNorm.split(/\s+/).filter(w => w.length >= 3 && !ARABIC_STOPWORDS.has(w));
+
+  return {
+    rawWords: words,
+    uniqueWords: new Set(words),
+    targetTokens: new Set(targetTokens),
+    locTokens: new Set(locTokens),
+    originalTarget: (report.target || report.targetSector || '').trim(),
+    originalLocation: (report.location || '').trim()
+  };
+}
+
+function computePairwiseSimilarity(r1, r2, k1, k2) {
+  let score = 0;
+  const reasons = [];
+  const matchedKeywords = new Set();
+
+  // 1. تطابق اسم الجهة أو الشخص المستهدف
+  let targetOverlap = 0;
+  k1.targetTokens.forEach(t => {
+    if (k2.targetTokens.has(t)) {
+      targetOverlap++;
+      matchedKeywords.add(t);
+    }
+  });
+  if (k1.targetTokens.size > 0 && targetOverlap > 0) {
+    const targetScore = (targetOverlap / Math.min(k1.targetTokens.size, k2.targetTokens.size)) * 40;
+    score += targetScore;
+    if (targetScore >= 20) {
+      reasons.push('تطابق في اسم الجهة / الشخص المستهدف (' + (k1.originalTarget || k2.originalTarget) + ')');
+    }
+  }
+
+  // 2. تطابق الموقع الجغرافي
+  let locOverlap = 0;
+  k1.locTokens.forEach(l => {
+    if (k2.locTokens.has(l)) {
+      locOverlap++;
+      matchedKeywords.add(l);
+    }
+  });
+  if (k1.locTokens.size > 0 && locOverlap > 0) {
+    const locScore = (locOverlap / Math.min(k1.locTokens.size, k2.locTokens.size)) * 30;
+    score += locScore;
+    if (locScore >= 18) {
+      reasons.push('تطابق في الموقع الجغرافي (' + (k1.originalLocation || k2.originalLocation) + ')');
+    }
+  }
+
+  // 3. التقارب الدلالي في نص وموضوع التقرير
+  let textIntersection = 0;
+  k1.uniqueWords.forEach(w => {
+    if (k2.uniqueWords.has(w)) {
+      textIntersection++;
+      matchedKeywords.add(w);
+    }
+  });
+  const textUnion = new Set([...k1.uniqueWords, ...k2.uniqueWords]).size;
+  if (textUnion > 0) {
+    const jaccard = textIntersection / textUnion;
+    const textScore = jaccard * 40;
+    score += textScore;
+    if (jaccard >= 0.22) {
+      reasons.push('تقارب دلالي كبير في تفاصيل وموضوع التقرير');
+    }
+  }
+
+  // 4. التزامن الزمني
+  if (r1.reportDate && r2.reportDate) {
+    const d1 = new Date(r1.reportDate).getTime();
+    const d2 = new Date(r2.reportDate).getTime();
+    const diffDays = Math.abs(d1 - d2) / (1000 * 3600 * 24);
+    if (diffDays <= 2 && score >= 25) {
+      score += 10;
+      reasons.push('تزامن زمني متقارب (خلال ' + Math.max(1, Math.round(diffDays * 24)) + ' ساعة)');
+    }
+  }
+
+  score = Math.min(100, Math.round(score));
+
+  return {
+    score,
+    isMatch: score >= 40,
+    reasons,
+    matchedKeywords: Array.from(matchedKeywords).slice(0, 8)
+  };
+}
+
+function analyzeReportsCorrelation(reports, options = {}) {
+  if (!reports || reports.length < 2) {
+    return {
+      summary: { totalReportsAnalyzed: reports ? reports.length : 0, totalClustersFound: 0, totalCorrelatedReports: 0, highPriorityClusters: 0 },
+      clusters: []
+    };
+  }
+
+  const minScore = options.minScore || 40;
+  const keywordsMap = new Map();
+  reports.forEach(r => {
+    keywordsMap.set(r.id, extractReportKeywords(r));
+  });
+
+  const adj = new Map();
+  reports.forEach(r => adj.set(r.id, []));
+
+  for (let i = 0; i < reports.length; i++) {
+    for (let j = i + 1; j < reports.length; j++) {
+      const r1 = reports[i];
+      const r2 = reports[j];
+      const k1 = keywordsMap.get(r1.id);
+      const k2 = keywordsMap.get(r2.id);
+
+      const sim = computePairwiseSimilarity(r1, r2, k1, k2);
+      if (sim.isMatch && sim.score >= minScore) {
+        adj.get(r1.id).push({ neighborId: r2.id, sim });
+        adj.get(r2.id).push({ neighborId: r1.id, sim });
+      }
+    }
+  }
+
+  const visited = new Set();
+  const clusters = [];
+
+  reports.forEach(report => {
+    if (visited.has(report.id)) return;
+    if (adj.get(report.id).length === 0) return;
+
+    const clusterReportIds = new Set();
+    const queue = [report.id];
+    visited.add(report.id);
+
+    while (queue.length > 0) {
+      const currId = queue.shift();
+      clusterReportIds.add(currId);
+      const neighbors = adj.get(currId) || [];
+      neighbors.forEach(n => {
+        if (!visited.has(n.neighborId)) {
+          visited.add(n.neighborId);
+          queue.push(n.neighborId);
+        }
+      });
+    }
+
+    if (clusterReportIds.size >= 2) {
+      const clusterReports = reports.filter(r => clusterReportIds.has(r.id));
+      
+      const orgsSet = new Set(clusterReports.map(r => r.orgName || r.orgCode).filter(Boolean));
+      const usersSet = new Set(clusterReports.map(r => r.enteredBy).filter(Boolean));
+      const targetsSet = new Set(clusterReports.map(r => r.target || r.targetSector).filter(Boolean));
+      const locsSet = new Set(clusterReports.map(r => r.location).filter(Boolean));
+      
+      const clusterKeywords = new Set();
+      let maxScore = 0;
+      let clusterReasons = new Set();
+
+      clusterReports.forEach(r => {
+        (adj.get(r.id) || []).forEach(n => {
+          if (clusterReportIds.has(n.neighborId)) {
+            if (n.sim.score > maxScore) maxScore = n.sim.score;
+            n.sim.matchedKeywords.forEach(kw => clusterKeywords.add(kw));
+            n.sim.reasons.forEach(res => clusterReasons.add(res));
+          }
+        });
+      });
+
+      let severity = 'medium';
+      if (maxScore >= 75 || orgsSet.size >= 2 || clusterReports.length >= 3) {
+        severity = 'high';
+      } else if (maxScore < 55 && orgsSet.size === 1) {
+        severity = 'info';
+      }
+
+      let title = '';
+      if (targetsSet.size === 1 && targetsSet.values().next().value) {
+        title = 'رصد متكرر للجهة/الشخص (' + Array.from(targetsSet)[0] + ') في ' + clusterReports.length + ' تقارير';
+      } else if (locsSet.size === 1 && locsSet.values().next().value) {
+        title = 'تزامن نشاط مرتبط بالموقع (' + Array.from(locsSet)[0] + ') في ' + clusterReports.length + ' تقارير';
+      } else if (clusterKeywords.size > 0) {
+        title = 'ترابط حدث مشترك حول: ' + Array.from(clusterKeywords).slice(0, 3).join('، ') + ' (' + clusterReports.length + ' تقارير)';
+      } else {
+        title = 'مجموعة أحداث مترابطة دلالياً (' + clusterReports.length + ' تقارير)';
+      }
+
+      clusters.push({
+        clusterId: 'cluster_' + (clusters.length + 1) + '_' + Math.random().toString(36).substring(2, 7),
+        title,
+        score: maxScore,
+        severity,
+        reasons: Array.from(clusterReasons),
+        matchedKeywords: Array.from(clusterKeywords).slice(0, 8),
+        commonTarget: Array.from(targetsSet).join(' • ') || 'متعدد',
+        commonLocation: Array.from(locsSet).join(' • ') || 'متعدد',
+        reportCount: clusterReports.length,
+        involvedOrgs: Array.from(orgsSet),
+        involvedUsers: Array.from(usersSet),
+        isCrossBranch: orgsSet.size > 1,
+        isMultiUser: usersSet.size > 1,
+        firstDate: clusterReports.map(r => r.reportDate).filter(Boolean).sort()[0] || '',
+        lastDate: clusterReports.map(r => r.reportDate).filter(Boolean).sort().reverse()[0] || '',
+        reports: clusterReports
+      });
+    }
+  });
+
+  clusters.sort((a, b) => b.score - a.score || b.reportCount - a.reportCount);
+
+  const totalCorrelated = clusters.reduce((acc, c) => acc + c.reportCount, 0);
+  const highPriority = clusters.filter(c => c.severity === 'high').length;
+
+  return {
+    summary: {
+      totalReportsAnalyzed: reports.length,
+      totalClustersFound: clusters.length,
+      totalCorrelatedReports: totalCorrelated,
+      highPriorityClusters: highPriority
+    },
+    clusters
+  };
+}
+
 'use strict';
 /* =========================================================
    منظومة كودكس السحابية والمحلية — خادم المنظومات والجهات المتعددة (Multi-Tenant)
@@ -1134,14 +1399,13 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      if (method === 'GET' && p === '/api/super/reports') {
+      if (method === 'GET' && p === '/api/super/smart-correlation') {
         const filterOrgId = (u.searchParams.get('orgId') || '').trim();
-        const fromDate = (u.searchParams.get('from') || '').trim();
-        const toDate = (u.searchParams.get('to') || '').trim();
-        const q = (u.searchParams.get('q') || '').trim().toLowerCase();
+        const minScore = parseInt(u.searchParams.get('minScore') || '40', 10);
+        const days = parseInt(u.searchParams.get('days') || '0', 10);
 
         let sql = `
-          SELECT r.*, o.orgName, o.orgCode, o.encKey as orgEncKey, un.unitName
+          SELECT r.*, o.orgName, o.orgCode, o.encKey as orgEncKey, un.unitName, un.unitCode
           FROM reports r
           JOIN organizations o ON r.orgId = o.id
           LEFT JOIN units un ON r.unitId = un.id
@@ -1153,6 +1417,68 @@ const server = http.createServer(async (req, res) => {
           sql += ' AND r.orgId = ?';
           params.push(filterOrgId);
         }
+        if (days > 0) {
+          const cutDate = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString().slice(0, 10);
+          sql += ' AND r.reportDate >= ?';
+          params.push(cutDate);
+        }
+
+        sql += ' ORDER BY r.reportDate DESC, r.createdAt DESC LIMIT 1000';
+        const rawReports = db.prepare(sql).all(...params).map(r => {
+          const rep = parseReportRow(r);
+          rep.orgName = r.orgName;
+          rep.orgCode = r.orgCode;
+          rep.orgEncKey = r.orgEncKey;
+          rep.unitName = r.unitName || null;
+          rep.unitCode = r.unitCode || null;
+          return rep;
+        });
+
+        const analysis = analyzeReportsCorrelation(rawReports, { minScore });
+        send(res, 200, { ok: true, summary: analysis.summary, clusters: analysis.clusters });
+        return;
+      }
+
+      if (method === 'GET' && p === '/api/super/reports') {
+        const filterOrgId = (u.searchParams.get('orgId') || '').trim();
+        const filterUnitId = (u.searchParams.get('unitId') || '').trim();
+        const filterUser = (u.searchParams.get('user') || u.searchParams.get('enteredBy') || '').trim();
+        const filterRating = (u.searchParams.get('rating') || '').trim();
+        const filterAtt = (u.searchParams.get('hasAttachments') || '').trim();
+        const fromDate = (u.searchParams.get('from') || '').trim();
+        const toDate = (u.searchParams.get('to') || '').trim();
+        const q = (u.searchParams.get('q') || '').trim().toLowerCase();
+
+        let sql = `
+          SELECT r.*, o.orgName, o.orgCode, o.encKey as orgEncKey, un.unitName, un.unitCode
+          FROM reports r
+          JOIN organizations o ON r.orgId = o.id
+          LEFT JOIN units un ON r.unitId = un.id
+          WHERE (o.allowHqAccess IS NULL OR o.allowHqAccess = 1)
+        `;
+        const params = [];
+
+        if (filterOrgId) {
+          sql += ' AND r.orgId = ?';
+          params.push(filterOrgId);
+        }
+        if (filterUnitId) {
+          sql += ' AND (r.unitId = ? OR un.id = ? OR un.unitName = ?)';
+          params.push(filterUnitId, filterUnitId, filterUnitId);
+        }
+        if (filterUser) {
+          sql += ' AND (r.enteredBy = ? OR LOWER(r.enteredBy) LIKE ?)';
+          params.push(filterUser, '%' + filterUser.toLowerCase() + '%');
+        }
+        if (filterRating) {
+          sql += ' AND r.rating = ?';
+          params.push(filterRating);
+        }
+        if (filterAtt === '1' || filterAtt === 'true' || filterAtt === 'yes') {
+          sql += " AND (r.images IS NOT NULL AND r.images != '' AND r.images != '[]')";
+        } else if (filterAtt === '0' || filterAtt === 'false' || filterAtt === 'no') {
+          sql += " AND (r.images IS NULL OR r.images = '' OR r.images = '[]')";
+        }
         if (fromDate) {
           sql += ' AND r.reportDate >= ?';
           params.push(fromDate);
@@ -1162,22 +1488,66 @@ const server = http.createServer(async (req, res) => {
           params.push(toDate);
         }
         if (q) {
-          sql += ' AND (LOWER(r.subject) LIKE ? OR LOWER(r.reportNumber) LIKE ? OR LOWER(r.enteredBy) LIKE ? OR LOWER(r.target) LIKE ? OR LOWER(un.unitName) LIKE ?)';
+          sql += ' AND (LOWER(r.subject) LIKE ? OR LOWER(r.reportNumber) LIKE ? OR LOWER(r.enteredBy) LIKE ? OR LOWER(r.target) LIKE ? OR LOWER(r.location) LIKE ? OR LOWER(r.details) LIKE ? OR LOWER(un.unitName) LIKE ? OR LOWER(o.orgName) LIKE ? OR LOWER(o.orgCode) LIKE ?)';
           const term = '%' + q + '%';
-          params.push(term, term, term, term, term);
+          params.push(term, term, term, term, term, term, term, term, term);
         }
 
-        sql += ' ORDER BY r.reportDate DESC, r.createdAt DESC LIMIT 500';
+        sql += ' ORDER BY r.reportDate DESC, r.createdAt DESC LIMIT 1000';
         const rows = db.prepare(sql).all(...params).map(r => {
           const rep = parseReportRow(r);
           rep.orgName = r.orgName;
           rep.orgCode = r.orgCode;
           rep.orgEncKey = r.orgEncKey;
           rep.unitName = r.unitName || null;
+          rep.unitCode = r.unitCode || null;
           return rep;
         });
 
-        send(res, 200, { ok: true, count: rows.length, reports: rows });
+        // جلب خيارات الفرز المتاحة ديناميكياً (الوحدات والمستخدمين)
+        let filterUnitsSql = `
+          SELECT DISTINCT un.id as unitId, un.unitName, un.unitCode, o.id as orgId, o.orgName
+          FROM units un
+          JOIN organizations o ON un.orgId = o.id
+          WHERE (o.allowHqAccess IS NULL OR o.allowHqAccess = 1)
+        `;
+        const filterUnitsParams = [];
+        if (filterOrgId) {
+          filterUnitsSql += ' AND o.id = ?';
+          filterUnitsParams.push(filterOrgId);
+        }
+        filterUnitsSql += ' ORDER BY un.unitName ASC';
+        let availableUnits = [];
+        try {
+          availableUnits = db.prepare(filterUnitsSql).all(...filterUnitsParams);
+        } catch(e) { availableUnits = []; }
+
+        let filterUsersSql = `
+          SELECT DISTINCT r.enteredBy, r.orgId, o.orgName
+          FROM reports r
+          JOIN organizations o ON r.orgId = o.id
+          WHERE (o.allowHqAccess IS NULL OR o.allowHqAccess = 1) AND r.enteredBy IS NOT NULL AND r.enteredBy != ''
+        `;
+        const filterUsersParams = [];
+        if (filterOrgId) {
+          filterUsersSql += ' AND r.orgId = ?';
+          filterUsersParams.push(filterOrgId);
+        }
+        filterUsersSql += ' ORDER BY r.enteredBy ASC';
+        let availableUsers = [];
+        try {
+          availableUsers = db.prepare(filterUsersSql).all(...filterUsersParams);
+        } catch(e) { availableUsers = []; }
+
+        send(res, 200, {
+          ok: true,
+          count: rows.length,
+          reports: rows,
+          filterOptions: {
+            units: availableUnits,
+            users: availableUsers
+          }
+        });
         return;
       }
 

@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#1e3a8a" />
-<title>الإدارة العليا — شركة كودكس للبرمجيات</title>
+<title>الإدارة المركزية — منظومة إدارة التقارير</title>
 <link rel="stylesheet" href="css/styles.css" />
 <style>
   .super-header {
@@ -79,6 +79,9 @@
     </button>
     <button class="btn btn-outline" id="tabBtnReports" onclick="switchSuperTab('reports')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
       📄 التقارير الشاملة من الفروع <span id="superReportsTabCount" class="badge" style="background:#2563eb;color:#fff;margin-right:6px;font-size:11px">0</span>
+    </button>
+        <button class="btn btn-outline" id="tabBtnSmartAi" onclick="switchSuperTab('smartAi')" style="font-weight:800;font-size:13.5px;padding:9px 18px;background:#fdf2f8;border-color:#ec4899;color:#be185d">
+      🧠 التحليل والربط الذكي للأحداث <span id="smartAiTabBadge" class="badge" style="background:#db2777;color:#fff;margin-right:6px;font-size:11px">0</span>
     </button>
     <button class="btn btn-outline" id="tabBtnUsers" onclick="switchSuperTab('users')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
       👥 مستخدمو المركز والصلاحيات
@@ -174,25 +177,85 @@
         </div>
       </div>
 
-      <!-- شريط الفلاتر والبحث للتقارير -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;margin-bottom:20px;background:#f8fafc;padding:16px;border-radius:12px;border:1px solid var(--line)">
-        <div>
-          <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🏢 الفرع / المؤسسة</label>
-          <select id="filterSuperReportOrg" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSuperReports()">
-            <option value="">-- كافة الفروع المتاحة للمركز --</option>
-          </select>
+      <!-- شريط الفلاتر والبحث المتقدم للتقارير الشاملة -->
+      <div style="background:#f8fafc;padding:16px 18px;border-radius:12px;border:1px solid var(--line);margin-bottom:20px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px">
+          <!-- 1. الفرع / المؤسسة -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🏢 الفرع / المؤسسة</label>
+            <select id="filterSuperReportOrg" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="onSuperOrgFilterChange()">
+              <option value="">-- كافة الفروع المتاحة --</option>
+            </select>
+          </div>
+
+          <!-- 2. الوحدة التنظيمية / القسم -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🏛️ الوحدة / القسم</label>
+            <select id="filterSuperReportUnit" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSuperReports()">
+              <option value="">-- كافة الوحدات --</option>
+            </select>
+          </div>
+
+          <!-- 3. المستخدم / مدخل البيانات -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">👤 المستخدم / المحرر</label>
+            <select id="filterSuperReportUser" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSuperReports()">
+              <option value="">-- كافة المستخدمين --</option>
+            </select>
+          </div>
+
+          <!-- 4. تقييم التقرير -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">⭐ التقييم / الأهمية</label>
+            <select id="filterSuperReportRating" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSuperReports()">
+              <option value="">-- كافة التقييمات --</option>
+              <option value="عادي">عادي</option>
+              <option value="مهم">مهم</option>
+              <option value="سري">سري</option>
+              <option value="عاجل">عاجل</option>
+              <option value="طارئ">طارئ</option>
+              <option value="غير مقيم">غير مقيم</option>
+            </select>
+          </div>
+
+          <!-- 5. المرفقات -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📎 المرفقات</label>
+            <select id="filterSuperReportAttachment" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSuperReports()">
+              <option value="">-- الكل (بمرفقات وبدون) --</option>
+              <option value="1">📷 يحتوي على مرفقات</option>
+              <option value="0">📄 بدون مرفقات</option>
+            </select>
+          </div>
+
+          <!-- 6. من تاريخ -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📅 من تاريخ</label>
+            <input type="date" id="filterSuperReportFrom" style="width:100%" onchange="loadSuperReports()" />
+          </div>
+
+          <!-- 7. إلى تاريخ -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📅 إلى تاريخ</label>
+            <input type="date" id="filterSuperReportTo" style="width:100%" onchange="loadSuperReports()" />
+          </div>
+
+          <!-- 8. بحث سريع وزر تفريغ -->
+          <div style="grid-column: span 1;">
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🔍 بحث شامل</label>
+            <div style="display:flex;gap:6px">
+              <input type="text" id="filterSuperReportQuery" placeholder="رقم، موضوع، موظف، وجهة..." style="width:100%" />
+              <button class="btn btn-outline btn-sm" onclick="resetSuperReportFilters()" title="إعادة ضبط وتفريغ جميع الفلاتر" style="white-space:nowrap;font-weight:700;padding:8px 10px;background:#fff">
+                🔄 تفريغ
+              </button>
+            </div>
+          </div>
         </div>
-        <div>
-          <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📅 من تاريخ</label>
-          <input type="date" id="filterSuperReportFrom" style="width:100%" onchange="loadSuperReports()" />
-        </div>
-        <div>
-          <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📅 إلى تاريخ</label>
-          <input type="date" id="filterSuperReportTo" style="width:100%" onchange="loadSuperReports()" />
-        </div>
-        <div>
-          <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🔍 بحث سريع</label>
-          <input type="text" id="filterSuperReportQuery" placeholder="رقم التقرير، الموضوع، الموظف، الوجهة..." style="width:100%" />
+
+        <!-- شريط ملخص نتائج الفلترة السريعة -->
+        <div id="superReportFilterSummary" style="margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1;font-size:12.5px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>📊 عدد التقارير المطابقة: <b id="superReportsFilteredCount" style="color:var(--primary);font-size:14px">0</b> تقرير</div>
+          <div id="superReportsActiveFiltersTags" style="display:flex;gap:6px;flex-wrap:wrap"></div>
         </div>
       </div>
 
@@ -201,18 +264,19 @@
         <table style="width:100%;border-collapse:collapse;text-align:right">
           <thead>
             <tr style="background:var(--surface-soft);border-bottom:2px solid var(--line)">
-              <th style="padding:12px">الفرع</th>
+              <th style="padding:12px">الفرع / الوحدة</th>
               <th style="padding:12px">رقم التقرير</th>
               <th style="padding:12px">التاريخ والوقت</th>
               <th style="padding:12px">موضوع التقرير</th>
               <th style="padding:12px">الجهة المستهدفة / الموقع</th>
               <th style="padding:12px">مدخل البيانات</th>
+              <th style="padding:12px;text-align:center">التقييم</th>
               <th style="padding:12px;text-align:center">المرفقات</th>
               <th style="padding:12px;text-align:center">الإجراءات</th>
             </tr>
           </thead>
           <tbody id="superReportsTableBody">
-            <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">جارٍ تحميل التقارير...</td></tr>
+            <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">جارٍ تحميل التقارير...</td></tr>
           </tbody>
         </table>
       </div>
@@ -220,6 +284,96 @@
   </div>
 
   <!-- القسم 3: مستخدمو الإدارة المركزية والصلاحيات -->
+  
+  <!-- القسم 3 (المحرك الذكي): مركز التحليل والربط الذكي للأحداث والأنماط المشتركة -->
+  <div id="smartAiTabSection" style="display:none">
+    <div class="card" style="border:1.5px solid #fbcfe8;box-shadow:0 4px 20px rgba(219,39,119,0.06)">
+      <!-- ترويسة القسم الذكي -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:1.5px solid #fce7f3">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:24px">🧠</span>
+            <h3 style="font-size:19px;font-weight:900;color:#9d174d;margin:0">مركز التحليل والربط الذكي للأحداث والأنماط المشتركة</h3>
+            <span class="badge" style="background:#fdf2f8;color:#be185d;border:1px solid #fbcfe8;font-size:11.5px;font-weight:800">🔒 محلي ومستقل 100% (Air-Gapped)</span>
+          </div>
+          <p style="margin:6px 0 0;font-size:13px;color:#64748b;line-height:1.6">
+            محرك ذكي آمن يقرأ كافة التقارير المرفوعة محلياً داخل السيرفر، ويكتشف تلقائياً الخيوط المشتركة وتكرار رصد الأهداف والمواقع بين مختلف الفروع والمستخدمين مع استخراج التنبيهات الفورية.
+          </p>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="printAllCorrelationAnalysis()" title="طباعة تقرير استخباراتي تحليلي لكافة الأحداث المترابطة" style="font-weight:800;background:#fff8e1;border-color:#f59e0b;color:#92400e">
+            🖨️ طباعة التقرير التحليلي المجمع
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="loadSmartCorrelation()" style="background:#db2777;border-color:#db2777;font-weight:800;padding:8px 16px">
+            🔄 إعادة التحليل الفوري
+          </button>
+        </div>
+      </div>
+
+      <!-- بطاقات المؤشرات الذكية -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:22px">
+        <div style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:12px;padding:14px;text-align:center">
+          <div style="font-size:12px;font-weight:800;color:#9d174d">📄 إجمالي التقارير المفحوصة</div>
+          <div id="aiKpiTotalReports" style="font-size:26px;font-weight:900;color:#831843;margin:4px 0">0</div>
+          <div style="font-size:11px;color:#9d174d">تقرير خضع للتحليل الدلالي</div>
+        </div>
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px;text-align:center">
+          <div style="font-size:12px;font-weight:800;color:#1e40af">🔗 مجموعات الأحداث المترابطة</div>
+          <div id="aiKpiTotalClusters" style="font-size:26px;font-weight:900;color:#1d4ed8;margin:4px 0">0</div>
+          <div style="font-size:11px;color:#1e40af">حدث / نمط مشترك تم رصده</div>
+        </div>
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:14px;text-align:center">
+          <div style="font-size:12px;font-weight:800;color:#991b1b">⚡ أحداث عالية الأهمية والارتباط</div>
+          <div id="aiKpiHighPriority" style="font-size:26px;font-weight:900;color:#dc2626;margin:4px 0">0</div>
+          <div style="font-size:11px;color:#991b1b">تتطلب متابعة استخباراتية عاجلة</div>
+        </div>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px;text-align:center">
+          <div style="font-size:12px;font-weight:800;color:#166534">📊 التقارير المرتبطة بالأحداث</div>
+          <div id="aiKpiCorrelatedReports" style="font-size:26px;font-weight:900;color:#15803d;margin:4px 0">0</div>
+          <div style="font-size:11px;color:#166534">تقرير متداخل مع تقارير أخرى</div>
+        </div>
+      </div>
+
+      <!-- شريط إعدادات وفلاتر التحليل الذكي -->
+      <div style="background:#f8fafc;padding:14px 18px;border-radius:12px;border:1px solid var(--line);margin-bottom:24px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;align-items:flex-end">
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🎯 حساسية التطابق والربط</label>
+            <select id="smartAiSensitivity" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSmartCorrelation()">
+              <option value="65">دقيق جداً (تطابق قوي ومؤكد 65%+)</option>
+              <option value="45" selected>متقدم ومتوازن (موصى به 45%+)</option>
+              <option value="30">شامل وواسع (استكشاف الروابط البعيدة 30%+)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📅 النطاق الزمني للتحليل</label>
+            <select id="smartAiDays" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSmartCorrelation()">
+              <option value="7">آخر 7 أيام</option>
+              <option value="30" selected>آخر 30 يوماً</option>
+              <option value="90">آخر 3 أشهر</option>
+              <option value="0">كافة التقارير المسجلة في النظام</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🏢 حصر التحليل بفرع محدد</label>
+            <select id="smartAiOrgFilter" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSmartCorrelation()">
+              <option value="">-- كافة الفروع والمؤسسات --</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🔍 تصفية النتائج بكلمة</label>
+            <input type="text" id="smartAiKeywordFilter" placeholder="اسم، موقع، كلمة مفتاحية..." style="width:100%" oninput="filterRenderedClusters()" />
+          </div>
+        </div>
+      </div>
+
+      <!-- حاوية بطاقات المجموعات المترابطة (Event Clusters) -->
+      <div id="smartAiClustersContainer" style="display:flex;flex-direction:column;gap:18px">
+        <div style="text-align:center;padding:40px;color:var(--muted)">جارٍ تشغيل محرك التحليل والربط الذكي...</div>
+      </div>
+    </div>
+  </div>
+
   <div id="usersTabSection" style="display:none">
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line)">
@@ -286,12 +440,12 @@
           <span style="font-size:26px">💻</span>
           <div>
             <h3 style="margin:0;font-size:17px;font-weight:900;color:var(--text)">معلومات النظام وحقوق الملكية</h3>
-            <div style="font-size:12px;color:var(--muted)">تطوير وبرمجة شركة كودكس للبرمجيات</div>
+            <div style="font-size:12px;color:var(--muted)">منظومة إدارة ومتابعة التقارير الموحدة</div>
           </div>
         </div>
         <div style="background:#f8fafc;padding:14px;border-radius:10px;border:1px solid var(--line);font-size:13px;line-height:1.9">
-          <div>🏢 الشركة المطورة: <b>شركة كودكس للبرمجيات (Codex Software)</b></div>
-          <div>📞 خدمة العملاء والدعم الفني: <a href="tel:783745550" style="color:var(--primary);font-weight:800;text-decoration:none;direction:ltr;display:inline-block">783745550</a></div>
+          <div>🏢 النظام: <b>منظومة إدارة التقارير والمتابعة الميدانية الموحدة</b></div>
+          
           <div>🛡️ الإصدار: <b>منظومة الإدارة المركزية والتقارير الموحدة 3.0</b></div>
         </div>
       </div>
@@ -837,17 +991,10 @@
 
 
 
-<!-- فوتر الواجهة مع حقوق الملكية الرسمية لكودكس للبرمجيات ورقم الهاتف -->
-<footer style="text-align:center;padding:24px 20px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);margin-top:36px;background:#fff">
-  <div style="font-weight:800;color:var(--text);font-size:13px">
-    جميع الحقوق محفوظة لشركة كودكس للبرمجيات
-  </div>
-  <div style="margin-top:4px">
-    خدمة العملاء والدعم الفني: <a href="tel:783745550" style="color:var(--primary);text-decoration:none;font-weight:800;direction:ltr;display:inline-block">📞 783745550</a>
-  </div>
-  <div style="font-size:11px;color:#94a3b8;margin-top:4px">
-    منظومة الإدارة المركزية وإدارة الفروع والمؤسسات والتقارير الموحدة © 2026
-  </div>
+<!-- فوتر الواجهة الموحد -->
+<footer style="margin-top:40px;padding:24px 0 16px;border-top:1px solid var(--line);text-align:center;font-size:12.5px;color:var(--muted);line-height:1.8">
+  <div style="font-weight:700;color:var(--text)">منظومة إدارة ومتابعة التقارير الموحدة © 2026</div>
+  <div>نظام الربط والمتابعة المركزية للإدارة العامة</div>
 </footer>
 
 <script src="js/crypto-js.js?v=20260929-v5"></script>

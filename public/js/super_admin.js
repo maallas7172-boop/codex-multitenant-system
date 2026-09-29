@@ -92,7 +92,7 @@ let currentSuperUser = null;
 
 // التبديل بين كافة أقسام الإدارة المركزية
 function switchSuperTab(tab) {
-  const tabs = ['orgs', 'reports', 'users', 'settings', 'profile'];
+  const tabs = ['orgs', 'reports', 'smartAi', 'users', 'settings', 'profile'];
   tabs.forEach(t => {
     const sec = document.getElementById(t + 'TabSection');
     const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
@@ -109,6 +109,7 @@ function switchSuperTab(tab) {
   });
 
   if (tab === 'reports') loadSuperReports();
+  else if (tab === 'smartAi') loadSmartCorrelation();
   else if (tab === 'users') loadSuperUsers();
   else if (tab === 'settings') loadSuperSettings();
   else if (tab === 'profile') loadSuperProfile();
@@ -125,6 +126,13 @@ async function loadDashboard() {
       document.getElementById('kpiTotalEvents').textContent = data.totalEvents || 0;
 
       allOrgs = data.organizations || [];
+      // فحص سريع لتحديث عداد التنبيهات الذكية
+      api('/super/smart-correlation?minScore=45&days=30').then(r => {
+        if (r && r.clusters) {
+          const b = document.getElementById('smartAiTabBadge');
+          if (b) { b.textContent = r.clusters.length; b.style.display = r.clusters.length > 0 ? 'inline-block' : 'none'; }
+        }
+      }).catch(() => {});
       renderOrgsTable(allOrgs);
       populateSuperOrgDropdown(allOrgs);
 
@@ -230,26 +238,97 @@ async function toggleOrgHqAccess(orgId, currentAccess) {
   }
 }
 
-// تحميل التقارير الشاملة من الفروع
+// تحديث وتعبئة القوائم المنسدلة للفرز (الوحدات والمستخدمين)
+function updateSuperFilterDropdowns(filterOptions, selectedOrgId) {
+  if (!filterOptions) return;
+
+  // 1. قائمة الوحدات
+  const unitSelect = document.getElementById('filterSuperReportUnit');
+  if (unitSelect && filterOptions.units) {
+    const currentUnitVal = unitSelect.value;
+    unitSelect.innerHTML = '<option value="">-- كافة الوحدات --</option>';
+    
+    // إدراج الوحدات
+    const unitsList = filterOptions.units;
+    unitsList.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.unitId || u.unitName;
+      opt.textContent = selectedOrgId ? u.unitName : `${u.unitName} (${u.orgName})`;
+      unitSelect.appendChild(opt);
+    });
+    unitSelect.value = currentUnitVal;
+  }
+
+  // 2. قائمة المستخدمين / المحررين
+  const userSelect = document.getElementById('filterSuperReportUser');
+  if (userSelect && filterOptions.users) {
+    const currentUserVal = userSelect.value;
+    userSelect.innerHTML = '<option value="">-- كافة المستخدمين --</option>';
+    
+    const usersList = filterOptions.users;
+    usersList.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.enteredBy;
+      opt.textContent = selectedOrgId ? u.enteredBy : `${u.enteredBy} (${u.orgName})`;
+      userSelect.appendChild(opt);
+    });
+    userSelect.value = currentUserVal;
+  }
+}
+
+// حدث تغيير فرع المنظومة
+function onSuperOrgFilterChange() {
+  loadSuperReports();
+}
+
+// إعادة ضبط وتفريغ جميع فلاتر التقارير
+function resetSuperReportFilters() {
+  if (document.getElementById('filterSuperReportOrg')) document.getElementById('filterSuperReportOrg').value = '';
+  if (document.getElementById('filterSuperReportUnit')) document.getElementById('filterSuperReportUnit').value = '';
+  if (document.getElementById('filterSuperReportUser')) document.getElementById('filterSuperReportUser').value = '';
+  if (document.getElementById('filterSuperReportRating')) document.getElementById('filterSuperReportRating').value = '';
+  if (document.getElementById('filterSuperReportAttachment')) document.getElementById('filterSuperReportAttachment').value = '';
+  if (document.getElementById('filterSuperReportFrom')) document.getElementById('filterSuperReportFrom').value = '';
+  if (document.getElementById('filterSuperReportTo')) document.getElementById('filterSuperReportTo').value = '';
+  if (document.getElementById('filterSuperReportQuery')) document.getElementById('filterSuperReportQuery').value = '';
+  loadSuperReports();
+  toast('تم تفريغ جميع الفلاتر وعرض كافة التقارير ✔');
+}
+
+// تحميل التقارير الشاملة من الفروع مع الفرز المتقدم
 async function loadSuperReports() {
   const tbody = document.getElementById('superReportsTableBody');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">جارٍ جلب التقارير من الفروع...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">جارٍ جلب التقارير وتطبيق الفرز...</td></tr>';
 
   try {
     const orgId = document.getElementById('filterSuperReportOrg')?.value || '';
+    const unitId = document.getElementById('filterSuperReportUnit')?.value || '';
+    const user = document.getElementById('filterSuperReportUser')?.value || '';
+    const rating = document.getElementById('filterSuperReportRating')?.value || '';
+    const hasAttachments = document.getElementById('filterSuperReportAttachment')?.value || '';
     const from = document.getElementById('filterSuperReportFrom')?.value || '';
     const to = document.getElementById('filterSuperReportTo')?.value || '';
     const q = document.getElementById('filterSuperReportQuery')?.value.trim() || '';
 
     const params = new URLSearchParams();
     if (orgId) params.append('orgId', orgId);
+    if (unitId) params.append('unitId', unitId);
+    if (user) params.append('user', user);
+    if (rating) params.append('rating', rating);
+    if (hasAttachments !== '') params.append('hasAttachments', hasAttachments);
     if (from) params.append('from', from);
     if (to) params.append('to', to);
     if (q) params.append('q', q);
 
     const res = await api('/super/reports?' + params.toString());
+    
+    // تحديث خيارات القوائم المنسدلة بناءً على الاستجابة
+    if (res.filterOptions) {
+      updateSuperFilterDropdowns(res.filterOptions, orgId);
+    }
+
     allSuperReports = (res.reports || []).map(r => {
       if (r.isEncrypted && r.encryptedPayload && r.orgEncKey) {
         const branchKey = 'CODEX_E2EE_' + r.orgCode + '_' + r.orgEncKey;
@@ -261,8 +340,41 @@ async function loadSuperReports() {
     const countBadge = document.getElementById('superReportsTabCount');
     if (countBadge) countBadge.textContent = allSuperReports.length;
 
+    const filteredCountEl = document.getElementById('superReportsFilteredCount');
+    if (filteredCountEl) filteredCountEl.textContent = allSuperReports.length;
+
+    // تحديث شارات الفلاتر النشطة
+    const tagsContainer = document.getElementById('superReportsActiveFiltersTags');
+    if (tagsContainer) {
+      const activeTags = [];
+      if (orgId) {
+        const orgText = document.getElementById('filterSuperReportOrg')?.selectedOptions[0]?.text;
+        activeTags.push(`<span class="badge blue" style="font-size:11px">🏢 ${esc(orgText)}</span>`);
+      }
+      if (unitId) {
+        const unitText = document.getElementById('filterSuperReportUnit')?.selectedOptions[0]?.text;
+        activeTags.push(`<span class="badge purple" style="font-size:11px">🏛️ ${esc(unitText)}</span>`);
+      }
+      if (user) {
+        activeTags.push(`<span class="badge" style="background:#e0e7ff;color:#3730a3;font-size:11px">👤 ${esc(user)}</span>`);
+      }
+      if (rating) {
+        activeTags.push(`<span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px">⭐ ${esc(rating)}</span>`);
+      }
+      if (hasAttachments !== '') {
+        activeTags.push(`<span class="badge" style="background:#ecfdf5;color:#065f46;font-size:11px">📎 ${hasAttachments === '1' ? 'بمرفقات' : 'بدون مرفقات'}</span>`);
+      }
+      if (from || to) {
+        activeTags.push(`<span class="badge" style="background:#f1f5f9;color:#334155;font-size:11px">📅 ${esc(from || 'البداية')} إلى ${esc(to || 'الآن')}</span>`);
+      }
+      if (q) {
+        activeTags.push(`<span class="badge" style="background:#fee2e2;color:#991b1b;font-size:11px">🔍 "${esc(q)}"</span>`);
+      }
+      tagsContainer.innerHTML = activeTags.join(' ');
+    }
+
     if (allSuperReports.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">لا توجد تقارير مطابقة للفلاتر الحالية من الفروع المصرح للمركز بالوصول إليها.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--muted)">لا توجد تقارير مطابقة للفلاتر المحددة حالياً. حاول تعديل معايير الفرز أو تفريغ الفلاتر.</td></tr>';
       return;
     }
 
@@ -277,12 +389,25 @@ async function loadSuperReports() {
 
       const encBadge = r._wasEncrypted || r.isEncrypted ? ' <span style="color:#10b981;font-size:12px" title="تقرير مشفر E2EE">🔒</span>' : '';
 
+      // شارة التقييم
+      let ratingBadge = '<span style="color:#64748b;font-size:12px">عادي</span>';
+      const rat = (r.rating || '').trim();
+      if (rat === 'سري' || rat === 'خاص وسري') {
+        ratingBadge = '<span class="badge red" style="font-size:11px;font-weight:800">🔒 سري</span>';
+      } else if (rat === 'عاجل' || rat === 'طارئ') {
+        ratingBadge = '<span class="badge" style="background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:800">⚡ عاجل</span>';
+      } else if (rat === 'مهم' || rat === 'هام') {
+        ratingBadge = '<span class="badge yellow" style="font-size:11px;font-weight:800">⭐ مهم</span>';
+      } else if (rat) {
+        ratingBadge = `<span class="badge" style="background:#f1f5f9;color:#334155;font-size:11px">${esc(rat)}</span>`;
+      }
+
       return `
         <tr style="border-bottom:1px solid var(--line)">
           <td style="padding:12px">
             <span style="font-weight:800;color:#0284c7;font-size:13.5px">${esc(r.orgName || 'فرع')}</span>
             <div style="font-size:11px;color:#64748b;font-family:monospace">${esc(r.orgCode || '')}</div>
-            ${r.unitName ? `<span class="badge purple" style="font-size:10.5px;padding:2px 6px;margin-top:3px;display:inline-block">🏢 ${esc(r.unitName)}</span>` : ''}
+            ${r.unitName ? `<span class="badge purple" style="font-size:10.5px;padding:2px 6px;margin-top:3px;display:inline-block">🏛️ ${esc(r.unitName)}</span>` : ''}
           </td>
           <td style="padding:12px">
             <span style="font-family:monospace;font-weight:800;background:#f1f5f9;padding:2px 6px;border-radius:4px">${esc(r.reportNumber || '#' + r.id)}</span>${encBadge}
@@ -292,7 +417,7 @@ async function loadSuperReports() {
             <div style="font-size:11px;color:#64748b">${esc(r.reportTime || '')}</div>
           </td>
           <td style="padding:12px">
-            <div style="font-weight:800;color:var(--text);font-size:13.5px;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.subject || '')}">
+            <div style="font-weight:800;color:var(--text);font-size:13.5px;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.subject || '')}">
               ${esc(r.subject || 'بدون موضوع')}
             </div>
           </td>
@@ -301,6 +426,9 @@ async function loadSuperReports() {
           </td>
           <td style="padding:12px;font-size:13px">
             👤 <b>${esc(r.enteredBy || '—')}</b>
+          </td>
+          <td style="padding:12px;text-align:center">
+            ${ratingBadge}
           </td>
           <td style="padding:12px;text-align:center">
             ${imagesCount > 0 ? `<span class="badge blue" style="font-size:11px">📷 ${imagesCount} صور</span>` : '<span style="color:#94a3b8">—</span>'}
@@ -319,7 +447,7 @@ async function loadSuperReports() {
       `;
     }).join('');
   } catch(err) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:#dc2626">تعذر جلب التقارير: ${esc(err.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:#dc2626">تعذر جلب التقارير: ${esc(err.message)}</td></tr>`;
   }
 }
 
@@ -1682,4 +1810,392 @@ function downloadReportsJsonTemplate() {
   URL.revokeObjectURL(url);
   toast('تم تنزيل قالب JSON المهيكل بنجاح ✔');
   closeReportsTemplateModal();
+}
+
+let filterSuperReportQueryTimeout = null;
+document.addEventListener('DOMContentLoaded', () => {
+  const queryInput = document.getElementById('filterSuperReportQuery');
+  if (queryInput) {
+    queryInput.addEventListener('input', () => {
+      clearTimeout(filterSuperReportQueryTimeout);
+      filterSuperReportQueryTimeout = setTimeout(() => {
+        loadSuperReports();
+      }, 350);
+    });
+  }
+});
+
+
+/* =========================================================
+   محرك التحليل والربط الذكي للأحداث في واجهة الإدارة المركزية
+   ========================================================= */
+let allSmartClusters = [];
+
+async function loadSmartCorrelation() {
+  const container = document.getElementById('smartAiClustersContainer');
+  if (!container) return;
+
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:#db2777;font-weight:700"><span style="font-size:28px">🧠</span><br>جارٍ قراءة وفحص كافة التقارير وربط الأنماط والأهداف المشتركة...</div>';
+
+  try {
+    const minScore = document.getElementById('smartAiSensitivity')?.value || '45';
+    const days = document.getElementById('smartAiDays')?.value || '30';
+    const orgId = document.getElementById('smartAiOrgFilter')?.value || '';
+
+    // تعبئة قائمة الفروع في الفلتر إذا كانت فارغة
+    const orgSelect = document.getElementById('smartAiOrgFilter');
+    if (orgSelect && orgSelect.options.length <= 1 && allOrgs && allOrgs.length > 0) {
+      orgSelect.innerHTML = '<option value="">-- كافة الفروع والمؤسسات --</option>';
+      allOrgs.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.id;
+        opt.textContent = `${o.orgName} (${o.orgCode})`;
+        orgSelect.appendChild(opt);
+      });
+      orgSelect.value = orgId;
+    }
+
+    const params = new URLSearchParams();
+    params.append('minScore', minScore);
+    if (days) params.append('days', days);
+    if (orgId) params.append('orgId', orgId);
+
+    const res = await api('/super/smart-correlation?' + params.toString());
+    const summary = res.summary || {};
+    allSmartClusters = res.clusters || [];
+
+    // تحديث بطاقات المؤشرات
+    if (document.getElementById('aiKpiTotalReports')) document.getElementById('aiKpiTotalReports').textContent = summary.totalReportsAnalyzed || 0;
+    if (document.getElementById('aiKpiTotalClusters')) document.getElementById('aiKpiTotalClusters').textContent = summary.totalClustersFound || 0;
+    if (document.getElementById('aiKpiHighPriority')) document.getElementById('aiKpiHighPriority').textContent = summary.highPriorityClusters || 0;
+    if (document.getElementById('aiKpiCorrelatedReports')) document.getElementById('aiKpiCorrelatedReports').textContent = summary.totalCorrelatedReports || 0;
+
+    // تحديث شارة التنبيه في القائمة العلوية
+    const badge = document.getElementById('smartAiTabBadge');
+    if (badge) {
+      badge.textContent = allSmartClusters.length;
+      badge.style.display = allSmartClusters.length > 0 ? 'inline-block' : 'none';
+    }
+
+    renderSmartClusters(allSmartClusters);
+  } catch(err) {
+    container.innerHTML = `<div style="text-align:center;padding:30px;color:#dc2626">تعذر إكمال التحليل الذكي: ${esc(err.message)}</div>`;
+  }
+}
+
+function filterRenderedClusters() {
+  const q = (document.getElementById('smartAiKeywordFilter')?.value || '').trim().toLowerCase();
+  if (!q) {
+    renderSmartClusters(allSmartClusters);
+    return;
+  }
+  const filtered = allSmartClusters.filter(c => {
+    return c.title.toLowerCase().includes(q) ||
+           c.commonTarget.toLowerCase().includes(q) ||
+           c.commonLocation.toLowerCase().includes(q) ||
+           c.matchedKeywords.some(kw => kw.toLowerCase().includes(q)) ||
+           c.involvedOrgs.some(o => o.toLowerCase().includes(q)) ||
+           c.involvedUsers.some(u => u.toLowerCase().includes(q));
+  });
+  renderSmartClusters(filtered);
+}
+
+function renderSmartClusters(clusters) {
+  const container = document.getElementById('smartAiClustersContainer');
+  if (!container) return;
+
+  if (!clusters || clusters.length === 0) {
+    container.innerHTML = `
+      <div style="background:#fff;border:1.5px dashed #cbd5e1;border-radius:14px;padding:40px 20px;text-align:center">
+        <div style="font-size:40px;margin-bottom:10px">🟢</div>
+        <h4 style="font-size:16px;font-weight:800;color:#0f172a;margin:0 0 6px">لم يتم رصد أي تكرار أو أحداث متشابهة مشبوهة</h4>
+        <p style="font-size:13px;color:#64748b;margin:0">كافة التقارير المرفوعة في هذه الفترة مستقلة ولا يوجد تطابق أو ترابط في الأهداف أو المواقع بنسبة الحساسية المحددة.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = clusters.map((c, idx) => {
+    const isHigh = c.severity === 'high';
+    const isMed = c.severity === 'medium';
+    const borderCol = isHigh ? '#fca5a5' : (isMed ? '#fed7aa' : '#bfdbfe');
+    const bgHeader = isHigh ? '#fef2f2' : (isMed ? '#fffbeb' : '#f0f9ff');
+    const sevBadge = isHigh
+      ? '<span class="badge red" style="font-size:12px;font-weight:800;padding:4px 10px">🚨 تنبيه عالي الأهمية والترابط</span>'
+      : (isMed ? '<span class="badge yellow" style="font-size:12px;font-weight:800;padding:4px 10px">⚠️ ارتباط ملحوظ</span>' : '<span class="badge blue" style="font-size:12px;font-weight:800;padding:4px 10px">ℹ️ تقارب معلوماتي</span>');
+
+    const scoreColor = c.score >= 80 ? '#dc2626' : (c.score >= 60 ? '#d97706' : '#2563eb');
+
+    const keywordsBadges = (c.matchedKeywords || []).map(kw => `<span class="badge" style="background:#fff;border:1px solid #cbd5e1;color:#1e293b;font-size:11.5px;padding:2px 8px">🔑 ${esc(kw)}</span>`).join(' ');
+    const orgsBadges = (c.involvedOrgs || []).map(o => `<span class="badge blue" style="font-size:11px">🏢 ${esc(o)}</span>`).join(' ');
+    const usersBadges = (c.involvedUsers || []).map(u => `<span class="badge purple" style="font-size:11px">👤 ${esc(u)}</span>`).join(' ');
+    const reasonsList = (c.reasons || []).map(r => `<li style="margin-bottom:3px">${esc(r)}</li>`).join('');
+
+    const reportsRows = (c.reports || []).map(r => `
+      <tr style="border-bottom:1px solid #e2e8f0;background:#fff">
+        <td style="padding:10px 12px;font-weight:800;color:#0284c7">${esc(r.orgName || 'فرع')}</td>
+        <td style="padding:10px 12px;font-family:monospace;font-weight:800">#${esc(r.reportNumber || r.id)}</td>
+        <td style="padding:10px 12px;font-size:12px">${esc(r.reportDate || '')}</td>
+        <td style="padding:10px 12px;font-weight:700">${esc(r.subject || 'بدون موضوع')}</td>
+        <td style="padding:10px 12px">${esc(r.target || r.targetSector || '—')}</td>
+        <td style="padding:10px 12px">${esc(r.location || '—')}</td>
+        <td style="padding:10px 12px">👤 ${esc(r.enteredBy || '—')}</td>
+        <td style="padding:10px 12px;text-align:center">
+          <button class="btn btn-outline btn-xs" onclick="showSuperReportDetail('${esc(r.id)}')" style="padding:3px 8px;font-size:11px">👁️ تفاصيل</button>
+        </td>
+      </tr>
+    `).join('');
+
+    return `
+      <div style="background:#fff;border:1.5px solid ${borderCol};border-radius:14px;overflow:hidden;box-shadow:0 3px 12px rgba(0,0,0,0.04)">
+        <!-- رأس كرت الحدث المترابط -->
+        <div style="background:${bgHeader};padding:14px 18px;border-bottom:1px solid ${borderCol};display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:22px">${isHigh ? '🔥' : '🔗'}</span>
+            <div>
+              <div style="font-size:15.5px;font-weight:900;color:#0f172a">${esc(c.title)}</div>
+              <div style="font-size:12px;color:#64748b;margin-top:2px">
+                📅 الفترة: <b>${esc(c.firstDate || '—')}</b> إلى <b>${esc(c.lastDate || '—')}</b> • عدد التقارير المترابطة: <b>${c.reportCount}</b> تقارير
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="text-align:center;background:#fff;border:1.5px solid ${borderCol};padding:4px 12px;border-radius:10px">
+              <div style="font-size:10.5px;font-weight:800;color:#64748b">نسبة التطابق</div>
+              <div style="font-size:16px;font-weight:900;color:${scoreColor}">${c.score}%</div>
+            </div>
+            ${sevBadge}
+          </div>
+        </div>
+
+        <!-- ملخص الأدلة والرابط المشترك -->
+        <div style="padding:14px 18px;background:#fafcff;border-bottom:1px solid #e2e8f0;display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;font-size:12.5px">
+          <div>
+            <div style="font-weight:800;color:#1e3a8a;margin-bottom:4px">🎯 الجهة / الشخص المشترك:</div>
+            <div style="font-weight:700;color:#0f172a">${esc(c.commonTarget)}</div>
+          </div>
+          <div>
+            <div style="font-weight:800;color:#1e3a8a;margin-bottom:4px">📍 الموقع المشترك / المتقارب:</div>
+            <div style="font-weight:700;color:#0f172a">${esc(c.commonLocation)}</div>
+          </div>
+          <div>
+            <div style="font-weight:800;color:#1e3a8a;margin-bottom:4px">🏢 الفروع الراصدة (${c.involvedOrgs.length}):</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">${orgsBadges}</div>
+          </div>
+          <div>
+            <div style="font-weight:800;color:#1e3a8a;margin-bottom:4px">👥 المستخدمون الراصدون (${c.involvedUsers.length}):</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">${usersBadges}</div>
+          </div>
+        </div>
+
+        <!-- الكلمات المفتاحية وأسباب الربط -->
+        <div style="padding:12px 18px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:12px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:800;color:#64748b">الكلمات المشتركة:</span>
+            ${keywordsBadges}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline btn-xs" onclick="printClusterAnalysis('${c.clusterId}')" style="font-weight:800;padding:4px 12px;color:#1e3a8a;border-color:#1e3a8a">
+              🖨️ طباعة تقرير تحليلي لهذا الحدث
+            </button>
+            <button class="btn btn-outline btn-xs" onclick="toggleClusterAccordion('${c.clusterId}')" id="btnAcc_${c.clusterId}" style="font-weight:800;padding:4px 12px">
+              📂 استعراض التقارير (${c.reportCount}) ⬇️
+            </button>
+          </div>
+        </div>
+
+        <!-- جدول التقارير المترابطة (قابل للطي) -->
+        <div id="acc_${c.clusterId}" style="display:none;padding:12px 18px;background:#f8fafc">
+          <div style="margin-bottom:8px;font-size:12.5px;font-weight:800;color:#334155">
+            📋 التقارير الفردية المكونة لهذا الحدث المشترك:
+          </div>
+          <div class="tbl-wrap" style="background:#fff;border:1px solid #cbd5e1;border-radius:8px">
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;text-align:right">
+              <thead>
+                <tr style="background:#f1f5f9;border-bottom:1.5px solid #cbd5e1">
+                  <th style="padding:8px 12px">الفرع</th>
+                  <th style="padding:8px 12px">رقم التقرير</th>
+                  <th style="padding:8px 12px">التاريخ</th>
+                  <th style="padding:8px 12px">الموضوع</th>
+                  <th style="padding:8px 12px">الجهة المستهدفة</th>
+                  <th style="padding:8px 12px">الموقع</th>
+                  <th style="padding:8px 12px">مدخل التقرير</th>
+                  <th style="padding:8px 12px;text-align:center">معاينة</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reportsRows}
+              </tbody>
+            </table>
+          </div>
+          <div style="margin-top:10px;padding:8px 12px;background:#fff;border-radius:6px;border:1px solid #e2e8f0;font-size:11.5px;color:#64748b">
+            <b>تحليل أسباب الارتباط:</b>
+            <ul style="margin:4px 0 0 18px;padding:0">
+              ${reasonsList}
+            </ul>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleClusterAccordion(clusterId) {
+  const el = document.getElementById('acc_' + clusterId);
+  const btn = document.getElementById('btnAcc_' + clusterId);
+  if (!el) return;
+  const isHidden = el.style.display === 'none';
+  el.style.display = isHidden ? 'block' : 'none';
+  if (btn) {
+    btn.textContent = isHidden ? '📂 إخفاء التقارير ⬆️' : '📂 استعراض التقارير ⬇️';
+  }
+}
+
+// طباعة تقرير تحليلي استخباراتي لحدث مشترك محدد
+function printClusterAnalysis(clusterId) {
+  const c = allSmartClusters.find(x => x.clusterId === clusterId);
+  if (!c) return alert('لم يتم العثور على مجموعة الحدث المحددة.');
+
+  const printDateStr = new Date().toISOString().slice(0, 10);
+  const superName = (currentSuperUser && (currentSuperUser.fullName || currentSuperUser.userName)) || 'إدارة المركز الرئيسي';
+
+  const reportsHtml = (c.reports || []).map((r, i) => `
+    <div style="border:1px solid #cbd5e1;border-radius:8px;padding:12px;margin-bottom:14px;background:#fafcff">
+      <div style="display:flex;justify-content:space-between;border-bottom:1px solid #e2e8f0;padding-bottom:6px;margin-bottom:8px">
+        <b style="color:#1e3a8a">تقرير #${i + 1} — فرع: ${esc(r.orgName || 'فرع')} (${esc(r.orgCode || '')})</b>
+        <span style="font-family:monospace;font-weight:700">رقم التقرير: #${esc(r.reportNumber || r.id)} • ${esc(r.reportDate || '')}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">
+        <tr><th style="width:120px;text-align:right;background:#f1f5f9;padding:4px 8px;border:1px solid #cbd5e1">الموضوع</th><td style="padding:4px 8px;border:1px solid #cbd5e1">${esc(r.subject || '—')}</td><th style="width:100px;text-align:right;background:#f1f5f9;padding:4px 8px;border:1px solid #cbd5e1">مدخل البيانات</th><td style="padding:4px 8px;border:1px solid #cbd5e1">${esc(r.enteredBy || '—')}</td></tr>
+        <tr><th style="text-align:right;background:#f1f5f9;padding:4px 8px;border:1px solid #cbd5e1">الجهة المستهدفة</th><td style="padding:4px 8px;border:1px solid #cbd5e1">${esc(r.target || r.targetSector || '—')}</td><th style="text-align:right;background:#f1f5f9;padding:4px 8px;border:1px solid #cbd5e1">الموقع</th><td style="padding:4px 8px;border:1px solid #cbd5e1">${esc(r.location || '—')}</td></tr>
+      </table>
+      <div style="font-size:12px;background:#fff;padding:8px;border-radius:6px;border:1px solid #e2e8f0;white-space:pre-wrap;line-height:1.7">${esc(r.details || 'لا يوجد نص تفصيلي')}</div>
+    </div>
+  `).join('');
+
+  const reasonsHtml = (c.reasons || []).map(r => `<li>${esc(r)}</li>`).join('');
+
+  const w = window.open('', '_blank', 'width=900,height=800');
+  w.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>تقرير تحليلي استخباراتي — ${esc(c.title)}</title>
+<style>
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: #0f172a; margin: 0; padding: 24px; direction: rtl; font-size: 13px; line-height: 1.6; }
+  .header-box { border: 2px solid #0f172a; border-radius: 10px; padding: 18px 22px; margin-bottom: 22px; background: #f8fafc; text-align: center; }
+  .header-box h1 { margin: 0 0 6px; font-size: 20px; color: #1e3a8a; }
+  .tag-danger { display: inline-block; background: #fee2e2; color: #b91c1c; border: 1px solid #f87171; padding: 3px 12px; border-radius: 12px; font-weight: 800; font-size: 12px; margin-top: 6px; }
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; background: #f8fafc; }
+  .no-print { text-align: center; margin-bottom: 20px; background: #f1f5f9; padding: 10px; border-radius: 8px; }
+  @media print { body { padding: 0; } .no-print { display: none !important; } }
+</style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()" style="padding:10px 24px;background:#1e3a8a;color:#fff;border:none;border-radius:6px;font-weight:800;cursor:pointer;font-family:inherit">🖨️ طباعة التقرير التحليلي</button>
+    <button onclick="window.close()" style="padding:10px 18px;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;margin-right:8px;font-family:inherit">✕ إغلاق</button>
+  </div>
+  <div class="header-box">
+    <h1>📋 تقرير تحليلي استخباراتي — رصد نمط / حدث مترابط</h1>
+    <div style="font-size:14px;font-weight:800;color:#0f172a">${esc(c.title)}</div>
+    <div><span class="tag-danger">نسبة التطابق الدلالي: ${c.score}% • مستوى الأهمية: ${c.severity === 'high' ? 'عالي / حرج' : 'متوسط'}</span></div>
+  </div>
+  <div class="summary-grid">
+    <div><b>🎯 الهدف / الكيان المشترك:</b> ${esc(c.commonTarget)}</div>
+    <div><b>📍 الموقع المشترك:</b> ${esc(c.commonLocation)}</div>
+    <div><b>🏢 الفروع المشاركة (${c.involvedOrgs.length}):</b> ${esc(c.involvedOrgs.join(' ، '))}</div>
+    <div><b>👥 المستخدمون الراصدون (${c.involvedUsers.length}):</b> ${esc(c.involvedUsers.join(' ، '))}</div>
+    <div><b>📅 الفترة الزمنية:</b> من ${esc(c.firstDate || '—')} إلى ${esc(c.lastDate || '—')}</div>
+    <div><b>🔢 عدد التقارير المترابطة:</b> ${c.reportCount} تقارير</div>
+  </div>
+  <div style="background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:12px;margin-bottom:20px">
+    <b>🔍 مبررات وأسباب اكتشاف الربط الذكي:</b>
+    <ul style="margin:4px 0 0 20px">${reasonsHtml}</ul>
+  </div>
+  <h3 style="font-size:15px;color:#1e3a8a;border-bottom:2px solid #cbd5e1;padding-bottom:6px;margin-bottom:14px">📑 تفاصيل التقارير الفردية المترابطة بالحدث:</h3>
+  ${reportsHtml}
+  <div style="margin-top:30px;border-top:1px solid #cbd5e1;padding-top:10px;display:flex;justify-content:space-between;font-size:12px;color:#64748b">
+    <span>👤 معد التقرير التحليلي: <b>${esc(superName)}</b></span>
+    <span>📅 تاريخ الاستخراج: <b>${esc(printDateStr)}</b></span>
+  </div>
+</body>
+</html>`);
+  w.document.close();
+}
+
+// طباعة إجمالية لكافة الأحداث المترابطة
+function printAllCorrelationAnalysis() {
+  if (!allSmartClusters || allSmartClusters.length === 0) {
+    return alert('لا توجد مجموعات أحداث مترابطة لطباعتها.');
+  }
+
+  const printDateStr = new Date().toISOString().slice(0, 10);
+  const superName = (currentSuperUser && (currentSuperUser.fullName || currentSuperUser.userName)) || 'إدارة المركز الرئيسي';
+
+  const clustersHtml = allSmartClusters.map((c, idx) => `
+    <div style="border:1.5px solid #0f172a;border-radius:8px;padding:16px;margin-bottom:24px;background:#fff;page-break-inside:avoid">
+      <div style="display:flex;justify-content:space-between;border-bottom:2px solid #0f172a;padding-bottom:8px;margin-bottom:10px">
+        <b style="font-size:15px;color:#1e3a8a">نمط #${idx + 1}: ${esc(c.title)}</b>
+        <span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:6px;font-weight:800">تطابق: ${c.score}%</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.8;margin-bottom:10px">
+        <div><b>🎯 الهدف المشترك:</b> ${esc(c.commonTarget)} • <b>📍 الموقع:</b> ${esc(c.commonLocation)}</div>
+        <div><b>🏢 الفروع:</b> ${esc(c.involvedOrgs.join(' ، '))} • <b>👥 الراصدون:</b> ${esc(c.involvedUsers.join(' ، '))}</div>
+        <div><b>🔢 عدد التقارير المترابطة:</b> ${c.reportCount} تقارير • <b>📅 الفترة:</b> ${esc(c.firstDate || '—')} إلى ${esc(c.lastDate || '—')}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
+        <thead>
+          <tr style="background:#f1f5f9">
+            <th style="border:1px solid #cbd5e1;padding:6px">الفرع</th>
+            <th style="border:1px solid #cbd5e1;padding:6px">رقم التقرير</th>
+            <th style="border:1px solid #cbd5e1;padding:6px">التاريخ</th>
+            <th style="border:1px solid #cbd5e1;padding:6px">الموضوع</th>
+            <th style="border:1px solid #cbd5e1;padding:6px">مدخل البيانات</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(c.reports || []).map(r => `
+            <tr>
+              <td style="border:1px solid #cbd5e1;padding:6px">${esc(r.orgName || '')}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px">#${esc(r.reportNumber || r.id)}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px">${esc(r.reportDate || '')}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px">${esc(r.subject || '')}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px">${esc(r.enteredBy || '')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `).join('');
+
+  const w = window.open('', '_blank', 'width=950,height=850');
+  w.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>كشف الأحداث والأنماط المترابطة الشامل</title>
+<style>
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: #0f172a; margin: 0; padding: 24px; direction: rtl; font-size: 13px; }
+  .cover { border: 2px solid #0f172a; border-radius: 10px; padding: 18px 24px; margin-bottom: 24px; background: #f8fafc; text-align: center; }
+  @media print { body { padding: 0; } .no-print { display: none !important; } }
+</style>
+</head>
+<body>
+  <div class="no-print" style="text-align:center;margin-bottom:20px">
+    <button onclick="window.print()" style="padding:10px 24px;background:#1e3a8a;color:#fff;border:none;border-radius:6px;font-weight:800;cursor:pointer;font-family:inherit">🖨️ طباعة الكشف الشامل</button>
+    <button onclick="window.close()" style="padding:10px 18px;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;margin-right:8px;font-family:inherit">✕ إغلاق</button>
+  </div>
+  <div class="cover">
+    <h1 style="margin:0 0 6px;color:#1e3a8a;font-size:20px">📋 الكشف الشامل للتحليل والربط الذكي للأحداث والأنماط</h1>
+    <div style="font-size:13px;color:#64748b">إجمالي الأنماط المترابطة المكتشفة: <b>${allSmartClusters.length}</b> نمط • تاريخ الاستخراج: <b>${esc(printDateStr)}</b></div>
+  </div>
+  ${clustersHtml}
+  <div style="margin-top:24px;border-top:1px solid #cbd5e1;padding-top:10px;display:flex;justify-content:space-between;font-size:12px;color:#64748b">
+    <span>👤 الإدارة المركزية: <b>${esc(superName)}</b></span>
+    <span>📅 تاريخ الطباعة: <b>${esc(printDateStr)}</b></span>
+  </div>
+</body>
+</html>`);
+  w.document.close();
 }
