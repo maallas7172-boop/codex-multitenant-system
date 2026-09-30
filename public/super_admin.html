@@ -83,6 +83,9 @@
     <button class="btn btn-outline" id="tabBtnReports" onclick="switchSuperTab('reports')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
       📄 التقارير الشاملة من الفروع <span id="superReportsTabCount" class="badge" style="background:#2563eb;color:#fff;margin-right:6px;font-size:11px">0</span>
     </button>
+    <button class="btn btn-outline" id="tabBtnEvents" onclick="switchSuperTab('events')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
+      📋 المهام والتكليفات من الفروع <span id="superEventsTabCount" class="badge" style="background:#0d9488;color:#fff;margin-right:6px;font-size:11px">0</span>
+    </button>
         <button class="btn btn-outline" id="tabBtnSmartAi" onclick="switchSuperTab('smartAi')" style="font-weight:800;font-size:13.5px;padding:9px 18px;background:#fdf2f8;border-color:#ec4899;color:#be185d">
       🧠 التحليل والربط الذكي للأحداث <span id="smartAiTabBadge" class="badge" style="background:#db2777;color:#fff;margin-right:6px;font-size:11px">0</span>
     </button>
@@ -286,8 +289,132 @@
     </div>
   </div>
 
-  <!-- القسم 3: مستخدمو الإدارة المركزية والصلاحيات -->
-  
+  <!-- القسم: المهام والتكليفات الشاملة من الفروع (للاطلاع والإحصاءات المركزية فقط) -->
+  <div id="eventsTabSection" style="display:none">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line)">
+        <div>
+          <h3 style="font-size:18px;font-weight:900;color:var(--text);margin:0">📋 مركز مراقبة المهام والتكليفات من الفروع</h3>
+          <p style="margin:4px 0 0;font-size:13px;color:var(--muted)">استعراض ومتابعة إحصائيات المهام الصادرة من مدراء الفروع والوحدات وحالة وصولها وإنجازها (شاشة إشراف ورقابة إحصائية فقط).</p>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-outline btn-sm" onclick="exportSuperEventsCsv()" title="تصدير المهام المعروضة إلى ملف Excel (CSV)" style="font-weight:800;background:#f0fff4;border-color:#34d399;color:#065f46">
+            📥 تصدير Excel (CSV)
+          </button>
+          <button class="btn btn-outline btn-sm" onclick="loadSuperEvents()">🔄 تحديث المهام</button>
+        </div>
+      </div>
+
+      <!-- إحصائيات المهام الميدانية السريعة (KPIs) -->
+      <div class="kpis" style="margin-bottom:20px">
+        <div class="kpi blue">
+          <div class="lbl">📋 إجمالي المهام بالفروع</div>
+          <div class="val" id="superEvKpiTotal">0</div>
+          <div class="hint">كافة المهام والتكليفات المسجلة</div>
+        </div>
+        <div class="kpi yellow">
+          <div class="lbl">⏳ بانتظار استلام الموظف</div>
+          <div class="val" id="superEvKpiPending">0</div>
+          <div class="hint">مهام صادرة لم يتم فتحها واستلامها بعد</div>
+        </div>
+        <div class="kpi blue" style="border-right-color:#0284c7">
+          <div class="lbl">📬 مستلمة وقيد التنفيذ</div>
+          <div class="val" id="superEvKpiReceived" style="color:#0284c7">0</div>
+          <div class="hint">تم وصولها لهاتف الموظف واستلامها</div>
+        </div>
+        <div class="kpi green">
+          <div class="lbl">✅ تم إنجازها بنجاح</div>
+          <div class="val" id="superEvKpiCompleted">0</div>
+          <div class="hint">مهام منتهية ومكتملة من الميدان</div>
+        </div>
+      </div>
+
+      <!-- شريط الفلاتر والبحث للمهام الشاملة -->
+      <div style="background:#f8fafc;padding:16px 18px;border-radius:12px;border:1px solid var(--line);margin-bottom:20px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px">
+          <!-- 1. الفرع / المؤسسة -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🏢 الفرع / المؤسسة</label>
+            <select id="filterSuperEvOrg" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="onSuperEvOrgFilterChange()">
+              <option value="">-- كافة الفروع المتاحة --</option>
+            </select>
+          </div>
+
+          <!-- 2. الوحدة / القسم -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">🏛️ الوحدة / القسم</label>
+            <select id="filterSuperEvUnit" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSuperEvents()">
+              <option value="">-- كافة الوحدات --</option>
+            </select>
+          </div>
+
+          <!-- 3. حالة المهمة -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📌 حالة الاستلام والإنجاز</label>
+            <select id="filterSuperEvStatus" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);font-weight:700" onchange="loadSuperEvents()">
+              <option value="">-- كافة الحالات --</option>
+              <option value="pending">⏳ بانتظار استلام الموظف</option>
+              <option value="received">📬 مستلمة وقيد التنفيذ</option>
+              <option value="completed">✅ تم الإنجاز</option>
+            </select>
+          </div>
+
+          <!-- 4. من تاريخ -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📅 من تاريخ</label>
+            <input type="date" id="filterSuperEvFrom" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line)" onchange="loadSuperEvents()" />
+          </div>
+
+          <!-- 5. إلى تاريخ -->
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);display:block;margin-bottom:4px">📅 إلى تاريخ</label>
+            <input type="date" id="filterSuperEvTo" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line)" onchange="loadSuperEvents()" />
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-top:12px;align-items:center;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px">
+            <input type="text" id="filterSuperEvSearch" placeholder="🔍 بحث في عنوان المهمة، الملاحظات، الموقع، اسم المكلف..." style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid var(--line);font-size:13px" oninput="loadSuperEvents()" />
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="resetSuperEvFilters()">تفريغ الفلاتر</button>
+          <span id="superEvFilteredCountLabel" style="font-size:12px;color:var(--muted);font-weight:700">عدد النتائج: 0</span>
+        </div>
+      </div>
+
+      <!-- جدول استعراض المهام الشاملة -->
+      <div style="overflow-x:auto">
+        <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f1f5f9;text-align:right">
+              <th style="padding:10px 12px">الفرع والوحدة</th>
+              <th style="padding:10px 12px">عنوان المهمة ونوعها</th>
+              <th style="padding:10px 12px">المكلف بالمهمة</th>
+              <th style="padding:10px 12px">كُلفت بواسطة</th>
+              <th style="padding:10px 12px">تاريخ ووقت المهمة</th>
+              <th style="padding:10px 12px">الموقع / النطاق</th>
+              <th style="padding:10px 12px;text-align:center">حالة الوصول والاستلام</th>
+              <th style="padding:10px 12px;text-align:center">التفاصيل</th>
+            </tr>
+          </thead>
+          <tbody id="superEventsTableBody">
+            <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">جارٍ تحميل المهام...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة منبثقة لعرض تفاصيل المهمة للإدارة المركزية (قراءة فقط) -->
+  <div id="superEvModalBack" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:14px;max-width:620px;width:92%;padding:22px;box-shadow:0 10px 30px rgba(0,0,0,0.2);max-height:88vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:16px">
+        <h3 id="superEvModalTitle" style="margin:0;font-size:16px;font-weight:900;color:var(--text)">تفاصيل المهمة</h3>
+        <button class="btn btn-outline btn-sm" onclick="closeSuperEvModal()">✖ إغلاق</button>
+      </div>
+      <div id="superEvModalBody" style="font-size:13px;line-height:1.7"></div>
+    </div>
+  </div>
+
   <!-- القسم 3 (المحرك الذكي): مركز التحليل والربط الذكي للأحداث والأنماط المشتركة -->
   <div id="smartAiTabSection" style="display:none">
     <div class="card" style="border:1.5px solid #fbcfe8;box-shadow:0 4px 20px rgba(219,39,119,0.06)">

@@ -1631,6 +1631,121 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      /* ---- استعراض ومتابعة كافة المهام والتكليفات من الفروع للإدارة المركزية (للاطلاع والإحصاءات فقط) ---- */
+      if (method === 'GET' && p === '/api/super/events') {
+        const filterOrgId = (u.searchParams.get('orgId') || '').trim();
+        const filterUnitId = (u.searchParams.get('unitId') || '').trim();
+        const filterStatus = (u.searchParams.get('status') || '').trim();
+        const filterUser = (u.searchParams.get('user') || u.searchParams.get('assignedTo') || '').trim();
+        const fromDate = (u.searchParams.get('from') || '').trim();
+        const toDate = (u.searchParams.get('to') || '').trim();
+        const q = (u.searchParams.get('q') || '').trim().toLowerCase();
+
+        let sql = `
+          SELECT e.*, o.orgName, o.orgCode, un.unitName, un.unitCode
+          FROM events e
+          JOIN organizations o ON e.orgId = o.id
+          LEFT JOIN units un ON e.unitId = un.id
+          WHERE (o.allowHqAccess IS NULL OR o.allowHqAccess = 1)
+        `;
+        const params = [];
+
+        if (filterOrgId) {
+          sql += ' AND e.orgId = ?';
+          params.push(filterOrgId);
+        }
+        if (filterUnitId) {
+          sql += ' AND (e.unitId = ? OR un.id = ? OR un.unitName = ?)';
+          params.push(filterUnitId, filterUnitId, filterUnitId);
+        }
+        if (filterStatus) {
+          if (filterStatus === 'received') {
+            sql += " AND e.status IN ('received', 'in_progress')";
+          } else {
+            sql += ' AND e.status = ?';
+            params.push(filterStatus);
+          }
+        }
+        if (filterUser) {
+          sql += ' AND (e.assignedUserName = ? OR LOWER(e.assignedUserName) LIKE ? OR e.assignedUserId = ?)';
+          params.push(filterUser, '%' + filterUser.toLowerCase() + '%', filterUser);
+        }
+        if (fromDate) {
+          sql += ' AND e.eventDate >= ?';
+          params.push(fromDate);
+        }
+        if (toDate) {
+          sql += ' AND e.eventDate <= ?';
+          params.push(toDate);
+        }
+        if (q) {
+          sql += ' AND (LOWER(e.title) LIKE ? OR LOWER(e.notes) LIKE ? OR LOWER(e.location) LIKE ? OR LOWER(e.assignedUserName) LIKE ? OR LOWER(e.createdBy) LIKE ? OR LOWER(o.orgName) LIKE ? OR LOWER(o.orgCode) LIKE ? OR LOWER(un.unitName) LIKE ?)';
+          const term = '%' + q + '%';
+          params.push(term, term, term, term, term, term, term, term);
+        }
+
+        sql += ' ORDER BY e.eventDate DESC, e.createdDate DESC LIMIT 1000';
+        const rows = db.prepare(sql).all(...params);
+
+        // إحصائيات المهام (KPIs) للفروع المتاحة
+        let kpiSql = `
+          SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN e.status='pending' THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN e.status IN ('received', 'in_progress') THEN 1 ELSE 0 END) as received,
+            SUM(CASE WHEN e.status='completed' THEN 1 ELSE 0 END) as completed
+          FROM events e
+          JOIN organizations o ON e.orgId = o.id
+          WHERE (o.allowHqAccess IS NULL OR o.allowHqAccess = 1)
+        `;
+        const kpiParams = [];
+        if (filterOrgId) {
+          kpiSql += ' AND e.orgId = ?';
+          kpiParams.push(filterOrgId);
+        }
+        let kpis = { total: 0, pending: 0, received: 0, completed: 0 };
+        try {
+          const resKpis = db.prepare(kpiSql).get(...kpiParams);
+          if (resKpis) {
+            kpis = {
+              total: resKpis.total || 0,
+              pending: resKpis.pending || 0,
+              received: resKpis.received || 0,
+              completed: resKpis.completed || 0
+            };
+          }
+        } catch(e){}
+
+        // جلب خيارات الفرز للوحدات المتاحة
+        let filterUnitsSql = `
+          SELECT DISTINCT un.id as unitId, un.unitName, un.unitCode, o.id as orgId, o.orgName
+          FROM units un
+          JOIN organizations o ON un.orgId = o.id
+          WHERE (o.allowHqAccess IS NULL OR o.allowHqAccess = 1)
+        `;
+        const filterUnitsParams = [];
+        if (filterOrgId) {
+          filterUnitsSql += ' AND o.id = ?';
+          filterUnitsParams.push(filterOrgId);
+        }
+        filterUnitsSql += ' ORDER BY un.unitName ASC';
+        let availableUnits = [];
+        try {
+          availableUnits = db.prepare(filterUnitsSql).all(...filterUnitsParams);
+        } catch(e) { availableUnits = []; }
+
+        send(res, 200, {
+          ok: true,
+          count: rows.length,
+          events: rows,
+          kpis,
+          filterOptions: {
+            units: availableUnits
+          }
+        });
+        return;
+      }
+
       const orgMatch = p.match(/^\/api\/super\/organizations\/([^/]+)$/);
       if (orgMatch) {
         const targetOrgId = orgMatch[1];
@@ -1977,11 +2092,11 @@ const server = http.createServer(async (req, res) => {
       for (const ev of events) {
         if (!ev.id) continue;
         db.prepare(`INSERT OR REPLACE INTO events(
-          id, orgId, title, eventType, notes, eventDate, eventTime, location,
+          id, orgId, unitId, title, eventType, notes, eventDate, eventTime, location,
           assignedUserId, assignedUserName, createdBy, createdById, createdDate, status, receivedAt, completedAt, feedbackNotes, isArchived
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
-            ev.id, orgId, String(ev.title || ''), String(ev.eventType || 'مهمة'), String(ev.notes || ''),
+            ev.id, orgId, ev.unitId || null, String(ev.title || ''), String(ev.eventType || 'مهمة'), String(ev.notes || ''),
             String(ev.eventDate || ''), String(ev.eventTime || ''), String(ev.location || ''),
             ev.assignedUserId || null, String(ev.assignedUserName || ''), String(ev.createdBy || ''),
             String(ev.createdById || ''), String(ev.createdDate || nowIso()), String(ev.status || 'pending'),
@@ -2663,6 +2778,14 @@ const server = http.createServer(async (req, res) => {
             if (!isOrgAdmin(me) && !isSuperAdmin(me) && (!aId || aId === 'all' || aId === '0' || aName === 'الكل' || aName === 'جميع الموظفين' || aName === 'all')) {
               return true;
             }
+            // إذا كان التكليف موجهاً لكافة مدراء الوحدات فقط
+            if ((isUnitAdmin(me) || me.isUnitManager || me.role === 'UnitAdmin') && (aId === 'all_managers' || aId === 'unit_managers' || aName.includes('مدراء الوحدات'))) {
+              return true;
+            }
+            // إذا كان التكليف موجهاً لكافة أفراد وحدة معينة
+            if (me.unitId && e.unitId && String(me.unitId).toLowerCase() === String(e.unitId).toLowerCase() && (aId === 'unit_all' || aId.startsWith('unit_all') || aName.includes('أفراد الوحدة'))) {
+              return true;
+            }
             return false;
           });
         }
@@ -2677,10 +2800,16 @@ const server = http.createServer(async (req, res) => {
         const t = nowIso();
         const assignedUserId = b.assignedUserId ? String(b.assignedUserId) : me.id;
         let assignedUser = null;
-        if (assignedUserId && assignedUserId !== 'all') {
+        if (assignedUserId && assignedUserId !== 'all' && assignedUserId !== 'all_managers' && assignedUserId !== 'unit_managers' && !assignedUserId.startsWith('unit_all')) {
           try { assignedUser = db.prepare('SELECT * FROM users WHERE orgId=? AND id=?').get(orgId, assignedUserId); } catch(e){}
         }
-        const assignedUserName = assignedUser ? assignedUser.fullName : (assignedUserId === 'all' ? 'جميع الموظفين' : (b.assignedUserName || me.fullName));
+        let assignedUserName = b.assignedUserName || '';
+        if (!assignedUserName) {
+          if (assignedUserId === 'all') assignedUserName = 'جميع الموظفين (عام)';
+          else if (assignedUserId === 'all_managers' || assignedUserId === 'unit_managers') assignedUserName = 'كافة مدراء الوحدات';
+          else if (assignedUserId.startsWith('unit_all')) assignedUserName = 'كافة أفراد الوحدة';
+          else assignedUserName = assignedUser ? assignedUser.fullName : me.fullName;
+        }
         const assignedUnitId = b.unitId || (assignedUser ? assignedUser.unitId : null) || (isUnitAdmin(me) ? me.unitId : null);
 
         db.prepare(`INSERT INTO events(

@@ -124,7 +124,7 @@ let currentSuperUser = null;
 
 // التبديل بين كافة أقسام الإدارة المركزية
 function switchSuperTab(tab) {
-  const tabs = ['orgs', 'reports', 'smartAi', 'users', 'settings', 'profile'];
+  const tabs = ['orgs', 'reports', 'events', 'smartAi', 'users', 'settings', 'profile'];
   tabs.forEach(t => {
     const sec = document.getElementById(t + 'TabSection');
     const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
@@ -141,6 +141,7 @@ function switchSuperTab(tab) {
   });
 
   if (tab === 'reports') loadSuperReports();
+  else if (tab === 'events') loadSuperEvents();
   else if (tab === 'smartAi') loadSmartCorrelation();
   else if (tab === 'users') loadSuperUsers();
   else if (tab === 'settings') loadSuperSettings();
@@ -168,10 +169,14 @@ async function loadDashboard() {
       renderOrgsTable(allOrgs);
       populateSuperOrgDropdown(allOrgs);
 
-      // تحديث عداد التقارير المتاحة للمركز
+      // تحديث عداد التقارير والمهام المتاحة للمركز
       const repCountBadge = document.getElementById('superReportsTabCount');
       if (repCountBadge) {
         repCountBadge.textContent = data.totalReports || 0;
+      }
+      const evCountBadge = document.getElementById('superEventsTabCount');
+      if (evCountBadge) {
+        evCountBadge.textContent = data.totalEvents || 0;
       }
     }
   } catch(e) {
@@ -181,22 +186,32 @@ async function loadDashboard() {
 
 function populateSuperOrgDropdown(orgs) {
   const select = document.getElementById('filterSuperReportOrg');
-  if (!select) return;
+  const evSelect = document.getElementById('filterSuperEvOrg');
+  const allowed = (orgs || []).filter(org => org.allowHqAccess === undefined || org.allowHqAccess === null || Number(org.allowHqAccess) === 1);
 
-  const currentVal = select.value;
-  select.innerHTML = '<option value="">-- كافة الفروع المتاحة للمركز --</option>';
-
-  (orgs || []).forEach(org => {
-    // إدراج الفروع التي يتاح وصول المركز لها
-    if (org.allowHqAccess === undefined || org.allowHqAccess === null || Number(org.allowHqAccess) === 1) {
+  if (select) {
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">-- كافة الفروع المتاحة للمركز --</option>';
+    allowed.forEach(org => {
       const opt = document.createElement('option');
       opt.value = org.id;
       opt.textContent = `${org.orgName} (${org.orgCode})`;
       select.appendChild(opt);
-    }
-  });
+    });
+    select.value = currentVal;
+  }
 
-  select.value = currentVal;
+  if (evSelect) {
+    const currentVal = evSelect.value;
+    evSelect.innerHTML = '<option value="">-- كافة الفروع المتاحة للمركز --</option>';
+    allowed.forEach(org => {
+      const opt = document.createElement('option');
+      opt.value = org.id;
+      opt.textContent = `${org.orgName} (${org.orgCode})`;
+      evSelect.appendChild(opt);
+    });
+    evSelect.value = currentVal;
+  }
 }
 
 function renderOrgsTable(orgs) {
@@ -2240,4 +2255,226 @@ function printAllCorrelationAnalysis() {
 </body>
 </html>`);
   w.document.close();
+}
+
+/* =========================================================
+   قسم استعراض ومراقبة المهام والتكليفات الشاملة من الفروع (للإدارة المركزية)
+   - قراءة وإحصاءات فقط دون إرسال أو تكليف
+   ========================================================= */
+let currentSuperEvents = [];
+
+async function loadSuperEvents() {
+  const orgSelect = document.getElementById('filterSuperEvOrg');
+  const unitSelect = document.getElementById('filterSuperEvUnit');
+  const statusSelect = document.getElementById('filterSuperEvStatus');
+  const fromInput = document.getElementById('filterSuperEvFrom');
+  const toInput = document.getElementById('filterSuperEvTo');
+  const searchInput = document.getElementById('filterSuperEvSearch');
+
+  const params = new URLSearchParams();
+  if (orgSelect && orgSelect.value) params.set('orgId', orgSelect.value);
+  if (unitSelect && unitSelect.value) params.set('unitId', unitSelect.value);
+  if (statusSelect && statusSelect.value) params.set('status', statusSelect.value);
+  if (fromInput && fromInput.value) params.set('from', fromInput.value);
+  if (toInput && toInput.value) params.set('to', toInput.value);
+  if (searchInput && searchInput.value.trim()) params.set('q', searchInput.value.trim());
+
+  try {
+    const res = await api('/super/events?' + params.toString());
+    currentSuperEvents = (res && res.events) || [];
+
+    // تحديث الإحصائيات (KPIs)
+    const kpis = res.kpis || {};
+    if (document.getElementById('superEvKpiTotal')) document.getElementById('superEvKpiTotal').textContent = kpis.total || 0;
+    if (document.getElementById('superEvKpiPending')) document.getElementById('superEvKpiPending').textContent = kpis.pending || 0;
+    if (document.getElementById('superEvKpiReceived')) document.getElementById('superEvKpiReceived').textContent = kpis.received || 0;
+    if (document.getElementById('superEvKpiCompleted')) document.getElementById('superEvKpiCompleted').textContent = kpis.completed || 0;
+    if (document.getElementById('superEventsTabCount')) document.getElementById('superEventsTabCount').textContent = kpis.total || 0;
+    if (document.getElementById('superEvFilteredCountLabel')) document.getElementById('superEvFilteredCountLabel').textContent = `عدد النتائج المعروضة: ${currentSuperEvents.length}`;
+
+    // تحديث خيارات الوحدات في القائمة المنسدلة
+    if (unitSelect && res.filterOptions && res.filterOptions.units) {
+      const currentUnit = unitSelect.value;
+      unitSelect.innerHTML = '<option value="">-- كافة الوحدات --</option>';
+      res.filterOptions.units.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.unitId;
+        opt.textContent = `${u.unitName} (${u.orgName})`;
+        unitSelect.appendChild(opt);
+      });
+      unitSelect.value = currentUnit;
+    }
+
+    renderSuperEventsTable(currentSuperEvents);
+  } catch (err) {
+    toast('تعذر جلب مهام الفروع: ' + err.message, 'err');
+    const tbody = document.getElementById('superEventsTableBody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--danger)">خطأ: ${esc(err.message)}</td></tr>`;
+  }
+}
+
+function renderSuperEventsTable(list) {
+  const tbody = document.getElementById('superEventsTableBody');
+  if (!tbody) return;
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">لا توجد مهام مسجلة تطابق معايير البحث والفرز الحالية.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(e => {
+    let statusBadge = '';
+    if (e.status === 'completed') {
+      statusBadge = `<span style="background:#ecfdf5;color:#047857;padding:3px 8px;border-radius:6px;font-weight:800;font-size:12px;display:inline-block">✅ تم الإنجاز ${e.completedAt ? '<small style="display:block;font-size:10px">(' + fmtDateTime(e.completedAt) + ')</small>' : ''}</span>`;
+    } else if (e.status === 'received' || e.status === 'in_progress') {
+      statusBadge = `<span style="background:#e0f2fe;color:#0369a1;padding:3px 8px;border-radius:6px;font-weight:800;font-size:12px;display:inline-block">📬 استلمها الموظف ${e.receivedAt ? '<small style="display:block;font-size:10px">(' + fmtDateTime(e.receivedAt) + ')</small>' : ''}</span>`;
+    } else {
+      statusBadge = `<span style="background:#fffbeb;color:#b45309;padding:3px 8px;border-radius:6px;font-weight:800;font-size:12px;display:inline-block">⏳ بانتظار استلام الموظف</span>`;
+    }
+
+    const typeBadge = `<span style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700">📌 ${esc(e.eventType || 'مهمة')}</span>`;
+
+    return `
+      <tr style="border-bottom:1px solid var(--line)">
+        <td style="padding:10px 12px">
+          <div style="font-weight:800;color:var(--text);font-size:13px">${esc(e.orgName || 'الفرع الرئيسي')}</div>
+          ${e.unitName ? `<span style="background:#f3e8ff;color:#7e22ce;padding:1px 6px;border-radius:4px;font-size:10.5px;font-weight:800;display:inline-block;margin-top:2px">🏛️ ${esc(e.unitName)}</span>` : '<span style="color:#94a3b8;font-size:11px">عام على الفرع</span>'}
+        </td>
+        <td style="padding:10px 12px">
+          <div style="font-weight:800;color:var(--text);font-size:13.5px">${esc(e.title)}</div>
+          <div style="margin-top:3px">${typeBadge}</div>
+        </td>
+        <td style="padding:10px 12px">
+          <div style="font-weight:700;color:var(--text)">👤 ${esc(e.assignedUserName || 'غير محدد')}</div>
+        </td>
+        <td style="padding:10px 12px">
+          <div>${esc(e.createdBy || 'المدير')}</div>
+          <div style="font-size:11px;color:var(--muted)">${fmtDateTime(e.createdDate)}</div>
+        </td>
+        <td style="padding:10px 12px">
+          <div style="font-weight:700">📅 ${esc(e.eventDate || '—')}</div>
+          <div style="font-size:11px;color:var(--muted)">⏰ ${esc(e.eventTime || '—')}</div>
+        </td>
+        <td style="padding:10px 12px">
+          <div style="font-size:12px">${esc(e.location || '—')}</div>
+        </td>
+        <td style="padding:10px 12px;text-align:center">
+          ${statusBadge}
+        </td>
+        <td style="padding:10px 12px;text-align:center">
+          <button class="btn btn-outline btn-sm" onclick="openSuperEventDetail('${e.id}')" style="font-size:11px;padding:3px 8px;font-weight:800" title="استعراض كامل التفاصيل">👁️ التفاصيل</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openSuperEventDetail(id) {
+  const e = currentSuperEvents.find(x => x.id === id);
+  if (!e) return;
+
+  const modal = document.getElementById('superEvModalBack');
+  if (!modal) return;
+
+  document.getElementById('superEvModalTitle').textContent = `📋 تفاصيل المهمة: ${e.title}`;
+
+  let statusText = '';
+  if (e.status === 'completed') statusText = `✅ تم الإنجاز في: ${fmtDateTime(e.completedAt)}`;
+  else if (e.status === 'received' || e.status === 'in_progress') statusText = `📬 استلمها الموظف في: ${fmtDateTime(e.receivedAt)}`;
+  else statusText = '⏳ بانتظار استلام الموظف';
+
+  document.getElementById('superEvModalBody').innerHTML = `
+    <div style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div><b style="font-size:15px;color:var(--text)">${esc(e.title)}</b></div>
+        <div style="font-weight:800">${statusText}</div>
+      </div>
+    </div>
+
+    <table class="detail-table" style="width:100%;border-collapse:collapse;margin-bottom:14px">
+      <tr><th style="padding:6px;width:140px;text-align:right;color:var(--muted)">الفرع / المؤسسة:</th><td style="padding:6px"><b>${esc(e.orgName || 'الفرع الرئيسي')}</b> (${esc(e.orgCode || '')})</td></tr>
+      <tr><th style="padding:6px;text-align:right;color:var(--muted)">الوحدة الفرعية:</th><td style="padding:6px">${e.unitName ? '🏛️ ' + esc(e.unitName) : 'عام على الفرع'}</td></tr>
+      <tr><th style="padding:6px;text-align:right;color:var(--muted)">المكلف بالمهمة:</th><td style="padding:6px">👤 <b>${esc(e.assignedUserName || 'غير محدد')}</b></td></tr>
+      <tr><th style="padding:6px;text-align:right;color:var(--muted)">كُلفت بواسطة:</th><td style="padding:6px">${esc(e.createdBy || 'المدير')} — 📅 ${fmtDateTime(e.createdDate)}</td></tr>
+      <tr><th style="padding:6px;text-align:right;color:var(--muted)">تاريخ ووقت الحدث:</th><td style="padding:6px">📅 ${esc(e.eventDate || '—')} &nbsp; ⏰ ${esc(e.eventTime || '—')}</td></tr>
+      <tr><th style="padding:6px;text-align:right;color:var(--muted)">الموقع / المكان:</th><td style="padding:6px">📍 ${esc(e.location || '—')}</td></tr>
+    </table>
+
+    <div style="margin-bottom:12px">
+      <div style="font-weight:800;margin-bottom:4px;color:var(--text)">📝 تفاصيل وملاحظات التكليف:</div>
+      <div style="background:#f1f5f9;border-radius:8px;padding:10px;white-space:pre-wrap;font-size:12.5px">${esc(e.notes || 'لا توجد ملاحظات تفصيلية')}</div>
+    </div>
+
+    ${e.feedbackNotes ? `
+      <div>
+        <div style="font-weight:800;margin-bottom:4px;color:#0284c7">💬 ملاحظات والتغذية الراجعة من الموظف:</div>
+        <div style="background:#e0f2fe;border:1px solid #bae6fd;border-radius:8px;padding:10px;white-space:pre-wrap;font-size:12.5px;color:#0369a1">${esc(e.feedbackNotes)}</div>
+      </div>
+    ` : ''}
+  `;
+
+  modal.style.display = 'flex';
+}
+
+function closeSuperEvModal() {
+  const modal = document.getElementById('superEvModalBack');
+  if (modal) modal.style.display = 'none';
+}
+
+function onSuperEvOrgFilterChange() {
+  loadSuperEvents();
+}
+
+function resetSuperEvFilters() {
+  const org = document.getElementById('filterSuperEvOrg');
+  const unit = document.getElementById('filterSuperEvUnit');
+  const status = document.getElementById('filterSuperEvStatus');
+  const from = document.getElementById('filterSuperEvFrom');
+  const to = document.getElementById('filterSuperEvTo');
+  const q = document.getElementById('filterSuperEvSearch');
+
+  if (org) org.value = '';
+  if (unit) unit.value = '';
+  if (status) status.value = '';
+  if (from) from.value = '';
+  if (to) to.value = '';
+  if (q) q.value = '';
+
+  loadSuperEvents();
+}
+
+function exportSuperEventsCsv() {
+  if (!currentSuperEvents || !currentSuperEvents.length) {
+    alert('لا توجد مهام لتصديرها.');
+    return;
+  }
+
+  const headers = ['الفرع', 'رمز الفرع', 'الوحدة', 'عنوان المهمة', 'نوع المهمة', 'المكلف بالمهمة', 'كُلفت بواسطة', 'تاريخ المهمة', 'وقت المهمة', 'الموقع', 'حالة المهمة', 'تاريخ الاستلام', 'تاريخ الإنجاز', 'ملاحظات', 'تغذية راجعة'];
+  const rows = currentSuperEvents.map(e => [
+    e.orgName || '',
+    e.orgCode || '',
+    e.unitName || '',
+    e.title || '',
+    e.eventType || '',
+    e.assignedUserName || '',
+    e.createdBy || '',
+    e.eventDate || '',
+    e.eventTime || '',
+    e.location || '',
+    e.status === 'completed' ? 'تم الإنجاز' : (e.status === 'received' ? 'استلمها الموظف' : 'بانتظار الاستلام'),
+    e.receivedAt || '',
+    e.completedAt || '',
+    (e.notes || '').replace(/"/g, '""'),
+    (e.feedbackNotes || '').replace(/"/g, '""')
+  ]);
+
+  const csvContent = '\uFEFF' + [headers, ...rows].map(r => r.map(c => `"${String(c || '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `SuperAdmin_Tasks_Export_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }

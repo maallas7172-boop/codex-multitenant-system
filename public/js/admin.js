@@ -1255,10 +1255,19 @@
         seen.add(key);
         return true;
       });
-      const opts = activeUsers.map(usr => `<option value="${usr.id}">${esc(usr.fullName)} (${esc(usr.userName)})</option>`).join('');
       if ($('rUser')) $('rUser').innerHTML = (isUnitMgr ? '<option value="">كل موظفي الوحدة</option>' : '<option value="">كل المستخدمين</option>') + opts;
-      if ($('efAssignedUser')) $('efAssignedUser').innerHTML = '<option value="">-- اختر الموظف المكلف --</option>' + (!isUnitMgr ? '<option value="all">📢 تكليف عام (لجميع الموظفين)</option>' : '') + opts;
       if ($('evFilterUser')) $('evFilterUser').innerHTML = (isUnitMgr ? '<option value="">كل موظفي الوحدة</option>' : '<option value="">كل الموظفين</option>') + opts;
+      if ($('efAssignedUser')) {
+        let specialOpts = '<option value="">-- اختر الموظف المكلف --</option>';
+        if (!isUnitMgr) {
+          specialOpts += '<option value="all">📢 تكليف عام (لجميع موظفي الفرع)</option>';
+          specialOpts += '<option value="all_managers">🏢 تكليف لكافة مدراء الوحدات فقط</option>';
+          specialOpts += '<option value="unit_all">📂 تكليف لكافة موظفي الوحدة المحددة</option>';
+        } else {
+          specialOpts += '<option value="unit_all">📂 تكليف لكافة موظفي هذه الوحدة</option>';
+        }
+        $('efAssignedUser').innerHTML = specialOpts + opts;
+      }
       await loadUnitsSelects();
     } catch (err) { toast(err.message, 'err'); }
   }
