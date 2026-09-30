@@ -109,17 +109,12 @@ async function currentMe() {
     throw new Error('لا توجد جلسة نشطة');
   }
 
-  if (!navigator.onLine && cached && cached.user) {
-    __me = cached;
-    return __me;
-  }
-
   try {
     const d = await api('/me');
     setMe(d);
     return __me;
   } catch (err) {
-    if (err && (err.message.includes('انتهت الجلسة') || err.message.includes('401') || err.message.includes('غير مصرح'))) {
+    if (err && (err.message.includes('انتهت الجلسة') || err.message.includes('401') || err.message.includes('غير مصرح') || err.message.includes('غير مسجل'))) {
       clearSession();
       throw err;
     }

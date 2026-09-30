@@ -1,14 +1,13 @@
 /* =========================================================
    service-worker.js — دعم التثبيت والعمل أوفلاين للمنظومة المتعددة (PWA)
    ========================================================= */
-const CACHE_NAME = 'reports-multitenant-v5.0';
+const CACHE_NAME = 'reports-multitenant-v7.3';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './login.html',
   './entry.html',
   './admin.html',
-  './super_admin.html',
   './manifest.json',
   './css/styles.css',
   './js/config.js',
@@ -16,7 +15,6 @@ const STATIC_ASSETS = [
   './js/login.js',
   './js/entry.js',
   './js/admin.js',
-  './js/super_admin.js',
   './js/report-header.js',
   './js/qrcode.min.js',
   './js/crypto-js.js',
@@ -52,8 +50,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // إذا كان الطلب إلى API، يتم إرساله للشبكة مباشرة دون اعتراض
-  if (url.pathname.startsWith('/api')) {
+  // إذا كان الطلب إلى API أو لوحة الإدارة المركزية أو صادر عنها، يتم إرساله للشبكة مباشرة دون أي اعتراض كاش
+  const isSuperAdminOrigin = (event.request.referrer && event.request.referrer.includes('super_admin'));
+  if (url.pathname.startsWith('/api') || url.pathname.includes('super_admin') || isSuperAdminOrigin) {
     return;
   }
 
@@ -66,10 +65,10 @@ self.addEventListener('fetch', (event) => {
       }
       return networkResponse;
     }).catch(async () => {
-      const cached = await caches.match(event.request);
+      const cached = await caches.match(event.request, { ignoreSearch: true });
       if (cached) return cached;
       if (event.request.mode === 'navigate') {
-        const navFallback = (await caches.match('./login.html')) || (await caches.match('./entry.html'));
+        const navFallback = (await caches.match('./login.html', { ignoreSearch: true })) || (await caches.match('./entry.html', { ignoreSearch: true }));
         if (navFallback) return navFallback;
       }
       return new Response('Offline', { status: 503, statusText: 'Offline' });

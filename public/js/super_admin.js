@@ -35,6 +35,11 @@ let currentSuperHeaderConfig = null;
 let currentSuperUser = null;
 
 (async function () {
+  if (typeof getToken === 'function' && !getToken()) {
+    if (typeof clearSession === 'function') clearSession();
+    location.replace('login.html');
+    return;
+  }
   let me = null;
   try {
     me = await currentMe();
@@ -688,7 +693,11 @@ function printSuperReport(reportToPrint, includeMedia) {
       ? `<div class="hdr-line-main">${esc(l)}</div>` 
       : `<div class="hdr-line-sub">${esc(l)}</div>`;
   }).join('');
-  const logoUrl = cfg.logoUrl || 'Image/1754379379088.jpg';
+  const defaultB64 = (typeof window !== 'undefined' && window.DEFAULT_LOGO_BASE64) ? window.DEFAULT_LOGO_BASE64 : ((typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '');
+  let logoUrl = cfg.logoUrl;
+  if (!logoUrl || logoUrl === 'Image/1754379379088.jpg' || logoUrl === '/Image/1754379379088.jpg' || logoUrl === 'Image/app_logo.jpg' || (!logoUrl.startsWith('data:') && !logoUrl.startsWith('http://') && !logoUrl.startsWith('https://'))) {
+    logoUrl = defaultB64 || 'Image/1754379379088.jpg';
+  }
   const showBasmala = cfg.showBasmala !== false;
   const basmalaText = cfg.basmalaText || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
   const confidential = cfg.confidential || '';
@@ -1394,11 +1403,12 @@ function updateSuperHeaderLivePreview() {
   const basmalaText = document.getElementById('shBasmalaText')?.value || '';
 
   const logoSel = document.getElementById('shLogoSel')?.value;
-  let logoSrc = 'Image/1754379379088.jpg';
+  const defaultB64 = (typeof window !== 'undefined' && window.DEFAULT_LOGO_BASE64) ? window.DEFAULT_LOGO_BASE64 : ((typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '');
+  let logoSrc = defaultB64 || 'Image/1754379379088.jpg';
   if (logoSel === 'custom' && superCustomLogoBase64) {
     logoSrc = superCustomLogoBase64;
   } else if (logoSel && logoSel !== 'custom') {
-    logoSrc = logoSel;
+    logoSrc = (logoSel === 'Image/1754379379088.jpg') ? (defaultB64 || logoSel) : logoSel;
   }
 
   const sig1 = document.getElementById('shSig1')?.value || '';
@@ -1453,7 +1463,9 @@ function updateSuperHeaderLivePreview() {
 
 async function saveSuperHeaderSettings() {
   const logoSel = document.getElementById('shLogoSel')?.value;
-  let logoUrl = logoSel === 'custom' ? superCustomLogoBase64 : logoSel;
+  const defaultB64 = (typeof window !== 'undefined' && window.DEFAULT_LOGO_BASE64) ? window.DEFAULT_LOGO_BASE64 : ((typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '');
+  let logoUrl = logoSel === 'custom' ? superCustomLogoBase64 : (logoSel === 'Image/1754379379088.jpg' ? defaultB64 : logoSel);
+  if (!logoUrl) logoUrl = defaultB64 || 'Image/1754379379088.jpg';
 
   const reportHeaderConfig = {
     lines: [

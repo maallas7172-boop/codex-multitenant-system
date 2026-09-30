@@ -86,7 +86,8 @@
 
         orgStatusText.style.display = 'block';
         orgStatusText.style.color = '#10b981';
-        orgStatusText.textContent = '✔ تم الاقتران بنجاح';
+        const pairedName = (data.unit && data.unit.unitName) ? ('وحدة ' + data.unit.unitName) : (data.org ? data.org.orgName : '');
+        orgStatusText.textContent = '✔ تم الاقتران بنجاح' + (pairedName ? (' (' + pairedName + ')') : '');
         mainTitle.textContent = DEFAULT_TITLE;
         subTitle.textContent = DEFAULT_SUBTITLE;
         if (loginTopLogo) loginTopLogo.src = (data.org && data.org.logoUrl) ? data.org.logoUrl : DEFAULT_LOGO;

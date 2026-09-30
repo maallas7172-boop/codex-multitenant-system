@@ -1,30 +1,42 @@
 
   function ensureBase64LogoInHtml(html) {
     if (!html) return html;
-    const b64 = (typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '';
+    const b64 = (typeof window !== 'undefined' && window.DEFAULT_LOGO_BASE64) ? window.DEFAULT_LOGO_BASE64 : ((typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '');
     if (!b64) return html;
-    return html.replace(/src=["'](?:(?:.\/|\/)?Image\/[^"']+|default)["']/gi, 'src="' + b64 + '"');
+    return html.replace(/src=["'](?:(?:.\/|\/)?Image\/[^"']+|default|app_logo\.jpg)["']/gi, 'src="' + b64 + '"');
   }
 /* =========================================================
    admin.js — لوحة مدير النظام (الواجهة الكاملة)
    ========================================================= */
 (async function () {
+  if (typeof getToken === 'function' && !getToken()) {
+    if (typeof clearSession === 'function') clearSession();
+    location.replace('login.html');
+    return;
+  }
   let me = null;
   try { me = await currentMe(); } catch (e) { location.replace('login.html'); return; }
   const u = me.user;
   const org = me.organization;
-  const isBranchAdmin = u.role === 'Admin' || u.role === 'SuperAdmin';
+
+  // توجيه تلقائي وفوري للإدارة المركزية لمنع فتح شاشات الفروع لـ SuperAdmin
+  if (u.role === 'SuperAdmin' || me.isSuperAdmin) {
+    location.replace('super_admin.html');
+    return;
+  }
+
+  const isBranchAdmin = u.role === 'Admin';
   const isUnitMgr = (u.isUnitManager || u.role === 'UnitAdmin' || (u.unitId && !isBranchAdmin)) && !isBranchAdmin;
   const unitObj = me.unit;
 
   if (isUnitMgr && unitObj) {
     if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = '🏢 ' + unitObj.unitName;
-    if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الوحدة: ' + (unitObj.unitCode || '') + (org ? ' | الفرع: ' + org.orgName : '');
-    if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = unitObj.unitName + ' (' + (unitObj.unitCode || '') + ')';
+    if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الوحدة: ' + (unitObj.unitCode || '');
+    if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = unitObj.unitName + (unitObj.unitCode ? ' (' + unitObj.unitCode + ')' : '');
     document.title = unitObj.unitName + ' — لوحة التحكم';
   } else if (org) {
     if (document.getElementById('orgBrandTitle')) document.getElementById('orgBrandTitle').textContent = org.orgName || 'إدارة المنظومة';
-    if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الجهة: ' + (org.orgCode || '');
+    if (document.getElementById('orgBrandSubtitle')) document.getElementById('orgBrandSubtitle').textContent = 'رمز الفرع: ' + (org.orgCode || '');
     if (document.getElementById('orgBadgeText')) document.getElementById('orgBadgeText').textContent = org.orgName + ' (' + org.orgCode + ')';
   }
 
@@ -32,7 +44,7 @@
   if (logoEl && org) {
     logoEl.src = (org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg';
   }
-  const canAccessAdmin = u.role === 'Admin' || u.role === 'SuperAdmin' || u.isUnitManager || u.role === 'UnitAdmin';
+  const canAccessAdmin = u.role === 'Admin' || u.isUnitManager || u.role === 'UnitAdmin';
   if (!canAccessAdmin) {
     location.replace('entry.html');
     return;
@@ -43,12 +55,12 @@
 
   const $ = id => document.getElementById(id);
   const PRINTS = ['printView', 'printFrame'];
-  $('adminName').textContent = u.fullName + (isBranchAdmin ? ' (مدير الفرع)' : (unitObj ? ` (مدير وحدة ${unitObj.unitName})` : ' (مدير وحدة)'));
+  $('adminName').textContent = u.fullName + (isBranchAdmin ? ' (مدير الفرع)' : (unitObj ? ` (مدير وحدة ${unitObj.unitName})` : ''));
   if (isUnitMgr && unitObj) {
     const dashHeadH2 = document.querySelector('#dashPage .page-head h2');
     if (dashHeadH2) dashHeadH2.textContent = 'لوحة التحكم — وحدة ' + unitObj.unitName;
     const dashHeadP = document.querySelector('#dashPage .page-head p');
-    if (dashHeadP) dashHeadP.textContent = `إحصائيات حية لتقارير وموظفي وحدة ${unitObj.unitName} (رمز الوحدة: ${unitObj.unitCode}) التابعة لـ ${org ? org.orgName : ''}`;
+    if (dashHeadP) dashHeadP.textContent = `إحصائيات حية لتقارير وموظفي وحدة ${unitObj.unitName} (رمز الوحدة: ${unitObj.unitCode || ''})`;
   }
 
   // إخفاء أزرار أدوات الفرع السفلية لمدير الوحدة
@@ -118,10 +130,13 @@
     };
   });
 
-  // تفعيل أول صفحة مصرح للمستخدم بفتحها
+  // تفعيل أول صفحة مصرح للمستخدم بفتحها (افتراضياً لوحة التحكم dash)
   const hashPage = (location.hash || '').replace('#', '');
   if (hashPage && NAVS[hashPage] && PERMS[hashPage]) {
     const target = document.querySelector('.nav-btn[data-page="' + hashPage + '"]');
+    if (target) target.click();
+  } else if (PERMS.dash) {
+    const target = document.querySelector('.nav-btn[data-page="dash"]');
     if (target) target.click();
   } else {
     const firstAllowed = Object.keys(PERMS).find(k => PERMS[k]);
@@ -2349,12 +2364,13 @@
     const rightLines = [line1, line2, line3, line4, line5].filter(Boolean);
 
     let logoSrc = $('hLogoSel') ? $('hLogoSel').value : REPORT_HEADER_CONFIG.logoSrc;
+    const defaultB64 = (typeof window !== 'undefined' && window.DEFAULT_LOGO_BASE64) ? window.DEFAULT_LOGO_BASE64 : ((typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '');
     if (logoSrc === 'Image/1754379379088.jpg' || !logoSrc) {
-      logoSrc = (typeof DEFAULT_LOGO_BASE64 !== 'undefined' ? DEFAULT_LOGO_BASE64 : 'Image/1754379379088.jpg');
+      logoSrc = defaultB64 || 'Image/1754379379088.jpg';
     } else if (logoSrc === 'custom' && customLogoBase64) {
       logoSrc = customLogoBase64;
     } else if (logoSrc === 'custom') {
-      logoSrc = REPORT_HEADER_CONFIG.logoSrc || (typeof DEFAULT_LOGO_BASE64 !== 'undefined' ? DEFAULT_LOGO_BASE64 : 'Image/1754379379088.jpg');
+      logoSrc = REPORT_HEADER_CONFIG.logoSrc || defaultB64 || 'Image/1754379379088.jpg';
     }
     const fontFamily = $('hFontSel') ? $('hFontSel').value : (REPORT_HEADER_CONFIG.fontFamily || 'diwani');
     const showBasmala = $('hShowBasmala') ? $('hShowBasmala').checked : (REPORT_HEADER_CONFIG.showBasmala !== false);
@@ -2462,7 +2478,7 @@
           "الهيئة العامة لتنظيم شؤون النقل البري",
           "مكتب رئيس الهيئة"
         ],
-        logoSrc: (typeof DEFAULT_LOGO_BASE64 !== 'undefined' ? DEFAULT_LOGO_BASE64 : "Image/1754379379088.jpg"),
+        logoSrc: ((typeof window !== 'undefined' && window.DEFAULT_LOGO_BASE64) ? window.DEFAULT_LOGO_BASE64 : ((typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : "Image/1754379379088.jpg")),
         showBasmala: true,
         basmalaText: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
         fontFamily: "diwani",
@@ -2633,6 +2649,8 @@
     const o = me.organization;
     const canvas = document.querySelector('#adminQrCanvasContainer canvas');
     const qrDataUrl = canvas ? canvas.toDataURL() : '';
+    const defaultB64 = (typeof window !== 'undefined' && window.DEFAULT_LOGO_BASE64) ? window.DEFAULT_LOGO_BASE64 : ((typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '');
+    const cardLogo = (o.logoUrl && o.logoUrl.startsWith('data:')) ? o.logoUrl : (defaultB64 || o.logoUrl || 'Image/1754379379088.jpg');
 
     const w = window.open('', '_blank', 'width=650,height=750');
     w.document.write(`<!DOCTYPE html>
@@ -2658,7 +2676,7 @@
 <body>
 <div class="card">
   <div class="header">
-    <img src="${(o.logoUrl && !o.logoUrl.includes('codex_logo')) ? o.logoUrl : 'Image/1754379379088.jpg'}" alt="Logo" />
+    <img src="${cardLogo}" alt="Logo" />
     <div>
       <h2 style="margin:0">منظومة إدارة التقارير</h2>
       <small style="color:#64748b">بطاقة ربط واعتماد الهواتف الميدانية</small>
@@ -2712,6 +2730,9 @@
       }
     }
 
+    const defaultB64 = (typeof window !== 'undefined' && window.DEFAULT_LOGO_BASE64) ? window.DEFAULT_LOGO_BASE64 : ((typeof DEFAULT_LOGO_BASE64 !== 'undefined' && DEFAULT_LOGO_BASE64) ? DEFAULT_LOGO_BASE64 : '');
+    const cardLogo = (org.logoUrl && org.logoUrl.startsWith('data:')) ? org.logoUrl : (defaultB64 || org.logoUrl || 'Image/1754379379088.jpg');
+
     const w = window.open('', '_blank', 'width=650,height=750');
     w.document.write(`<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -2737,7 +2758,7 @@
 <body>
 <div class="card">
   <div class="header">
-    <img src="${(org.logoUrl && !org.logoUrl.includes('codex_logo')) ? org.logoUrl : 'Image/1754379379088.jpg'}" alt="Logo" />
+    <img src="${cardLogo}" alt="Logo" />
     <div>
       <h2 style="margin:0">منظومة إدارة التقارير</h2>
       <small style="color:#64748b">بطاقة ربط واعتماد هواتف الوحدة</small>

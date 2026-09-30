@@ -281,6 +281,20 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const { DatabaseSync } = require('node:sqlite');
 
+process.on('uncaughtException', (err) => {
+  try {
+    console.error('[UNCAUGHT EXCEPTION]', err);
+    fs.appendFileSync(path.join(__dirname, 'server_error.log'), new Date().toISOString() + ' ' + (err && err.stack ? err.stack : err) + '\n');
+  } catch (e) {}
+});
+
+process.on('unhandledRejection', (reason) => {
+  try {
+    console.error('[UNHANDLED REJECTION]', reason);
+    fs.appendFileSync(path.join(__dirname, 'server_error.log'), new Date().toISOString() + ' ' + (reason && reason.stack ? reason.stack : reason) + '\n');
+  } catch (e) {}
+});
+
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR || (fs.existsSync(path.join(ROOT, '..', 'data')) ? path.join(ROOT, '..', 'data') : path.join(ROOT, 'data'));
@@ -1104,8 +1118,33 @@ const MIME_MAP = {
   '.webp': 'image/webp'
 };
 
+let EMBEDDED_BUFFERS = null;
+try {
+  const embeddedModule = require('./embedded_assets');
+  if (embeddedModule && embeddedModule.assets) {
+    EMBEDDED_BUFFERS = embeddedModule.assets;
+  }
+} catch (e) {}
+
 function serveStatic(req, res, pathname) {
   let file = pathname === '/' ? '/login.html' : pathname;
+  if (EMBEDDED_BUFFERS) {
+    const cleanFile = file.startsWith('/') ? file : '/' + file;
+    const noSlashFile = file.startsWith('/') ? file.slice(1) : file;
+    const asset = EMBEDDED_BUFFERS[cleanFile] || EMBEDDED_BUFFERS[noSlashFile] || 
+                  (pathname === '/' ? (EMBEDDED_BUFFERS['/login.html'] || EMBEDDED_BUFFERS['login.html']) : null);
+    if (asset) {
+      res.writeHead(200, {
+        'Content-Type': asset.mime,
+        'Content-Length': asset.data.length,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate'
+      });
+      res.end(asset.data);
+      return;
+    }
+  }
+
   let fullPath = path.join(PUBLIC, file);
   if (!fs.existsSync(fullPath)) {
     fullPath = path.join(PUBLIC, 'login.html');
@@ -1117,7 +1156,8 @@ function serveStatic(req, res, pathname) {
     res.writeHead(200, {
       'Content-Type': mime,
       'Content-Length': data.length,
-      'Access-Control-Allow-Origin': '*'
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store, no-cache, must-revalidate'
     });
     res.end(data);
   } catch(e) {
@@ -1168,7 +1208,7 @@ const server = http.createServer(async (req, res) => {
       if (!org) {
         unit = db.prepare('SELECT u.id, u.unitCode, u.unitName, u.orgId, o.orgName, o.orgCode, o.logoUrl, o.status FROM units u JOIN organizations o ON u.orgId=o.id WHERE UPPER(u.unitCode)=?').get(code);
         if (unit) {
-          org = { id: unit.orgId, orgCode: unit.orgCode, orgName: unit.orgName + ' — ' + unit.unitName, logoUrl: unit.logoUrl, status: unit.status, unitName: unit.unitName, unitId: unit.id, unitCode: unit.unitCode };
+          org = { id: unit.orgId, orgCode: unit.unitCode || unit.orgCode, orgName: unit.unitName, logoUrl: unit.logoUrl, status: unit.status, unitName: unit.unitName, unitId: unit.id, unitCode: unit.unitCode };
         }
       }
       if (!org) { send(res, 200, { found: false, error: 'الرمز غير موجود يرجى التأكد من صحة الرمز' }); return; }
@@ -3232,25 +3272,45 @@ async function performCloudRelaySync(targetOrgId) {
   return { pulledReports, pulledDevices, pushedDevices };
 }
 
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.warn(`\n⚠️ تنبيه: المنفذ ${PORT} مشغول حالياً.`);
-    if (PORT === 80) {
-      console.log(`🔄 جارٍ تشغيل الخادم على المنفذ البديل 8080...`);
-      server.listen(8080, HOST, () => {
-        console.log(`✅ يعمل خادم المنظومة المتعددة بنجاح على: http://localhost:8080/`);
-      });
-      return;
-    }
-  }
-  console.error('Server Listen Error:', err);
-});
+/* ------------------------- بدء تشغيل خادم المنظومة مع الفحص الذكي للمنافذ ------------------------- */
+const CANDIDATE_PORTS = [
+  parseInt(process.env.PORT || '80', 10),
+  8080,
+  8000,
+  3000,
+  5000,
+  8888,
+  9000
+].filter((p, i, arr) => !isNaN(p) && p > 0 && arr.indexOf(p) === i);
 
-server.listen(PORT, HOST, () => {
+let currentPortIndex = 0;
+
+function writeActivePortFiles(port) {
+  const portStr = String(port).trim();
+  const paths = [
+    path.join(DATA_DIR, 'active_port.txt'),
+    path.join(ROOT, 'active_port.txt'),
+    path.join(ROOT, '..', 'active_port.txt')
+  ];
+  for (const p of paths) {
+    try {
+      const dir = path.dirname(p);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(p, portStr, 'utf8');
+    } catch(e) {}
+  }
+}
+
+function onServerListening() {
+  const addr = server.address();
+  const actualPort = (typeof addr === 'object' && addr) ? addr.port : CANDIDATE_PORTS[currentPortIndex];
+  
+  writeActivePortFiles(actualPort);
+
   console.log('========================================================');
   console.log('  منظومة كودكس السحابية والمحلية — (Multi-Tenant Hybrid Relay)');
   console.log('  شركة كودكس للبرمجيات (Codex Software)');
-  console.log(`  الخادم يعمل بنجاح على: http://localhost:${PORT}/`);
+  console.log(`  الخادم يعمل بنجاح على: http://localhost:${actualPort}/`);
   console.log('  حساب Super Admin: superadmin / CodexSuper@2026');
   console.log('  الجهة الافتراضية: DEMO (Admin: admin/Admin@123)');
   console.log('========================================================');
@@ -3266,4 +3326,46 @@ server.listen(PORT, HOST, () => {
       } catch(e){}
     }, 12000);
   }
-});
+}
+
+function tryListenOnPort(port) {
+  server.removeAllListeners('error');
+  
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+      console.warn(`[!] المنفذ ${port} غير متاح أو مقيد في نظام ويندوز (${err.code}). جارٍ محاولة منفذ بديل...`);
+      currentPortIndex++;
+      if (currentPortIndex < CANDIDATE_PORTS.length) {
+        setTimeout(() => tryListenOnPort(CANDIDATE_PORTS[currentPortIndex]), 80);
+      } else {
+        // Fallback to random OS assigned port if all ports are busy
+        console.warn(`[!] جارٍ طلب منفذ حر متاح تلقائياً من نظام ويندوز (Port 0)...`);
+        server.removeAllListeners('error');
+        server.on('error', (finalErr) => {
+          console.error('Fatal Server Listen Error:', finalErr);
+        });
+        server.listen(0, HOST, onServerListening);
+      }
+      return;
+    }
+    console.error('Server Listen Error:', err);
+  });
+
+  server.listen(port, HOST, onServerListening);
+}
+
+function clearActivePortFiles() {
+  const paths = [
+    path.join(DATA_DIR, 'active_port.txt'),
+    path.join(ROOT, 'active_port.txt'),
+    path.join(ROOT, '..', 'active_port.txt')
+  ];
+  for (const p of paths) {
+    try {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch(e) {}
+  }
+}
+
+clearActivePortFiles();
+tryListenOnPort(CANDIDATE_PORTS[currentPortIndex]);
