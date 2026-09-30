@@ -473,6 +473,17 @@ try { db.exec("ALTER TABLE events ADD COLUMN unitId TEXT;"); } catch(e){}
 try { db.exec("ALTER TABLE devices ADD COLUMN unitId TEXT;"); } catch(e){}
 try { db.exec("ALTER TABLE users ADD COLUMN canUnits INTEGER DEFAULT 0;"); } catch(e){}
 
+// تنظيف تلقائي للبيانات اليتيمة التي لا تنتمي لأي جهة مسجلة في قاعدة البيانات
+try {
+  db.exec(`
+    DELETE FROM reports WHERE orgId IS NOT NULL AND orgId NOT IN (SELECT id FROM organizations);
+    DELETE FROM events WHERE orgId IS NOT NULL AND orgId NOT IN (SELECT id FROM organizations);
+    DELETE FROM devices WHERE orgId IS NOT NULL AND orgId NOT IN (SELECT id FROM organizations);
+    DELETE FROM sessions WHERE orgId IS NOT NULL AND orgId NOT IN (SELECT id FROM organizations);
+    DELETE FROM settings WHERE orgId IS NOT NULL AND orgId <> 'GLOBAL' AND orgId NOT IN (SELECT id FROM organizations);
+  `);
+} catch(e) {}
+
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -1416,11 +1427,22 @@ const server = http.createServer(async (req, res) => {
           };
         });
 
+        // إحصائيات دقيقة متوافقة 100% مع قائمة الفروع والصلاحيات
+        const totalBranchUsers = orgsList.reduce((acc, o) => acc + (o.usersCount || 0), 0);
+        const totalBranchReportsAll = orgsList.reduce((acc, o) => acc + (o.reportsCount || 0), 0);
+        const totalBranchReportsAccessible = orgsList
+          .filter(o => o.allowHqAccess === 1 || o.allowHqAccess === true || o.allowHqAccess === undefined || o.allowHqAccess === null)
+          .reduce((acc, o) => acc + (o.reportsCount || 0), 0);
+        const totalBranchEventsAccessible = orgsList
+          .filter(o => o.allowHqAccess === 1 || o.allowHqAccess === true || o.allowHqAccess === undefined || o.allowHqAccess === null)
+          .reduce((acc, o) => acc + (o.eventsCount || 0), 0);
+
         send(res, 200, {
           totalOrgs: orgs.length,
-          totalUsers: db.prepare("SELECT COUNT(*) c FROM users WHERE role<>'SuperAdmin'").get().c,
-          totalReports: db.prepare('SELECT COUNT(*) c FROM reports').get().c,
-          totalEvents: db.prepare('SELECT COUNT(*) c FROM events').get().c,
+          totalUsers: totalBranchUsers,
+          totalReports: totalBranchReportsAccessible,
+          totalReportsAll: totalBranchReportsAll,
+          totalEvents: totalBranchEventsAccessible,
           organizations: orgsList
         });
         return;

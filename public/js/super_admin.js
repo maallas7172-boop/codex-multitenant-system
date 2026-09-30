@@ -131,9 +131,11 @@ function switchSuperTab(tab) {
     if (sec) sec.style.display = (t === tab) ? 'block' : 'none';
     if (btn) {
       if (t === tab) {
+        btn.classList.add('active');
         btn.classList.remove('btn-outline');
         btn.classList.add('btn-primary');
       } else {
+        btn.classList.remove('active');
         btn.classList.remove('btn-primary');
         btn.classList.add('btn-outline');
       }

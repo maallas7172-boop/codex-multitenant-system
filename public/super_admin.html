@@ -10,16 +10,32 @@
 <title>الإدارة المركزية — منظومة إدارة التقارير</title>
 <link rel="stylesheet" href="css/styles.css?v=20260930-v8" />
 <style>
+  :root {
+    --primary: #1e3a8a;
+    --primary-light: #3b82f6;
+    --primary-gradient: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+    --bg-page: #f1f5f9;
+    --card-bg: #ffffff;
+    --border-color: #e2e8f0;
+  }
+
+  body {
+    background: #f1f5f9 !important;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  }
+
+  /* الترويسة العلوية الفخمة */
   .super-header {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    background: linear-gradient(135deg, #090d16 0%, #0f172a 50%, #1e293b 100%);
     color: #fff;
-    padding: 20px 32px;
+    padding: 16px 28px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 16px;
-    border-bottom: 2px solid #334155;
+    border-bottom: 2px solid #1e293b;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   }
   .super-brand {
     display: flex;
@@ -31,12 +47,201 @@
     height: 48px;
     border-radius: 12px;
     object-fit: cover;
-    border: 2px solid #3b82f6;
+    border: 2px solid #38bdf8;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
   }
+
+  /* ================= هيكل الصفحة والقائمة الجانبية الرأسية ================= */
+  .super-app-container {
+    display: flex;
+    max-width: 1560px;
+    margin: 0 auto;
+    padding: 22px 20px;
+    gap: 24px;
+    align-items: flex-start;
+  }
+  
+  .super-sidebar {
+    width: 275px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 18px;
+    background: linear-gradient(180deg, #090e17 0%, #0f172a 45%, #1e293b 100%);
+    border: 1px solid #334155;
+    border-radius: 20px;
+    padding: 16px 14px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sidebar-header {
+    padding: 6px 10px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 4px;
+  }
+  .sidebar-subtitle {
+    font-size: 11px;
+    font-weight: 800;
+    color: #38bdf8;
+    letter-spacing: 0.5px;
+  }
+  .sidebar-title {
+    font-size: 16px;
+    font-weight: 900;
+    color: #f8fafc;
+    margin-top: 2px;
+  }
+
+  .super-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* تصميم أزرار القائمة الجانبية في صف واحد أفقي ورشيق */
+  .s-nav-btn {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.04);
+    color: #cbd5e1;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: right;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    outline: none;
+    box-sizing: border-box;
+    white-space: nowrap;
+    min-height: 44px;
+  }
+
+  .s-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+    transform: translateX(-3px);
+  }
+
+  /* الزر النشط (Active / Selected) */
+  .s-nav-btn.active,
+  .s-nav-btn.btn-primary {
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #3b82f6 100%) !important;
+    color: #ffffff !important;
+    border-color: #60a5fa !important;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.45) !important;
+    transform: translateX(-3px);
+  }
+
+  .s-nav-btn.active .s-nav-title,
+  .s-nav-btn.btn-primary .s-nav-title {
+    color: #ffffff !important;
+    font-weight: 900;
+  }
+
+  .s-nav-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .icon-blue { background: rgba(59, 130, 246, 0.25); color: #93c5fd; }
+  .icon-indigo { background: rgba(99, 102, 241, 0.25); color: #a5b4fc; }
+  .icon-teal { background: rgba(20, 184, 166, 0.25); color: #5eead4; }
+  .icon-pink { background: rgba(236, 72, 153, 0.25); color: #f472b6; }
+  .icon-amber { background: rgba(245, 158, 11, 0.25); color: #fcd34d; }
+  .icon-purple { background: rgba(168, 85, 247, 0.25); color: #d8b4fe; }
+  .icon-cyan { background: rgba(6, 182, 212, 0.25); color: #67e8f9; }
+
+  .s-nav-btn.active .s-nav-icon,
+  .s-nav-btn.btn-primary .s-nav-icon {
+    background: rgba(255, 255, 255, 0.25) !important;
+    color: #ffffff !important;
+    backdrop-filter: blur(4px);
+  }
+
+  .s-nav-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: inherit;
+    line-height: 1;
+    flex: 1;
+    text-align: right;
+  }
+
+  .s-badge {
+    padding: 2px 7px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 900;
+    margin-right: auto;
+    flex-shrink: 0;
+  }
+  .badge-blue { background: #1e40af; color: #dbeafe; }
+  .badge-teal { background: #0f766e; color: #ccfbf1; }
+  .badge-pink { background: #be185d; color: #fce7f3; }
+
+  .s-nav-btn.active .s-badge,
+  .s-nav-btn.btn-primary .s-badge {
+    background: #ffffff !important;
+    color: #1e3a8a !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
+
+  .s-nav-divider {
+    height: 1px;
+    background: #334155;
+    margin: 4px 2px;
+  }
+
+  .sidebar-status-box {
+    margin-top: 14px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+
+  .pulse-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+    display: inline-block;
+  }
+
+  .super-main-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* بطاقات الإدارة والتصميم العام */
+  .card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 18px !important;
+    padding: 24px !important;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05) !important;
+  }
+
   .org-card {
     background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: var(--r-lg);
+    border-radius: 16px;
     padding: 20px;
     box-shadow: var(--shadow-soft);
     display: grid;
@@ -57,48 +262,103 @@
     font-size: 13px;
     letter-spacing: 1px;
   }
+
+  /* التجاوب مع شاشات الجوال والتابلت */
+  @media (max-width: 1024px) {
+    .super-app-container {
+      flex-direction: column;
+      padding: 14px 12px;
+      gap: 18px;
+    }
+    .super-sidebar {
+      width: 100%;
+      position: static;
+    }
+    .super-nav {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px;
+    }
+  }
 </style>
 </head>
-<body style="background:#f8fafc">
+<body>
 <header class="super-header">
   <div class="super-brand">
-    <img src="Image/app_logo.jpg" alt="الإدارة المركزية" style="width:48px;height:48px;border-radius:12px;object-fit:cover;border:2px solid #3b82f6" />
+    <img src="Image/app_logo.jpg" alt="الإدارة المركزية" />
     <div>
       <h2 style="font-size:20px;font-weight:900;margin:0;color:#f8fafc">الإدارة المركزية — لوحة التحكم العامة</h2>
       <div style="font-size:12.5px;color:#94a3b8;margin-top:3px">منظومة إدارة ومتابعة الفروع والمؤسسات المشتركة والتقارير الموحدة</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:12px">
-    <button class="btn btn-outline btn-sm" onclick="loadDashboard()" style="color:#fff;border-color:rgba(255,255,255,0.3)">🔄 تحديث</button>
-    <button class="btn btn-danger btn-sm" onclick="logout()">🚪 تسجيل الخروج</button>
+    <button class="btn btn-outline btn-sm" onclick="loadDashboard()" style="color:#fff;border-color:rgba(255,255,255,0.3);border-radius:20px;padding:6px 16px;background:rgba(255,255,255,0.08);backdrop-filter:blur(8px);font-weight:700">🔄 تحديث البيانات</button>
+    <button class="btn btn-danger btn-sm" onclick="logout()" style="border-radius:20px;padding:6px 16px;font-weight:800;background:linear-gradient(135deg, #ef4444, #dc2626);box-shadow:0 4px 12px rgba(220,38,38,0.3)">🚪 تسجيل الخروج</button>
   </div>
 </header>
 
-<main style="max-width:1300px;margin:0 auto;padding:26px 20px">
-  <!-- أزرار التبديل بين الأقسام الرئيسية -->
-  <div style="display:flex;gap:10px;margin-bottom:24px;border-bottom:2px solid var(--line);padding-bottom:14px;flex-wrap:wrap">
-    <button class="btn btn-primary" id="tabBtnOrgs" onclick="switchSuperTab('orgs')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
-      🏢 إدارة الفروع والجهات
-    </button>
-    <button class="btn btn-outline" id="tabBtnReports" onclick="switchSuperTab('reports')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
-      📄 التقارير الشاملة من الفروع <span id="superReportsTabCount" class="badge" style="background:#2563eb;color:#fff;margin-right:6px;font-size:11px">0</span>
-    </button>
-    <button class="btn btn-outline" id="tabBtnEvents" onclick="switchSuperTab('events')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
-      📋 المهام والتكليفات من الفروع <span id="superEventsTabCount" class="badge" style="background:#0d9488;color:#fff;margin-right:6px;font-size:11px">0</span>
-    </button>
-        <button class="btn btn-outline" id="tabBtnSmartAi" onclick="switchSuperTab('smartAi')" style="font-weight:800;font-size:13.5px;padding:9px 18px;background:#fdf2f8;border-color:#ec4899;color:#be185d">
-      🧠 التحليل والربط الذكي للأحداث <span id="smartAiTabBadge" class="badge" style="background:#db2777;color:#fff;margin-right:6px;font-size:11px">0</span>
-    </button>
-    <button class="btn btn-outline" id="tabBtnUsers" onclick="switchSuperTab('users')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
-      👥 مستخدمو المركز والصلاحيات
-    </button>
-    <button class="btn btn-outline" id="tabBtnSettings" onclick="switchSuperTab('settings')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
-      ⚙️ الإعدادات والنسخ والترويسة
-    </button>
-    <button class="btn btn-outline" id="tabBtnProfile" onclick="switchSuperTab('profile')" style="font-weight:800;font-size:13.5px;padding:9px 18px">
-      👤 حساب الإدارة ورمز الدخول
-    </button>
-  </div>
+<div class="super-app-container">
+  <!-- القائمة الجانبية الرأسية الأنيقة (Vertical Modern Sidebar) -->
+  <aside class="super-sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-subtitle">لوحة الإشراف المركزية</div>
+      <div class="sidebar-title">الأقسام والعمليات</div>
+    </div>
+
+    <nav class="super-nav">
+      <button class="s-nav-btn active btn-primary" id="tabBtnOrgs" onclick="switchSuperTab('orgs')">
+        <span class="s-nav-icon icon-blue">🏢</span>
+        <span class="s-nav-title">إدارة الفروع والجهات</span>
+      </button>
+
+      <button class="s-nav-btn btn-outline" id="tabBtnReports" onclick="switchSuperTab('reports')">
+        <span class="s-nav-icon icon-indigo">📄</span>
+        <span class="s-nav-title">التقارير الشاملة</span>
+        <span id="superReportsTabCount" class="s-badge badge-blue">0</span>
+      </button>
+
+      <button class="s-nav-btn btn-outline" id="tabBtnEvents" onclick="switchSuperTab('events')">
+        <span class="s-nav-icon icon-teal">📋</span>
+        <span class="s-nav-title">المهام والتكليفات</span>
+        <span id="superEventsTabCount" class="s-badge badge-teal">0</span>
+      </button>
+
+      <button class="s-nav-btn btn-outline" id="tabBtnSmartAi" onclick="switchSuperTab('smartAi')">
+        <span class="s-nav-icon icon-pink">🧠</span>
+        <span class="s-nav-title">التحليل والربط الذكي</span>
+        <span id="smartAiTabBadge" class="s-badge badge-pink">0</span>
+      </button>
+
+      <div class="s-nav-divider"></div>
+
+      <button class="s-nav-btn btn-outline" id="tabBtnUsers" onclick="switchSuperTab('users')">
+        <span class="s-nav-icon icon-amber">👥</span>
+        <span class="s-nav-title">مستخدمو المركز</span>
+      </button>
+
+      <button class="s-nav-btn btn-outline" id="tabBtnSettings" onclick="switchSuperTab('settings')">
+        <span class="s-nav-icon icon-purple">⚙️</span>
+        <span class="s-nav-title">الإعدادات والنسخ</span>
+      </button>
+
+      <button class="s-nav-btn btn-outline" id="tabBtnProfile" onclick="switchSuperTab('profile')">
+        <span class="s-nav-icon icon-cyan">👤</span>
+        <span class="s-nav-title">حساب الإدارة والرمز</span>
+      </button>
+    </nav>
+
+    <!-- شارة حالة النظام والاتصال -->
+    <div class="sidebar-status-box">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="pulse-indicator"></span>
+        <span style="font-weight:800;font-size:12.5px;color:#f8fafc">النظام متصل ونشط</span>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">قاعدة البيانات: SQLite WAL Mode</div>
+    </div>
+  </aside>
+
+  <!-- مساحة المحتوى الرئيسية (Main Content Area) -->
+  <main class="super-main-content">
 
   <!-- القسم 1: إدارة الفروع والإحصائيات العامة -->
   <div id="orgsTabSection">
@@ -739,6 +999,7 @@
     </div>
   </div>
 </main>
+</div>
 
 <!-- نافذة إنشاء جهة جديدة -->
 <div class="modal-back" id="addOrgModal" style="align-items:center;justify-content:center;overflow-y:auto;padding:16px">
@@ -1137,10 +1398,10 @@
 
 <script src="js/crypto-js.js?v=20260930-v8"></script>
 <script src="js/config.js?v=20260930-v8"></script>
-<script src="js/app.js?v=20260930-v8"></script>
-<script src="js/qrcode.min.js?v=20260930-v8"></script>
-<script src="js/report-header.js?v=20260930-v8"></script>
-<script src="js/super_admin.js?v=20260930-v8"></script>
+<script src="js/app.js?v=20260930-v10"></script>
+<script src="js/qrcode.min.js?v=20260930-v10"></script>
+<script src="js/report-header.js?v=20260930-v10"></script>
+<script src="js/super_admin.js?v=20260930-v10"></script>
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(function(regs) {
