@@ -49,6 +49,23 @@
   </aside>
 
   <main class="main">
+    <!-- بانر إشعار الأجهزة المعلقة العام (يظهر للمدير فوق كافة الأقسام عند وجود طلبات ربط) -->
+    <div id="dashPendingDevicesBanner" style="display:none;background:#fff7ed;border:2px solid #ea580c;border-radius:12px;padding:12px 18px;margin-bottom:16px;box-shadow:0 4px 14px rgba(234,88,12,0.18)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:26px">📱</span>
+          <div>
+            <b style="color:#9a3412;font-size:14.5px">تنبيه إداري: يوجد (<span id="dashBannerPendingCount">0</span>) هاتف جديد بانتظار موافقة واعتماد المدير!</b>
+            <div style="font-size:12px;color:#c2410c;margin-top:2px">يرجى اعتماد الهاتف للسماح للموظف بالدخول ورفع التقارير الميدانية.</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" id="dashBannerApproveAllBtn" style="background:#ea580c;border-color:#ea580c;font-weight:700">✅ اعتماد كافة الهواتف الآن</button>
+          <button class="btn btn-outline btn-sm" id="dashBannerViewDevicesBtn" style="font-weight:700">📋 عرض الأجهزة</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ==================== لوحة التحكم ==================== -->
     <section class="page active" id="dashPage">
       <div class="page-head">
@@ -59,23 +76,6 @@
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary btn-sm" id="btnCloudSyncTop" onclick="triggerCloudSync()" style="background:#0284c7;border-color:#0284c7">☁️ مزامنة السحابة</button>
           <button class="btn btn-outline btn-sm" onclick="renderDash()">🔄 تحديث</button>
-        </div>
-      </div>
-
-      <!-- بانر إشعار الأجهزة المعلقة -->
-      <div id="dashPendingDevicesBanner" style="display:none;background:#fff7ed;border:2px solid #ea580c;border-radius:12px;padding:14px 18px;margin-bottom:18px;box-shadow:0 4px 12px rgba(234,88,12,0.15)">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-          <div style="display:flex;align-items:center;gap:12px">
-            <span style="font-size:28px">📱</span>
-            <div>
-              <b style="color:#9a3412;font-size:15px">تنبيه: يوجد (<span id="dashBannerPendingCount">0</span>) هاتف جديد بانتظار موافقة واعتماد المدير!</b>
-              <div style="font-size:12.5px;color:#c2410c;margin-top:2px">يرجى اعتماد الهاتف للسماح للموظف بالدخول وإرسال التقارير.</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary btn-sm" id="dashBannerApproveAllBtn" style="background:#ea580c;border-color:#ea580c">✅ اعتماد كافة الهواتف الآن</button>
-            <button class="btn btn-outline btn-sm" id="dashBannerViewDevicesBtn">📋 عرض الأجهزة</button>
-          </div>
         </div>
       </div>
 

@@ -853,7 +853,7 @@ function can(u, p) {
 }
 
 function checkDeviceAuth(user, org, req) {
-  if (!user || user.role === 'Admin' || user.role === 'SuperAdmin' || isUnitAdmin(user)) return { ok: true };
+  if (!user || user.role === 'Admin' || user.role === 'SuperAdmin') return { ok: true };
   const enforce = getSetting(user.orgId, 'enforceDeviceAuth', '1') === '1';
 
   const deviceId = (req.headers['x-device-id'] || '').trim();
@@ -969,6 +969,7 @@ function buildMe(user, explicitUnit = null) {
 }
 
 function buildStats(orgId, me = null, requestedUnitId = null) {
+  const isUnitMgr = !!(me && (me.isUnitManager || me.role === 'UnitAdmin'));
   const isUnitScoped = me && me.unitId && !isOrgAdmin(me) && !isSuperAdmin(me);
   const unitFilter = isUnitScoped ? me.unitId : (requestedUnitId || null);
 
@@ -995,9 +996,9 @@ function buildStats(orgId, me = null, requestedUnitId = null) {
   let devicesPending = 0, devicesApproved = 0, devicesTotal = 0;
   try {
     if (unitFilter) {
-      devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending' AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?)))").get(orgId, unitFilter, unitFilter).c;
-      devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved' AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?)))").get(orgId, unitFilter, unitFilter).c;
-      devicesTotal = db.prepare('SELECT COUNT(*) c FROM devices WHERE orgId=? AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?)))').get(orgId, unitFilter, unitFilter).c;
+      devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending' AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?))) AND userId <> ?").get(orgId, unitFilter, unitFilter, me ? me.id : '').c;
+      devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved' AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?))) AND userId <> ?").get(orgId, unitFilter, unitFilter, me ? me.id : '').c;
+      devicesTotal = db.prepare('SELECT COUNT(*) c FROM devices WHERE orgId=? AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?))) AND userId <> ?').get(orgId, unitFilter, unitFilter, me ? me.id : '').c;
     } else {
       devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending'").get(orgId).c;
       devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved'").get(orgId).c;
@@ -2568,6 +2569,19 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (method === 'GET' && p === '/api/reports/next-number') {
+      const last = db.prepare('SELECT reportNumber FROM reports WHERE orgId=? ORDER BY createdAt DESC LIMIT 1').get(orgId);
+      let nextNumber = '1';
+      if (last && last.reportNumber) {
+        const num = parseInt(last.reportNumber, 10);
+        if (!isNaN(num) && num > 0) {
+          nextNumber = String(num + 1);
+        }
+      }
+      send(res, 200, { ok: true, nextNumber });
+      return;
+    }
+
     /* ---- إدارة التقارير داخل الجهة ---- */
     if (p === '/api/reports') {
       if (method === 'GET') {
@@ -3154,20 +3168,32 @@ const server = http.createServer(async (req, res) => {
     /* ---- إدارة الأجهزة داخل الجهة ---- */
     if (method === 'GET' && p === '/api/devices') {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
-      const devices = db.prepare(`
-        SELECT * FROM devices 
-        WHERE orgId=? 
-        GROUP BY deviceId 
-        ORDER BY lastSeenAt DESC
-      `).all(orgId);
+      let sql = `
+        SELECT d.*, u.unitName 
+        FROM devices d
+        LEFT JOIN units u ON (d.unitId = u.id OR d.userId IN (SELECT id FROM users WHERE unitId = u.id))
+        WHERE d.orgId=?
+      `;
+      const params = [orgId];
+      if (isUnitAdmin(me) && me.unitId) {
+        sql += ` AND (d.unitId = ? OR d.userId IN (SELECT id FROM users WHERE unitId = ?)) AND d.userId <> ?`;
+        params.push(me.unitId, me.unitId, me.id);
+      }
+      sql += ` GROUP BY d.deviceId ORDER BY d.lastSeenAt DESC`;
+      const devices = db.prepare(sql).all(...params);
       send(res, 200, { devices });
       return;
     }
 
     if (method === 'POST' && p === '/api/devices/approve-all') {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
-      const info = db.prepare("UPDATE devices SET status='approved', approvedAt=?, approvedBy=? WHERE orgId=? AND status='pending'")
-        .run(nowIso(), me.fullName, orgId);
+      let sql = "UPDATE devices SET status='approved', approvedAt=?, approvedBy=? WHERE orgId=? AND status='pending'";
+      const params = [nowIso(), me.fullName, orgId];
+      if (isUnitAdmin(me) && me.unitId) {
+        sql += " AND (unitId=? OR userId IN (SELECT id FROM users WHERE unitId=?)) AND userId <> ?";
+        params.push(me.unitId, me.unitId, me.id);
+      }
+      const info = db.prepare(sql).run(...params);
       try {
         db.prepare("DELETE FROM cloud_relay_queue WHERE orgId=? AND itemType='device_registration'").run(orgId);
       } catch(e){}
@@ -3180,16 +3206,24 @@ const server = http.createServer(async (req, res) => {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
       const action = devApprove[2];
       const devId = devApprove[1];
+      const devRow = db.prepare('SELECT * FROM devices WHERE orgId=? AND id=?').get(orgId, devId);
+      if (!devRow) { sendError(res, 404, 'الجهاز غير موجود'); return; }
+
+      if (isUnitAdmin(me) && me.unitId) {
+        const isMyUnit = (devRow.unitId === me.unitId) || !!db.prepare('SELECT id FROM users WHERE id=? AND unitId=?').get(devRow.userId, me.unitId);
+        if (!isMyUnit || devRow.userId === me.id) {
+          sendError(res, 403, 'غير مصرح لك باعتماد أو تعديل هذا الجهاز');
+          return;
+        }
+      }
+
       const newStatus = action === 'approve' ? 'approved' : 'blocked';
       db.prepare('UPDATE devices SET status=?, approvedAt=?, approvedBy=? WHERE orgId=? AND id=?')
         .run(newStatus, nowIso(), me.fullName, orgId, devId);
       if (newStatus === 'approved') {
         try {
-          const devRow = db.prepare('SELECT deviceId FROM devices WHERE id=?').get(devId);
-          if (devRow) {
-            db.prepare("DELETE FROM cloud_relay_queue WHERE orgId=? AND itemType='device_registration' AND payload LIKE ?")
-              .run(orgId, '%' + devRow.deviceId + '%');
-          }
+          db.prepare("DELETE FROM cloud_relay_queue WHERE orgId=? AND itemType='device_registration' AND payload LIKE ?")
+            .run(orgId, '%' + devRow.deviceId + '%');
         } catch(e){}
       }
       send(res, 200, { ok: true, status: newStatus, message: newStatus === 'approved' ? 'تم اعتماد الهاتف بنجاح 🟢' : 'تم حظر الهاتف ⛔' });
@@ -3199,7 +3233,19 @@ const server = http.createServer(async (req, res) => {
     const devDel = p.match(/^\/api\/devices\/([^/]+)$/);
     if (devDel && method === 'DELETE') {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
-      db.prepare('DELETE FROM devices WHERE orgId=? AND id=?').run(orgId, devDel[1]);
+      const devId = devDel[1];
+      const devRow = db.prepare('SELECT * FROM devices WHERE orgId=? AND id=?').get(orgId, devId);
+      if (!devRow) { sendError(res, 404, 'الجهاز غير موجود'); return; }
+
+      if (isUnitAdmin(me) && me.unitId) {
+        const isMyUnit = (devRow.unitId === me.unitId) || !!db.prepare('SELECT id FROM users WHERE id=? AND unitId=?').get(devRow.userId, me.unitId);
+        if (!isMyUnit) {
+          sendError(res, 403, 'غير مصرح لك بحذف هذا الجهاز');
+          return;
+        }
+      }
+
+      db.prepare('DELETE FROM devices WHERE orgId=? AND id=?').run(orgId, devId);
       send(res, 200, { ok: true, message: 'تم حذف الجهاز من السجل' });
       return;
     }

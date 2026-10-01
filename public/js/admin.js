@@ -236,6 +236,8 @@
           });
         } catch(e){}
       }
+    } else if (lastSeenPendingDevices === -1 && pendingCount > 0) {
+      toast(`📱 تنبيه إداري: يوجد (${pendingCount}) هاتف جديد بانتظار موافقة واعتماد المدير!`, 'warn');
     }
     lastSeenPendingDevices = pendingCount;
 
@@ -1255,6 +1257,7 @@
         seen.add(key);
         return true;
       });
+      const opts = activeUsers.map(u => `<option value="${u.id}">${esc(u.fullName || u.userName)} (${esc(u.userName)})</option>`).join('');
       if ($('rUser')) $('rUser').innerHTML = (isUnitMgr ? '<option value="">كل موظفي الوحدة</option>' : '<option value="">كل المستخدمين</option>') + opts;
       if ($('evFilterUser')) $('evFilterUser').innerHTML = (isUnitMgr ? '<option value="">كل موظفي الوحدة</option>' : '<option value="">كل الموظفين</option>') + opts;
       if ($('efAssignedUser')) {
@@ -2114,10 +2117,14 @@
         }
 
         const shortId = (dev.deviceId || '').slice(0, 16);
+        const unitBadge = dev.unitName ? `<span class="badge blue" style="font-size:10.5px;padding:1px 6px">🏛️ ${esc(dev.unitName)}</span>` : '';
 
         return `<tr>
           <td>
-            <b>${esc(dev.userFullName || '—')}</b>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <b>${esc(dev.userFullName || '—')}</b>
+              ${unitBadge}
+            </div>
             <div style="font-size:12px;color:var(--muted)">👤 ${esc(dev.userName || 'غير مسجل')}</div>
           </td>
           <td>
