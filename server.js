@@ -296,6 +296,9 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const ROOT = __dirname;
+const SYSTEM_VERSION = '2026.2.2';
+const SYSTEM_BUILD_DATE = '2026-10-03';
+const SYSTEM_CHANGELOG = 'توثيق وإظهار منشئ الحساب ومدخل البيانات في كافة الواجهات، وتثبيت وتزامن اعتماد الأجهزة الدائم، وتطوير أمان وعزل الوحدات';
 const PUBLIC = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR || (fs.existsSync(path.join(ROOT, '..', 'data')) ? path.join(ROOT, '..', 'data') : path.join(ROOT, 'data'));
 const DB_PATH = process.env.DATABASE_PATH || path.join(DATA_DIR, 'multitenant.db');
@@ -361,6 +364,9 @@ CREATE TABLE IF NOT EXISTS users (
   canUnits INTEGER DEFAULT 0,
   canUsers INTEGER DEFAULT 0,
   canSettings INTEGER DEFAULT 0,
+  createdBy TEXT,
+  createdById TEXT,
+  createdRole TEXT,
   createdAt TEXT NOT NULL
 );
 
@@ -472,6 +478,15 @@ try { db.exec("ALTER TABLE users ADD COLUMN isUnitManager INTEGER DEFAULT 0;"); 
 try { db.exec("ALTER TABLE events ADD COLUMN unitId TEXT;"); } catch(e){}
 try { db.exec("ALTER TABLE devices ADD COLUMN unitId TEXT;"); } catch(e){}
 try { db.exec("ALTER TABLE users ADD COLUMN canUnits INTEGER DEFAULT 0;"); } catch(e){}
+try { db.exec("ALTER TABLE users ADD COLUMN createdBy TEXT;"); } catch(e){}
+try { db.exec("ALTER TABLE users ADD COLUMN createdById TEXT;"); } catch(e){}
+try { db.exec("ALTER TABLE users ADD COLUMN createdRole TEXT;"); } catch(e){}
+
+// تحديث تلقائي للحسابات القائمة لتوضيح جهة ومنشئ الحساب
+try {
+  db.exec("UPDATE users SET createdBy = 'مدير الفرع (الإدارة)', createdRole = 'مدير الفرع' WHERE (createdBy IS NULL OR createdBy = '') AND role NOT IN ('Admin', 'SuperAdmin');");
+  db.exec("UPDATE users SET createdBy = 'مدير النظام الرئيسي', createdRole = 'مدير النظام' WHERE (createdBy IS NULL OR createdBy = '') AND role IN ('Admin', 'SuperAdmin');");
+} catch(e) {}
 
 // تنظيف تلقائي للبيانات اليتيمة التي لا تنتمي لأي جهة مسجلة في قاعدة البيانات
 try {
@@ -652,8 +667,8 @@ function setSetting(orgId, key, value) {
   if (superCount === 0) {
     const sId = uid();
     db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
-      canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUnits, canUsers, canSettings, createdAt)
-      VALUES(?, NULL, 'superadmin', 'إدارة كودكس العليا', ?, 'CodexSuper@2026', 'SuperAdmin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ?)`)
+      canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUnits, canUsers, canSettings, createdBy, createdById, createdRole, createdAt)
+      VALUES(?, NULL, 'superadmin', 'إدارة كودكس العليا', ?, 'CodexSuper@2026', 'SuperAdmin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 'النظام التأسيسي', 'system', 'النظام الأساسي', ?)`)
       .run(sId, hashHex('CodexSuper@2026'), nowIso());
     console.log('✓ Created SuperAdmin: superadmin / CodexSuper@2026');
   }
@@ -678,8 +693,8 @@ function setSetting(orgId, key, value) {
     if (!demoAdmin) {
       const aId = uid();
       db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
-        canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUnits, canUsers, canSettings, createdAt)
-        VALUES(?, ?, 'admin', 'مدير الجهة النموذجية', ?, 'Admin@123', 'Admin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ?)`)
+        canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUnits, canUsers, canSettings, createdBy, createdById, createdRole, createdAt)
+        VALUES(?, ?, 'admin', 'مدير الجهة النموذجية', ?, 'Admin@123', 'Admin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 'مدير النظام الرئيسي', 'superadmin', 'مدير النظام', ?)`)
         .run(aId, demoOrgId, hashHex('Admin@123'), nowIso());
     }
 
@@ -687,8 +702,8 @@ function setSetting(orgId, key, value) {
     if (!demoUser) {
       const uId = uid();
       db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
-        canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUnits, canUsers, canSettings, createdAt)
-        VALUES(?, ?, 'ahmed', 'أحمد محمد (موظف ميداني)', ?, '123456', 'EntryUser', 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, ?)`)
+        canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUnits, canUsers, canSettings, createdBy, createdById, createdRole, createdAt)
+        VALUES(?, ?, 'ahmed', 'أحمد محمد (موظف ميداني)', ?, '123456', 'EntryUser', 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 'مدير الفرع (admin)', 'demo_admin', 'مدير الفرع', ?)`)
         .run(uId, demoOrgId, hashHex('123456'), nowIso());
     }
   }
@@ -731,6 +746,9 @@ function publicUser(u) {
     role: u.role,
     plainPassword: u.plainPassword || '',
     isActive: !!u.isActive,
+    createdBy: u.createdBy || (isAdminUser ? 'مدير النظام الرئيسي' : 'مدير الفرع (الإدارة)'),
+    createdById: u.createdById || null,
+    createdRole: u.createdRole || (isAdminUser ? 'مدير النظام' : 'مدير الفرع'),
     canOpen: isAdminUser || isUnitMgr || !!u.canOpen || !!u.canReports || !!u.canEntry,
     canAdd: isAdminUser || isUnitMgr || !!u.canAdd,
     canDelete: isAdminUser || !!u.canDelete || !!u.canReportsDelete,
@@ -772,6 +790,26 @@ function parseReportRow(r) {
       }
     } catch(e){}
   }
+
+  // إذا لم يتم العثور على الوحدة، البحث باسم المنشئ
+  if (!unitName && r.enteredBy) {
+    try {
+      const author = db.prepare('SELECT unitId FROM users WHERE orgId=? AND (fullName=? OR userName=?)').get(r.orgId, r.enteredBy, r.enteredBy);
+      if (author && author.unitId) {
+        effectiveUnitId = author.unitId;
+        const un = db.prepare('SELECT unitName FROM units WHERE id=?').get(author.unitId);
+        if (un) unitName = un.unitName;
+      }
+    } catch(e){}
+  }
+
+  // معالجة ذاتية لقاعدة البيانات في حال اكتشاف معرف الوحدة وكان فارغاً
+  if (!r.unitId && effectiveUnitId) {
+    try {
+      db.prepare('UPDATE reports SET unitId=? WHERE id=? AND unitId IS NULL').run(effectiveUnitId, r.id);
+    } catch(e){}
+  }
+
   return {
     ...r,
     unitId: effectiveUnitId,
@@ -876,20 +914,21 @@ function checkDeviceAuth(user, org, req) {
       return { ok: false, code: 'DEVICE_BLOCKED', message: '🚫 تم حظر هذا الهاتف من الاتصال بالنظام من قِبل إدارة الجهة.' };
     }
     if (enforce && dev.status === 'pending') {
-      return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف قيد المراجعة وبانتظار اعتماد مدير الجهة (' + org.orgName + ').' };
+      let pendingMsg = '📱 هذا الهاتف قيد المراجعة وبانتظار اعتماد إدارة الفرع (' + org.orgName + ').';
+      if (user.unitId && !user.isUnitManager && user.role !== 'UnitAdmin' && user.role !== 'Admin') {
+        let unitName = '';
+        try {
+          const un = db.prepare('SELECT unitName FROM units WHERE id=?').get(user.unitId);
+          if (un) unitName = un.unitName;
+        } catch(e){}
+        pendingMsg = `📱 هذا الهاتف قيد المراجعة وبانتظار اعتماد مدير الوحدة (${unitName || 'المباشر'}).`;
+      }
+      return { ok: false, code: 'DEVICE_PENDING', message: pendingMsg };
     }
     return { ok: true, device: dev };
   }
 
-  // 2. إذا كان للمستخدم جهاز سابق معتمد في النظام بنفس الفرع (مثلاً عند إعادة تثبيت التطبيق أو تحديث الهاتف)
-  const existingUserDev = db.prepare("SELECT * FROM devices WHERE orgId=? AND (userId=? OR userName=?) AND status='approved'").get(user.orgId, user.id, user.userName);
-  if (existingUserDev) {
-    db.prepare('UPDATE devices SET deviceId=?, deviceName=?, lastSeenAt=?, unitId=COALESCE(?, unitId) WHERE id=?')
-      .run(deviceId, deviceName, nowIso(), user.unitId || null, existingUserDev.id);
-    return { ok: true, device: existingUserDev };
-  }
-
-  // 3. تسجيل جهاز جديد لأول مرة
+  // 2. تسجيل جهاز جديد لأول مرة (يحافظ كل جهاز على معرّفه المستقل واعتماده الدائم دون تداخل)
   const id = uid();
   const t = nowIso();
   const initialStatus = enforce ? 'pending' : 'approved';
@@ -905,7 +944,16 @@ function checkDeviceAuth(user, org, req) {
   } catch(e){}
 
   if (enforce) {
-    return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف جديد وقيد المراجعة بانتظار اعتماد مدير الجهة (' + org.orgName + ').' };
+    let pendingMsg = '📱 هذا الهاتف جديد وقيد المراجعة بانتظار اعتماد إدارة الفرع (' + org.orgName + ').';
+    if (user.unitId && !user.isUnitManager && user.role !== 'UnitAdmin' && user.role !== 'Admin') {
+      let unitName = '';
+      try {
+        const un = db.prepare('SELECT unitName FROM units WHERE id=?').get(user.unitId);
+        if (un) unitName = un.unitName;
+      } catch(e){}
+      pendingMsg = `📱 هذا الهاتف جديد وقيد المراجعة بانتظار اعتماد مدير الوحدة (${unitName || 'المباشر'}).`;
+    }
+    return { ok: false, code: 'DEVICE_PENDING', message: pendingMsg };
   }
   return { ok: true };
 }
@@ -996,13 +1044,17 @@ function buildStats(orgId, me = null, requestedUnitId = null) {
   let devicesPending = 0, devicesApproved = 0, devicesTotal = 0;
   try {
     if (unitFilter) {
-      devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending' AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?))) AND userId <> ?").get(orgId, unitFilter, unitFilter, me ? me.id : '').c;
-      devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved' AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?))) AND userId <> ?").get(orgId, unitFilter, unitFilter, me ? me.id : '').c;
-      devicesTotal = db.prepare('SELECT COUNT(*) c FROM devices WHERE orgId=? AND (unitId=? OR (unitId IS NULL AND userId IN (SELECT id FROM users WHERE unitId=?))) AND userId <> ?').get(orgId, unitFilter, unitFilter, me ? me.id : '').c;
-    } else {
-      devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending'").get(orgId).c;
+      devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending' AND (unitId=? OR userId IN (SELECT id FROM users WHERE orgId=? AND unitId=? AND isUnitManager=0 AND role<>'Admin')) AND userId <> ?").get(orgId, unitFilter, orgId, unitFilter, me ? me.id : '').c;
+      devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved' AND (unitId=? OR userId IN (SELECT id FROM users WHERE orgId=? AND unitId=? AND isUnitManager=0 AND role<>'Admin'))").get(orgId, unitFilter, orgId, unitFilter).c;
+      devicesTotal = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND (unitId=? OR userId IN (SELECT id FROM users WHERE orgId=? AND unitId=? AND isUnitManager=0 AND role<>'Admin'))").get(orgId, unitFilter, orgId, unitFilter).c;
+    } else if (isOrgAdmin(me) && !isSuperAdmin(me)) {
+      devicesPending = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='pending' AND (userId IN (SELECT id FROM users WHERE orgId=? AND (isUnitManager=1 OR role='UnitAdmin' OR role='Admin' OR unitId IS NULL OR unitId='')) OR (unitId IS NULL OR unitId='')) AND userId <> ?").get(orgId, orgId, me ? me.id : '').c;
       devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=? AND status='approved'").get(orgId).c;
-      devicesTotal = db.prepare('SELECT COUNT(*) c FROM devices WHERE orgId=?').get(orgId).c;
+      devicesTotal = db.prepare("SELECT COUNT(*) c FROM devices WHERE orgId=?").get(orgId).c;
+    } else {
+      devicesPending = 0;
+      devicesApproved = 0;
+      devicesTotal = 0;
     }
   } catch(e){}
 
@@ -1376,6 +1428,54 @@ const server = http.createServer(async (req, res) => {
         try { db.prepare('DELETE FROM sessions WHERE token=?').run(tok); } catch(e){}
       }
       send(res, 200, { ok: true, message: 'تم الخروج بنجاح' });
+      return;
+    }
+
+    /* =========================================================================
+       مسارات التحديث السحابي العامة (Public Cloud System Update APIs)
+       ========================================================================= */
+    // فحص رقم إصدار المنظومة
+    if (method === 'GET' && p === '/api/system/version') {
+      let bundleExists = false;
+      const candidates = [
+        path.join(ROOT, 'updates', 'engine_update_bundle.json'),
+        path.join(ROOT, '..', 'updates', 'engine_update_bundle.json'),
+        path.join(ROOT, 'public', 'updates', 'engine_update_bundle.json')
+      ];
+      for (const cp of candidates) {
+        if (fs.existsSync(cp)) { bundleExists = true; break; }
+      }
+      send(res, 200, {
+        ok: true,
+        version: SYSTEM_VERSION,
+        buildDate: SYSTEM_BUILD_DATE,
+        hasUpdateBundle: bundleExists,
+        changelog: SYSTEM_CHANGELOG
+      });
+      return;
+    }
+
+    // تنزيل حزمة التحديث السحابي الكاملة
+    if (method === 'GET' && p === '/api/system/download-update-bundle') {
+      const candidates = [
+        path.join(ROOT, 'updates', 'engine_update_bundle.json'),
+        path.join(ROOT, '..', 'updates', 'engine_update_bundle.json'),
+        path.join(ROOT, 'public', 'updates', 'engine_update_bundle.json')
+      ];
+      let foundPath = null;
+      for (const cp of candidates) {
+        if (fs.existsSync(cp)) { foundPath = cp; break; }
+      }
+      if (!foundPath) {
+        sendError(res, 404, 'حزمة التحديث السحابي غير متوفرة حالياً على الخادم');
+        return;
+      }
+      const data = fs.readFileSync(foundPath, 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(data);
       return;
     }
 
@@ -1856,13 +1956,17 @@ const server = http.createServer(async (req, res) => {
         if (existing) { sendError(res, 400, 'اسم المستخدم مستخدم مسبقاً'); return; }
         const uId = uid();
         const hash = hashHex(pwd);
+        const creatorName = me.fullName ? `${me.fullName} (${me.userName})` : me.userName;
+        const creatorId = me.id;
+        const creatorRole = 'مدير عام المركز';
         db.prepare(`INSERT INTO users(id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
-          canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, canSmartAi, createdAt)
-          VALUES(?, NULL, ?, ?, ?, ?, 'SuperSupervisor', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint, canEvents, canUsers, canSettings, canSmartAi, createdBy, createdById, createdRole, createdAt)
+          VALUES(?, NULL, ?, ?, ?, ?, 'SuperSupervisor', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
             uId, uName, fName || uName, hash, pwd, b.isActive !== false ? 1 : 0,
             b.canDash ? 1 : 0, b.canEntry ? 1 : 0, b.canReports ? 1 : 0, b.canReportsEdit ? 1 : 0,
             b.canReportsDelete ? 1 : 0, b.canReportsPrint ? 1 : 0, b.canEvents ? 1 : 0,
-            b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, b.canSmartAi !== undefined ? (b.canSmartAi ? 1 : 0) : 1, nowIso()
+            b.canUsers ? 1 : 0, b.canSettings ? 1 : 0, b.canSmartAi !== undefined ? (b.canSmartAi ? 1 : 0) : 1,
+            creatorName, creatorId, creatorRole, nowIso()
           );
         send(res, 200, { ok: true, message: 'تم إنشاء مستخدم الإدارة المركزية بنجاح ✔' });
         return;
@@ -2133,31 +2237,32 @@ const server = http.createServer(async (req, res) => {
 
     // 4. دفع وتحديث الأجهزة المعتمدة من كمبيوتر المدير إلى السحابة (Push Devices to Cloud)
     if (method === 'POST' && p === '/api/relay/push-devices') {
-      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      if (!isOrgAdmin(me) && !isUnitAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
       const b = await readBody(req);
       const devices = Array.isArray(b.devices) ? b.devices : [];
       let upsertedCount = 0;
       for (const dev of devices) {
         if (!dev.deviceId) continue;
-        const existing = db.prepare('SELECT id, status, approvedAt, approvedBy FROM devices WHERE orgId=? AND deviceId=?').get(orgId, dev.deviceId);
+        const devUnitId = dev.unitId || (dev.userId ? (db.prepare('SELECT unitId FROM users WHERE id=?').get(dev.userId) || {}).unitId : null) || null;
+        const existing = db.prepare('SELECT id, status, approvedAt, approvedBy, unitId FROM devices WHERE orgId=? AND deviceId=?').get(orgId, dev.deviceId);
         if (existing) {
           const finalStatus = (existing.status === 'approved' || dev.status === 'approved') ? 'approved' : (existing.status === 'blocked' || dev.status === 'blocked' ? 'blocked' : 'pending');
           const finalApprovedAt = (finalStatus === 'approved') ? (existing.approvedAt || dev.approvedAt || nowIso()) : null;
           const finalApprovedBy = (finalStatus === 'approved') ? (existing.approvedBy || dev.approvedBy || me.fullName || 'المدير') : null;
           db.prepare(`UPDATE devices SET 
-            deviceName=?, userId=?, userName=?, userFullName=?, status=?, lastSeenAt=?, approvedAt=?, approvedBy=? 
+            deviceName=?, userId=?, userName=?, userFullName=?, status=?, lastSeenAt=?, approvedAt=?, approvedBy=?, unitId=COALESCE(unitId, ?) 
             WHERE id=?`)
             .run(
               dev.deviceName || '', dev.userId || '', dev.userName || '',
               dev.userFullName || '', finalStatus, dev.lastSeenAt || nowIso(),
-              finalApprovedAt, finalApprovedBy, existing.id
+              finalApprovedAt, finalApprovedBy, devUnitId, existing.id
             );
         } else {
           db.prepare(`INSERT INTO devices(
-            id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+            id, orgId, unitId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
             .run(
-              dev.id || uid(), orgId, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
+              dev.id || uid(), orgId, devUnitId, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
               dev.userFullName || '', dev.status || 'approved', dev.registeredAt || nowIso(), dev.lastSeenAt || nowIso(),
               dev.status === 'approved' ? (dev.approvedAt || nowIso()) : null,
               dev.status === 'approved' ? (dev.approvedBy || me.fullName || 'المدير') : ''
@@ -2169,9 +2274,37 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // 4.5 دفع وتحديث التقارير من كمبيوتر المدير إلى السحابة (Push Reports to Cloud)
+    if (method === 'POST' && p === '/api/relay/push-reports') {
+      if (!isOrgAdmin(me) && !isUnitAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      const b = await readBody(req);
+      const reports = Array.isArray(b.reports) ? b.reports : [];
+      let upsertedCount = 0;
+      for (const r of reports) {
+        if (!r.id) continue;
+        const repUnitId = r.unitId || (r.enteredByUserId ? (db.prepare('SELECT unitId FROM users WHERE id=?').get(r.enteredByUserId) || {}).unitId : null) || null;
+        db.prepare(`INSERT OR REPLACE INTO reports(
+          id, orgId, unitId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
+          enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt, syncedAt
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(
+            r.id, orgId, repUnitId, String(r.reportNumber || ''), String(r.subject || ''), String(r.target || ''),
+            String(r.reportDate || ''), String(r.reportTime || ''), String(r.location || ''), String(r.details || ''),
+            typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
+            String(r.enteredBy || ''), r.enteredByUserId || null,
+            String(r.rating || 'عادي'), String(r.logoId || 'logo1'),
+            r.isEncrypted ? 1 : 0, String(r.encryptedPayload || ''), String(r.encryptedIv || ''),
+            r.createdAt || nowIso(), r.updatedAt || nowIso(), nowIso()
+          );
+        upsertedCount++;
+      }
+      send(res, 200, { ok: true, syncedReports: upsertedCount });
+      return;
+    }
+
     // 5. دفع وتحديث المستخدمين والصلاحيات من كمبيوتر المدير إلى السحابة (Push Users & Permissions to Cloud)
     if (method === 'POST' && p === '/api/relay/push-users') {
-      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      if (!isOrgAdmin(me) && !isUnitAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
       const b = await readBody(req);
       const users = Array.isArray(b.users) ? b.users : [];
       let upsertedCount = 0;
@@ -2181,13 +2314,14 @@ const server = http.createServer(async (req, res) => {
           id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
           canOpen, canAdd, canDelete, canEdit, canPrint,
           canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint,
-          canEvents, canUnits, canUsers, canSettings, unitId, isUnitManager, createdAt
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          canEvents, canUnits, canUsers, canSettings, unitId, isUnitManager, createdBy, createdById, createdRole, createdAt
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
             u.id, orgId, u.userName, u.fullName || u.userName, u.passwordHash, u.plainPassword || '', u.role || 'EntryUser', u.isActive ? 1 : 0,
             u.canOpen ? 1 : 0, u.canAdd ? 1 : 0, u.canDelete ? 1 : 0, u.canEdit ? 1 : 0, u.canPrint ? 1 : 0,
             u.canDash ? 1 : 0, u.canEntry ? 1 : 0, u.canReports ? 1 : 0, u.canReportsEdit ? 1 : 0, u.canReportsDelete ? 1 : 0, u.canReportsPrint ? 1 : 0,
-            u.canEvents ? 1 : 0, u.canUnits ? 1 : 0, u.canUsers ? 1 : 0, u.canSettings ? 1 : 0, u.unitId || null, u.isUnitManager ? 1 : 0, u.createdAt || nowIso()
+            u.canEvents ? 1 : 0, u.canUnits ? 1 : 0, u.canUsers ? 1 : 0, u.canSettings ? 1 : 0, u.unitId || null, u.isUnitManager ? 1 : 0,
+            u.createdBy || null, u.createdById || null, u.createdRole || null, u.createdAt || nowIso()
           );
         upsertedCount++;
       }
@@ -2197,7 +2331,7 @@ const server = http.createServer(async (req, res) => {
 
     // 5.5 دفع وتحديث الوحدات من كمبيوتر المدير إلى السحابة (Push Units to Cloud)
     if (method === 'POST' && p === '/api/relay/push-units') {
-      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      if (!isOrgAdmin(me) && !isUnitAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
       const b = await readBody(req);
       const units = Array.isArray(b.units) ? b.units : [];
       let upsertedCount = 0;
@@ -2218,7 +2352,7 @@ const server = http.createServer(async (req, res) => {
 
     // 6. دفع وتحديث الإعدادات من كمبيوتر المدير إلى السحابة (Push Settings to Cloud)
     if (method === 'POST' && p === '/api/relay/push-settings') {
-      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      if (!isOrgAdmin(me) && !isUnitAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
       const b = await readBody(req);
       if (b.settings && typeof b.settings === 'object') {
         for (const [k, v] of Object.entries(b.settings)) {
@@ -2231,7 +2365,7 @@ const server = http.createServer(async (req, res) => {
 
     // 7. المزامنة الفورية مع السحابة من واجهة المدير (Trigger Sync Now)
     if (method === 'POST' && p === '/api/relay/sync-now') {
-      if (!isOrgAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
+      if (!isOrgAdmin(me) && !isUnitAdmin(me) && !isSuperAdmin(me)) { sendError(res, 403, 'غير مصرح'); return; }
       try {
         const syncRes = await performCloudRelaySync(orgId);
         send(res, 200, { ok: true, ...syncRes, message: 'تمت المزامنة مع السحابة وجلب التقارير بنجاح ✔' });
@@ -2392,8 +2526,16 @@ const server = http.createServer(async (req, res) => {
         const params = [orgId];
 
         if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
-          sql += ' AND unitId=?';
+          sql += " AND unitId=? AND role<>'Admin'";
           params.push(me.unitId);
+        } else if (isOrgAdmin(me) && !isSuperAdmin(me)) {
+          if (filterUnit) {
+            sql += ' AND unitId=?';
+            params.push(filterUnit);
+          } else {
+            // مدير الفرع يدير المستخدمين المباشرين ومدراء الوحدات فقط
+            sql += " AND (unitId IS NULL OR unitId='' OR isUnitManager=1 OR role='UnitAdmin' OR role='Admin')";
+          }
         } else if (filterUnit) {
           sql += ' AND unitId=?';
           params.push(filterUnit);
@@ -2437,17 +2579,25 @@ const server = http.createServer(async (req, res) => {
         const canUsers = isUnitMgr ? 1 : (isUnitMgrUser ? 0 : (b.canUsers ? 1 : 0));
         const canSettings = isUnitMgrUser ? 0 : (b.canSettings ? 1 : 0);
 
+        const creatorName = me.fullName ? `${me.fullName} (${me.userName})` : me.userName;
+        const creatorId = me.id;
+        let creatorRole = 'النظام الإداري';
+        if (me.role === 'SuperAdmin') creatorRole = 'مدير عام النظام';
+        else if (isOrgAdmin(me)) creatorRole = 'مدير الفرع';
+        else if (isUnitAdmin(me)) creatorRole = me.unitName ? `مدير وحدة ${me.unitName}` : 'مدير الوحدة';
+        else creatorRole = me.role || 'مدير الحسابات';
+
         db.prepare(`INSERT INTO users(
           id, orgId, unitId, isUnitManager, userName, fullName, passwordHash, plainPassword, role, isActive,
           canOpen, canAdd, canDelete, canEdit, canPrint,
           canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint,
-          canEvents, canUnits, canUsers, canSettings, createdAt
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          canEvents, canUnits, canUsers, canSettings, createdBy, createdById, createdRole, createdAt
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(
             id, orgId, assignedUnitId, isUnitMgr, userName, fullName, pHash, pPlain, assignedRole, b.isActive ? 1 : 0,
             (isUnitMgr || b.canOpen) ? 1 : 0, canAdd, canReportsDelete, canReportsEdit, canReportsPrint,
             canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint,
-            canEvents, canUnits, canUsers, canSettings, nowIso()
+            canEvents, canUnits, canUsers, canSettings, creatorName, creatorId, creatorRole, nowIso()
           );
 
         if (assignedUnitId && isUnitMgr) {
@@ -2474,6 +2624,12 @@ const server = http.createServer(async (req, res) => {
         if (isUnitMgrUser) {
           if (user.unitId !== me.unitId || user.role === 'Admin') {
             sendError(res, 403, 'غير مصرح بتعديل مستخدم خارج نطاق وحدتك');
+            return;
+          }
+        } else if (isOrgAdmin(me) && !isSuperAdmin(me)) {
+          const isManagedByUnitMgr = user.unitId && !user.isUnitManager && user.role !== 'UnitAdmin' && user.role !== 'Admin';
+          if (isManagedByUnitMgr) {
+            sendError(res, 403, 'تعديل ومتابعة حسابات أفراد الوحدة من اختصاص مدير الوحدة المباشر فقط');
             return;
           }
         }
@@ -2554,6 +2710,12 @@ const server = http.createServer(async (req, res) => {
         if (isUnitMgrUser) {
           if (user.unitId !== me.unitId || user.id === me.id || user.isUnitManager || user.role === 'Admin') {
             sendError(res, 403, 'غير مصرح بحذف هذا المستخدم');
+            return;
+          }
+        } else if (isOrgAdmin(me) && !isSuperAdmin(me)) {
+          const isManagedByUnitMgr = user.unitId && !user.isUnitManager && user.role !== 'UnitAdmin' && user.role !== 'Admin';
+          if (isManagedByUnitMgr) {
+            sendError(res, 403, 'إدارة وحذف حسابات أفراد الوحدة من اختصاص مدير الوحدة المباشر فقط');
             return;
           }
         }
@@ -2999,7 +3161,7 @@ const server = http.createServer(async (req, res) => {
         bDb.exec(`
           PRAGMA journal_mode = WAL;
           CREATE TABLE organizations (id TEXT PRIMARY KEY, orgCode TEXT, orgName TEXT, logoUrl TEXT, phone TEXT, email TEXT, status TEXT, maxUsers INTEGER, allowHqAccess INTEGER, encKey TEXT, createdAt TEXT);
-          CREATE TABLE users (id TEXT PRIMARY KEY, orgId TEXT, userName TEXT, fullName TEXT, passwordHash TEXT, plainPassword TEXT, role TEXT, isActive INTEGER, canDash INTEGER, canEntry INTEGER, canReports INTEGER, canReportsEdit INTEGER, canReportsDelete INTEGER, canReportsPrint INTEGER, canEvents INTEGER, canUsers INTEGER, canSettings INTEGER, createdAt TEXT);
+          CREATE TABLE users (id TEXT PRIMARY KEY, orgId TEXT, userName TEXT, fullName TEXT, passwordHash TEXT, plainPassword TEXT, role TEXT, isActive INTEGER, canDash INTEGER, canEntry INTEGER, canReports INTEGER, canReportsEdit INTEGER, canReportsDelete INTEGER, canReportsPrint INTEGER, canEvents INTEGER, canUsers INTEGER, canSettings INTEGER, unitId TEXT, isUnitManager INTEGER, createdBy TEXT, createdById TEXT, createdRole TEXT, createdAt TEXT);
           CREATE TABLE reports (id TEXT PRIMARY KEY, orgId TEXT, reportNumber TEXT, subject TEXT, target TEXT, reportDate TEXT, reportTime TEXT, location TEXT, details TEXT, images TEXT, enteredBy TEXT, enteredByUserId TEXT, rating TEXT, logoId TEXT, isEncrypted INTEGER, encryptedPayload TEXT, encryptedIv TEXT, createdAt TEXT, updatedAt TEXT, syncedAt TEXT);
           CREATE TABLE events (id TEXT PRIMARY KEY, orgId TEXT, title TEXT, eventType TEXT, notes TEXT, eventDate TEXT, eventTime TEXT, location TEXT, assignedUserId TEXT, assignedUserName TEXT, createdBy TEXT, createdById TEXT, createdDate TEXT, status TEXT, receivedAt TEXT, completedAt TEXT, feedbackNotes TEXT, isArchived INTEGER);
           CREATE TABLE devices (id TEXT PRIMARY KEY, orgId TEXT, deviceId TEXT, deviceName TEXT, userId TEXT, userName TEXT, userFullName TEXT, status TEXT, registeredAt TEXT, approvedAt TEXT, lastSeenAt TEXT, approvedBy TEXT);
@@ -3012,10 +3174,10 @@ const server = http.createServer(async (req, res) => {
         }
         const users = db.prepare('SELECT * FROM users WHERE orgId=?').all(orgId);
         for (const u of users) {
-          bDb.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+          bDb.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
             u.id, u.orgId, u.userName, u.fullName, u.passwordHash, u.plainPassword||'', u.role, u.isActive?1:0,
             u.canDash?1:0, u.canEntry?1:0, u.canReports?1:0, u.canReportsEdit?1:0, u.canReportsDelete?1:0, u.canReportsPrint?1:0,
-            u.canEvents?1:0, u.canUsers?1:0, u.canSettings?1:0, u.createdAt||nowIso()
+            u.canEvents?1:0, u.canUsers?1:0, u.canSettings?1:0, u.unitId||null, u.isUnitManager?1:0, u.createdBy||'', u.createdById||'', u.createdRole||'', u.createdAt||nowIso()
           );
         }
         const reports = db.prepare('SELECT * FROM reports WHERE orgId=?').all(orgId);
@@ -3175,11 +3337,16 @@ const server = http.createServer(async (req, res) => {
         WHERE d.orgId=?
       `;
       const params = [orgId];
-      if (isUnitAdmin(me) && me.unitId) {
-        sql += ` AND (d.unitId = ? OR d.userId IN (SELECT id FROM users WHERE unitId = ?)) AND d.userId <> ?`;
-        params.push(me.unitId, me.unitId, me.id);
+      if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+        // مدير الوحدة: يرى أجهزة وحدته الميدانية
+        sql += ` AND (d.unitId = ? OR d.userId IN (SELECT id FROM users WHERE orgId=? AND unitId=?))`;
+        params.push(me.unitId, orgId, me.unitId);
+      } else if (isOrgAdmin(me) && !isSuperAdmin(me)) {
+        // مدير الفرع: يرى كافة أجهزة الفرع والوحدات التابعة له
+      } else if (isSuperAdmin(me)) {
+        sql += ` AND 1=0`;
       }
-      sql += ` GROUP BY d.deviceId ORDER BY d.lastSeenAt DESC`;
+      sql += ` GROUP BY d.deviceId ORDER BY (CASE WHEN d.status='pending' THEN 0 ELSE 1 END), d.lastSeenAt DESC`;
       const devices = db.prepare(sql).all(...params);
       send(res, 200, { devices });
       return;
@@ -3189,9 +3356,14 @@ const server = http.createServer(async (req, res) => {
       if (!can(me, 'canUsers')) { sendError(res, 403, 'غير مصرح'); return; }
       let sql = "UPDATE devices SET status='approved', approvedAt=?, approvedBy=? WHERE orgId=? AND status='pending'";
       const params = [nowIso(), me.fullName, orgId];
-      if (isUnitAdmin(me) && me.unitId) {
-        sql += " AND (unitId=? OR userId IN (SELECT id FROM users WHERE unitId=?)) AND userId <> ?";
-        params.push(me.unitId, me.unitId, me.id);
+      if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+        sql += " AND userId IN (SELECT id FROM users WHERE orgId=? AND unitId=? AND isUnitManager=0 AND role<>'Admin') AND userId <> ?";
+        params.push(orgId, me.unitId, me.id);
+      } else if (isOrgAdmin(me) && !isSuperAdmin(me)) {
+        sql += " AND userId IN (SELECT id FROM users WHERE orgId=? AND (isUnitManager=1 OR role='UnitAdmin' OR role='Admin' OR unitId IS NULL OR unitId='')) AND userId <> ?";
+        params.push(orgId, me.id);
+      } else if (isSuperAdmin(me)) {
+        sql += " AND 1=0";
       }
       const info = db.prepare(sql).run(...params);
       try {
@@ -3209,12 +3381,21 @@ const server = http.createServer(async (req, res) => {
       const devRow = db.prepare('SELECT * FROM devices WHERE orgId=? AND id=?').get(orgId, devId);
       if (!devRow) { sendError(res, 404, 'الجهاز غير موجود'); return; }
 
-      if (isUnitAdmin(me) && me.unitId) {
-        const isMyUnit = (devRow.unitId === me.unitId) || !!db.prepare('SELECT id FROM users WHERE id=? AND unitId=?').get(devRow.userId, me.unitId);
-        if (!isMyUnit || devRow.userId === me.id) {
-          sendError(res, 403, 'غير مصرح لك باعتماد أو تعديل هذا الجهاز');
+      if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+        const isMyUnitMember = db.prepare("SELECT id FROM users WHERE id=? AND unitId=? AND isUnitManager=0 AND role<>'Admin'").get(devRow.userId, me.unitId);
+        if (!isMyUnitMember || devRow.userId === me.id) {
+          sendError(res, 403, 'غير مصرح لك باعتماد أو تعديل هذا الجهاز (خاص بوحدة أخرى أو بالمدير)');
           return;
         }
+      } else if (isOrgAdmin(me) && !isSuperAdmin(me)) {
+        const isMyDirectUser = db.prepare("SELECT id FROM users WHERE id=? AND orgId=? AND (isUnitManager=1 OR role='UnitAdmin' OR role='Admin' OR unitId IS NULL OR unitId='')").get(devRow.userId, orgId);
+        if (!isMyDirectUser) {
+          sendError(res, 403, 'اعتماد أجهزة أفراد الوحدة من اختصاص مدير الوحدة المباشر فقط');
+          return;
+        }
+      } else if (isSuperAdmin(me)) {
+        sendError(res, 403, 'اعتماد أجهزة الفروع والوحدات ليس من اختصاص الإدارة المركزية');
+        return;
       }
 
       const newStatus = action === 'approve' ? 'approved' : 'blocked';
@@ -3237,17 +3418,140 @@ const server = http.createServer(async (req, res) => {
       const devRow = db.prepare('SELECT * FROM devices WHERE orgId=? AND id=?').get(orgId, devId);
       if (!devRow) { sendError(res, 404, 'الجهاز غير موجود'); return; }
 
-      if (isUnitAdmin(me) && me.unitId) {
-        const isMyUnit = (devRow.unitId === me.unitId) || !!db.prepare('SELECT id FROM users WHERE id=? AND unitId=?').get(devRow.userId, me.unitId);
-        if (!isMyUnit) {
-          sendError(res, 403, 'غير مصرح لك بحذف هذا الجهاز');
+      if (isUnitAdmin(me) && me.unitId && !isOrgAdmin(me)) {
+        const isMyUnitMember = db.prepare("SELECT id FROM users WHERE id=? AND unitId=? AND isUnitManager=0 AND role<>'Admin'").get(devRow.userId, me.unitId);
+        if (!isMyUnitMember) {
+          sendError(res, 403, 'غير مصرح لك بحذف هذا الجهاز (خاص بوحدة أخرى)');
           return;
         }
+      } else if (isOrgAdmin(me) && !isSuperAdmin(me)) {
+        const isMyDirectUser = db.prepare("SELECT id FROM users WHERE id=? AND orgId=? AND (isUnitManager=1 OR role='UnitAdmin' OR role='Admin' OR unitId IS NULL OR unitId='')").get(devRow.userId, orgId);
+        if (!isMyDirectUser) {
+          sendError(res, 403, 'إدارة وحذف أجهزة أفراد الوحدة من اختصاص مدير الوحدة المباشر فقط');
+          return;
+        }
+      } else if (isSuperAdmin(me)) {
+        sendError(res, 403, 'إدارة أجهزة الفروع والوحدات ليس من اختصاص الإدارة المركزية');
+        return;
       }
 
       db.prepare('DELETE FROM devices WHERE orgId=? AND id=?').run(orgId, devId);
       send(res, 200, { ok: true, message: 'تم حذف الجهاز من السجل' });
       return;
+    }
+
+    // فحص توفر تحديث جديد من السحابة للمنظومة المحلية
+    if (method === 'GET' && p === '/api/system/check-cloud-update') {
+      try {
+        const cloudVerRes = await httpJsonRequest(CLOUD_URL + '/api/system/version', { method: 'GET' });
+        if (cloudVerRes.status === 200 && cloudVerRes.data) {
+          const cloudVer = cloudVerRes.data.version || SYSTEM_VERSION;
+          const hasNew = cloudVer !== SYSTEM_VERSION;
+          send(res, 200, {
+            ok: true,
+            currentVersion: SYSTEM_VERSION,
+            cloudVersion: cloudVer,
+            buildDate: cloudVerRes.data.buildDate || '',
+            updateAvailable: hasNew,
+            hasBundle: !!cloudVerRes.data.hasUpdateBundle,
+            changelog: cloudVerRes.data.changelog || SYSTEM_CHANGELOG
+          });
+          return;
+        }
+        if (cloudVerRes.status === 404 || cloudVerRes.status === 401) {
+          send(res, 200, { ok: false, message: 'الخادم السحابي يعمل بنسخة سابقة؛ يرجى رفع ملف تحديث السحابة Upload_To_Cloud_MultiTenant.zip إلى Render لتفعيل ميزة التحديث التلقائي لكافة الأجهزة' });
+          return;
+        }
+        send(res, 200, { ok: false, message: 'تعذر الاتصال بالسحابة لجلب رقم الإصدار (كود ' + cloudVerRes.status + ')' });
+      } catch(e) {
+        send(res, 200, { ok: false, message: 'خطأ أثناء فحص التحديثات: ' + e.message });
+      }
+      return;
+    }
+
+    // تطبيق وتثبيت التحديث السحابي على الجهاز المحلي بنقرة واحدة
+    if (method === 'POST' && p === '/api/system/apply-cloud-update') {
+      if (!isOrgAdmin(me) && !isUnitAdmin(me) && !isSuperAdmin(me)) {
+        sendError(res, 403, 'غير مصرح لك بتحديث المنظومة');
+        return;
+      }
+
+      try {
+        const bundleRes = await httpJsonRequest(CLOUD_URL + '/api/system/download-update-bundle', { method: 'GET' });
+        if (bundleRes.status !== 200 || !bundleRes.data || !bundleRes.data.files) {
+          sendError(res, 400, 'فشل تنزيل ملفات التحديث من السحابة (كود ' + bundleRes.status + ')');
+          return;
+        }
+
+        // 0. ضمان عزل وحماية البيانات: أخذ نسخة احتياطية فورية من قاعدة البيانات الحالية قبل لمس أي ملف
+        try {
+          const preUpdateBackup = path.join(BACKUP_DIR, `multitenant_pre_update_${Date.now()}.db`);
+          const safeTarget = preUpdateBackup.replace(/\\/g, '/').replace(/'/g, "''");
+          db.exec(`VACUUM INTO '${safeTarget}'`);
+          console.log('[🛡️ Safety Backup] تم أخذ نسخة احتياطية فورية لقاعدة البيانات قبل التحديث:', path.basename(preUpdateBackup));
+        } catch(dbe){
+          console.warn('[🛡️ Safety Backup] ملاحظة النسخة الاحتياطية:', dbe.message);
+        }
+
+        const files = bundleRes.data.files;
+        let enginePath = ROOT;
+        if (fs.existsSync(path.join(ROOT, 'engine', 'server.jsc'))) {
+          enginePath = path.join(ROOT, 'engine');
+        } else if (fs.existsSync(path.join(ROOT, '..', 'engine', 'server.jsc'))) {
+          enginePath = path.join(ROOT, '..', 'engine');
+        }
+
+        // إنشاء نسخة احتياطية من ملفات المحرك الحالية قبل استبدالها
+        const backupEngineDir = path.join(enginePath, 'backup_v' + SYSTEM_VERSION.replace(/\./g, '_') + '_' + Date.now());
+        try {
+          fs.mkdirSync(backupEngineDir, { recursive: true });
+          if (fs.existsSync(path.join(enginePath, 'server.jsc'))) {
+            fs.copyFileSync(path.join(enginePath, 'server.jsc'), path.join(backupEngineDir, 'server.jsc'));
+          }
+          if (fs.existsSync(path.join(enginePath, 'embedded_assets.jsc'))) {
+            fs.copyFileSync(path.join(enginePath, 'embedded_assets.jsc'), path.join(backupEngineDir, 'embedded_assets.jsc'));
+          }
+        } catch(be){}
+
+        // استبدال الملفات المحدثة: قائمة بيضاء صارمة تمنع منعاً باتاً المساس بقواعد البيانات أو مجلد data
+        const ALLOWED_UPDATE_FILES = new Set(['server.jsc', 'embedded_assets.jsc', 'start.js']);
+        let writtenCount = 0;
+        for (const [fname, b64content] of Object.entries(files)) {
+          const cleanName = path.basename(fname);
+          if (ALLOWED_UPDATE_FILES.has(cleanName) && (cleanName.endsWith('.jsc') || cleanName.endsWith('.js'))) {
+            const targetFilePath = path.join(enginePath, cleanName);
+            fs.writeFileSync(targetFilePath, Buffer.from(b64content, 'base64'));
+            writtenCount++;
+          }
+        }
+
+        send(res, 200, {
+          ok: true,
+          updatedVersion: bundleRes.data.version || '2026.2.1',
+          writtenFiles: writtenCount,
+          message: 'تم تنزيل وتثبيت التحديث السحابي بنجاح ✔ جاري إعادة تشغيل المنظومة تلقائياً...'
+        });
+
+        // إعادة تشغيل محرك السيرفر ذاتياً بعد ثانية واحدة
+        setTimeout(() => {
+          try {
+            const { spawn } = require('child_process');
+            const isBytecode = __filename.endsWith('.jsc') || !fs.existsSync(__filename);
+            const startScript = isBytecode ? path.join(enginePath, 'start.js') : __filename;
+            const child = spawn(process.execPath, [startScript], {
+              detached: true,
+              stdio: 'ignore',
+              cwd: enginePath
+            });
+            child.unref();
+          } catch(se){}
+          process.exit(0);
+        }, 800);
+        return;
+      } catch(err) {
+        sendError(res, 500, 'فشل تطبيق التحديث السحابي: ' + err.message);
+        return;
+      }
     }
 
     sendError(res, 404, 'المسار غير موجود (404)');
@@ -3315,119 +3619,278 @@ async function performCloudRelaySync(targetOrgId) {
   const cloudToken = loginRes.data.token;
   let pulledReports = 0, pulledDevices = 0, pushedDevices = 0;
 
-  // 2. سحب التقارير والأجهزة من طابور السحابة
-  const pullRes = await httpJsonRequest(CLOUD_URL + '/api/relay/pull', {
-    method: 'GET',
-    headers: {
-      'Authorization': 'Bearer ' + cloudToken,
-      'X-Org-Code': org.orgCode
-    }
-  });
+  // 2. سحب التقارير والأجهزة من طابور السحابة السريع
+  try {
+    const pullRes = await httpJsonRequest(CLOUD_URL + '/api/relay/pull', {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + cloudToken,
+        'X-Org-Code': org.orgCode
+      }
+    });
 
-  if (pullRes.status === 200 && Array.isArray(pullRes.data.items) && pullRes.data.items.length > 0) {
-    const ackIds = [];
-    for (const item of pullRes.data.items) {
-      if (item.itemType === 'report' && item.payload) {
-        const r = item.payload;
-        try {
-          let repNum = String(r.reportNumber || '').trim();
-          if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#')) {
-            repNum = getNextReportNumber(org.id);
-          }
-          db.prepare(`INSERT OR REPLACE INTO reports(
-            id, orgId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
-            enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt, syncedAt
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-            .run(
-              r.id, org.id, repNum, r.subject || '', r.target || '',
-              r.reportDate || '', r.reportTime || '', r.location || '', r.details || '',
-              typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
-              r.enteredBy || '', r.enteredByUserId || null,
-              r.rating || 'عادي', r.logoId || 'logo1',
-              r.isEncrypted ? 1 : 0, r.encryptedPayload || '', r.encryptedIv || '',
-              r.createdAt || nowIso(), r.updatedAt || nowIso(), nowIso()
-            );
-          ackIds.push(item.id);
-          pulledReports++;
-          console.log(`[💾 HardDisk Sync] تم حفظ التقرير (${repNum} - ${r.subject}) بنجاح على القرص الصلب`);
-        } catch(e){}
-      } else if (item.itemType === 'device_registration' && item.payload) {
-        const dev = item.payload;
-        try {
-          const exists = db.prepare('SELECT id, status, approvedAt, approvedBy FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
-          if (!exists) {
-            db.prepare(`INSERT INTO devices(
-              id, orgId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+    if (pullRes.status === 200 && Array.isArray(pullRes.data.items) && pullRes.data.items.length > 0) {
+      const ackIds = [];
+      for (const item of pullRes.data.items) {
+        if (item.itemType === 'report' && item.payload) {
+          const r = item.payload;
+          try {
+            let repNum = String(r.reportNumber || '').trim();
+            if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#')) {
+              repNum = getNextReportNumber(org.id);
+            }
+            const repUnitId = r.unitId || (r.enteredByUserId ? (db.prepare('SELECT unitId FROM users WHERE id=?').get(r.enteredByUserId) || {}).unitId : null) || null;
+            db.prepare(`INSERT OR REPLACE INTO reports(
+              id, orgId, unitId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
+              enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt, syncedAt
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
               .run(
-                dev.id || uid(), org.id, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
-                dev.userFullName || '', dev.status || 'pending', dev.registeredAt || nowIso(),
-                dev.lastSeenAt || nowIso(), dev.approvedAt || null, dev.approvedBy || ''
+                r.id, org.id, repUnitId, repNum, r.subject || '', r.target || '',
+                r.reportDate || '', r.reportTime || '', r.location || '', r.details || '',
+                typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
+                r.enteredBy || '', r.enteredByUserId || null,
+                r.rating || 'عادي', r.logoId || 'logo1',
+                r.isEncrypted ? 1 : 0, r.encryptedPayload || '', r.encryptedIv || '',
+                r.createdAt || nowIso(), r.updatedAt || nowIso(), nowIso()
               );
-          } else {
-            const finalStatus = (exists.status === 'approved' || dev.status === 'approved') ? 'approved' : (exists.status === 'blocked' || dev.status === 'blocked' ? 'blocked' : 'pending');
-            const finalApprovedAt = (finalStatus === 'approved') ? (exists.approvedAt || dev.approvedAt || nowIso()) : null;
-            const finalApprovedBy = (finalStatus === 'approved') ? (exists.approvedBy || dev.approvedBy || 'المدير') : null;
-            db.prepare(`UPDATE devices SET 
-              deviceName=?, userId=?, userName=?, userFullName=?, status=?, lastSeenAt=?, approvedAt=?, approvedBy=? WHERE id=?`)
-              .run(
-                dev.deviceName || '', dev.userId || '', dev.userName || '',
-                dev.userFullName || '', finalStatus, dev.lastSeenAt || nowIso(),
-                finalApprovedAt, finalApprovedBy, exists.id
-              );
+            ackIds.push(item.id);
+            pulledReports++;
+            console.log(`[💾 HardDisk Sync] تم حفظ التقرير (${repNum} - ${r.subject}) بنجاح على القرص الصلب`);
+          } catch(e){}
+        } else if (item.itemType === 'device_registration' && item.payload) {
+          const dev = item.payload;
+          try {
+            const devUnitId = dev.unitId || (dev.userId ? (db.prepare('SELECT unitId FROM users WHERE id=?').get(dev.userId) || {}).unitId : null) || null;
+            const exists = db.prepare('SELECT id, status, approvedAt, approvedBy, unitId FROM devices WHERE orgId=? AND deviceId=?').get(org.id, dev.deviceId);
+            if (!exists) {
+              db.prepare(`INSERT INTO devices(
+                id, orgId, unitId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
+              ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+                .run(
+                  dev.id || uid(), org.id, devUnitId, dev.deviceId, dev.deviceName || '', dev.userId || '', dev.userName || '',
+                  dev.userFullName || '', dev.status || 'pending', dev.registeredAt || nowIso(),
+                  dev.lastSeenAt || nowIso(), dev.approvedAt || null, dev.approvedBy || ''
+                );
+            } else {
+              const finalStatus = (exists.status === 'approved' || dev.status === 'approved') ? 'approved' : (exists.status === 'blocked' || dev.status === 'blocked' ? 'blocked' : 'pending');
+              const finalApprovedAt = (finalStatus === 'approved') ? (exists.approvedAt || dev.approvedAt || nowIso()) : null;
+              const finalApprovedBy = (finalStatus === 'approved') ? (exists.approvedBy || dev.approvedBy || 'المدير') : null;
+              db.prepare(`UPDATE devices SET 
+                deviceName=?, userId=?, userName=?, userFullName=?, status=?, lastSeenAt=?, approvedAt=?, approvedBy=?, unitId=COALESCE(unitId, ?) WHERE id=?`)
+                .run(
+                  dev.deviceName || '', dev.userId || '', dev.userName || '',
+                  dev.userFullName || '', finalStatus, dev.lastSeenAt || nowIso(),
+                  finalApprovedAt, finalApprovedBy, devUnitId, exists.id
+                );
+            }
+            ackIds.push(item.id);
+            pulledDevices++;
+            console.log(`[📱 Device Sync] تم مزامنة الهاتف (${dev.deviceName || dev.deviceId}) محلياً`);
+          } catch(e){}
+        } else if (item.itemType === 'event_feedback' && item.payload) {
+          const f = item.payload;
+          try {
+            db.prepare(`UPDATE events SET status=?, receivedAt=?, completedAt=?, feedbackNotes=? WHERE id=? AND orgId=?`)
+              .run(f.status, f.receivedAt || null, f.completedAt || null, f.feedbackNotes || '', f.eventId, org.id);
+            ackIds.push(item.id);
+          } catch(e){}
+        }
+      }
+
+      // تأكيد الحفظ وتفريغ الطابور السحابي
+      if (ackIds.length > 0) {
+        await httpJsonRequest(CLOUD_URL + '/api/relay/ack', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + cloudToken,
+            'X-Org-Code': org.orgCode
           }
-          ackIds.push(item.id);
-          pulledDevices++;
-          console.log(`[📱 Device Sync] تم مزامنة الهاتف (${dev.deviceName || dev.deviceId}) محلياً`);
-        } catch(e){}
-      } else if (item.itemType === 'event_feedback' && item.payload) {
-        const f = item.payload;
+        }, { itemIds: ackIds }).catch(() => {});
+      }
+    }
+  } catch(e){}
+
+  // 2.5 جلب وسحب جميع التقارير مباشرة من السحابة لضمان التزامن لكافة أجهزة مدراء الفروع والوحدات
+  try {
+    const cloudRepRes = await httpJsonRequest(CLOUD_URL + '/api/reports', {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + cloudToken,
+        'X-Org-Code': org.orgCode
+      }
+    });
+    if (cloudRepRes.status === 200 && cloudRepRes.data && Array.isArray(cloudRepRes.data.reports)) {
+      for (const r of cloudRepRes.data.reports) {
         try {
-          db.prepare(`UPDATE events SET status=?, receivedAt=?, completedAt=?, feedbackNotes=? WHERE id=? AND orgId=?`)
-            .run(f.status, f.receivedAt || null, f.completedAt || null, f.feedbackNotes || '', f.eventId, org.id);
-          ackIds.push(item.id);
+          const existing = db.prepare('SELECT id, unitId, reportNumber FROM reports WHERE orgId=? AND id=?').get(org.id, r.id);
+          const repUnitId = r.unitId || (r.enteredByUserId ? (db.prepare('SELECT unitId FROM users WHERE id=?').get(r.enteredByUserId) || {}).unitId : null) || null;
+          if (!existing) {
+            let repNum = String(r.reportNumber || '').trim();
+            if (!repNum || repNum.includes('مسودة') || repNum.toLowerCase().includes('draft') || repNum.startsWith('#')) {
+              repNum = getNextReportNumber(org.id);
+            }
+            db.prepare(`INSERT OR REPLACE INTO reports(
+              id, orgId, unitId, reportNumber, subject, target, reportDate, reportTime, location, details, images,
+              enteredBy, enteredByUserId, rating, logoId, isEncrypted, encryptedPayload, encryptedIv, createdAt, updatedAt, syncedAt
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+              .run(
+                r.id, org.id, repUnitId, repNum, r.subject || '', r.target || '',
+                r.reportDate || '', r.reportTime || '', r.location || '', r.details || '',
+                typeof r.images === 'string' ? r.images : JSON.stringify(r.images || []),
+                r.enteredBy || '', r.enteredByUserId || null,
+                r.rating || 'عادي', r.logoId || 'logo1',
+                r.isEncrypted ? 1 : 0, r.encryptedPayload || '', r.encryptedIv || '',
+                r.createdAt || nowIso(), r.updatedAt || nowIso(), nowIso()
+              );
+            pulledReports++;
+          } else if (!existing.unitId && repUnitId) {
+            db.prepare('UPDATE reports SET unitId=? WHERE id=?').run(repUnitId, r.id);
+          }
         } catch(e){}
       }
     }
+  } catch(e){}
 
-    // تأكيد الحفظ وتفريغ الطابور السحابي
-    if (ackIds.length > 0) {
-      await httpJsonRequest(CLOUD_URL + '/api/relay/ack', {
+  // 2.6 مزامنة الوحدات من السحابة إلى الكمبيوتر المحلي
+  try {
+    const cloudUnitsRes = await httpJsonRequest(CLOUD_URL + '/api/units', {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + cloudToken,
+        'X-Org-Code': org.orgCode
+      }
+    });
+    if (cloudUnitsRes.status === 200 && cloudUnitsRes.data && Array.isArray(cloudUnitsRes.data.units)) {
+      for (const un of cloudUnitsRes.data.units) {
+        try {
+          const exUnit = db.prepare('SELECT id FROM units WHERE orgId=? AND id=?').get(org.id, un.id);
+          if (!exUnit) {
+            db.prepare(`INSERT INTO units(
+              id, orgId, unitName, unitCode, managerUserId, managerName, phone, notes, status, createdAt
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+              .run(un.id, org.id, un.unitName, un.unitCode || '', un.managerUserId || null, un.managerName || '', un.phone || '', un.notes || '', un.status || 'active', un.createdAt || nowIso());
+          }
+        } catch(e){}
+      }
+    }
+  } catch(e){}
+
+  // 2.7 مزامنة المستخدمين من السحابة إلى الكمبيوتر المحلي
+  try {
+    const cloudUsersRes = await httpJsonRequest(CLOUD_URL + '/api/users', {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + cloudToken,
+        'X-Org-Code': org.orgCode
+      }
+    });
+    if (cloudUsersRes.status === 200 && cloudUsersRes.data && Array.isArray(cloudUsersRes.data.users)) {
+      for (const cu of cloudUsersRes.data.users) {
+        try {
+          const exUser = db.prepare('SELECT id, unitId FROM users WHERE orgId=? AND (id=? OR userName=?)').get(org.id, cu.id, cu.userName);
+          if (!exUser) {
+            db.prepare(`INSERT INTO users(
+              id, orgId, userName, fullName, passwordHash, plainPassword, role, isActive,
+              canOpen, canAdd, canDelete, canEdit, canPrint,
+              canDash, canEntry, canReports, canReportsEdit, canReportsDelete, canReportsPrint,
+              canEvents, canUnits, canUsers, canSettings, unitId, isUnitManager, createdBy, createdById, createdRole, createdAt
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+              .run(
+                cu.id, org.id, cu.userName, cu.fullName || cu.userName, cu.passwordHash || '', cu.plainPassword || '',
+                cu.role || 'EntryUser', cu.isActive ? 1 : 0,
+                cu.canOpen ? 1 : 0, cu.canAdd ? 1 : 0, cu.canDelete ? 1 : 0, cu.canEdit ? 1 : 0, cu.canPrint ? 1 : 0,
+                cu.canDash ? 1 : 0, cu.canEntry ? 1 : 0, cu.canReports ? 1 : 0, cu.canReportsEdit ? 1 : 0, cu.canReportsDelete ? 1 : 0, cu.canReportsPrint ? 1 : 0,
+                cu.canEvents ? 1 : 0, cu.canUnits ? 1 : 0, cu.canUsers ? 1 : 0, cu.canSettings ? 1 : 0,
+                cu.unitId || null, cu.isUnitManager ? 1 : 0,
+                cu.createdBy || 'مدير الفرع (الإدارة)', cu.createdById || null, cu.createdRole || 'مدير الفرع',
+                cu.createdAt || nowIso()
+              );
+          } else {
+            if (cu.unitId && !exUser.unitId) {
+              db.prepare('UPDATE users SET unitId=? WHERE id=?').run(cu.unitId, exUser.id);
+            }
+            if (cu.createdBy && !exUser.createdBy) {
+              try { db.prepare('UPDATE users SET createdBy=?, createdById=?, createdRole=? WHERE id=?').run(cu.createdBy, cu.createdById || null, cu.createdRole || '', exUser.id); } catch(e){}
+            }
+          }
+        } catch(e){}
+      }
+    }
+  } catch(e){}
+
+  // 2.8 مزامنة وسحب جميع الأجهزة من السحابة إلى الكمبيوتر المحلي لضمان عدم فقدان أي جهاز
+  try {
+    const cloudDevRes = await httpJsonRequest(CLOUD_URL + '/api/devices', {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + cloudToken,
+        'X-Org-Code': org.orgCode
+      }
+    });
+    if (cloudDevRes.status === 200 && cloudDevRes.data && Array.isArray(cloudDevRes.data.devices)) {
+      for (const cd of cloudDevRes.data.devices) {
+        if (!cd.deviceId) continue;
+        try {
+          const devUnitId = cd.unitId || (cd.userId ? (db.prepare('SELECT unitId FROM users WHERE id=?').get(cd.userId) || {}).unitId : null) || null;
+          const exists = db.prepare('SELECT id, status, approvedAt, approvedBy, unitId FROM devices WHERE orgId=? AND deviceId=?').get(org.id, cd.deviceId);
+          if (!exists) {
+            db.prepare(`INSERT INTO devices(
+              id, orgId, unitId, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+              .run(
+                cd.id || uid(), org.id, devUnitId, cd.deviceId, cd.deviceName || '', cd.userId || '', cd.userName || '',
+                cd.userFullName || '', cd.status || 'pending', cd.registeredAt || nowIso(),
+                cd.lastSeenAt || nowIso(), cd.approvedAt || null, cd.approvedBy || ''
+              );
+            pulledDevices++;
+          } else {
+            // قاعدة الاعتماد الدائم: إذا كان الجهاز معتمداً محلياً أو سحابياً، يبقى معتمداً بشكل دائم ولا يعود معلقاً أبداً
+            const finalStatus = (exists.status === 'approved' || cd.status === 'approved') ? 'approved' : (exists.status === 'blocked' || cd.status === 'blocked' ? 'blocked' : 'pending');
+            const finalApprovedAt = (finalStatus === 'approved') ? (exists.approvedAt || cd.approvedAt || nowIso()) : null;
+            const finalApprovedBy = (finalStatus === 'approved') ? (exists.approvedBy || cd.approvedBy || 'المدير') : null;
+            db.prepare(`UPDATE devices SET 
+              deviceName=?, userId=?, userName=?, userFullName=?, status=?, lastSeenAt=?, approvedAt=?, approvedBy=?, unitId=COALESCE(unitId, ?) WHERE id=?`)
+              .run(
+                cd.deviceName || '', cd.userId || '', cd.userName || '',
+                cd.userFullName || '', finalStatus, cd.lastSeenAt || nowIso(),
+                finalApprovedAt, finalApprovedBy, devUnitId, exists.id
+              );
+          }
+        } catch(e){}
+      }
+    }
+  } catch(e){}
+
+  // 3. رفع كافة الأجهزة المحلية المحدثة والمعتمدة إلى السحابة
+  try {
+    const allLocalDevices = db.prepare("SELECT * FROM devices WHERE orgId=?").all(org.id);
+    if (allLocalDevices.length > 0) {
+      const pushDevRes = await httpJsonRequest(CLOUD_URL + '/api/relay/push-devices', {
         method: 'POST',
         headers: {
           'Authorization': 'Bearer ' + cloudToken,
           'X-Org-Code': org.orgCode
         }
-      }, { itemIds: ackIds });
-    }
-  }
-
-  // 3. رفع الأجهزة المعتمدة محلياً إلى السحابة
-  const localApprovedDevices = db.prepare("SELECT * FROM devices WHERE orgId=? AND status='approved'").all(org.id);
-  if (localApprovedDevices.length > 0) {
-    const pushDevRes = await httpJsonRequest(CLOUD_URL + '/api/relay/push-devices', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + cloudToken,
-        'X-Org-Code': org.orgCode
+      }, { devices: allLocalDevices });
+      if (pushDevRes.status === 200 && pushDevRes.data) {
+        pushedDevices = pushDevRes.data.syncedDevices || 0;
       }
-    }, { devices: localApprovedDevices });
-    if (pushDevRes.status === 200 && pushDevRes.data) {
-      pushedDevices = pushDevRes.data.syncedDevices || 0;
     }
-  }
+  } catch(e){}
 
   // 4. رفع المستخدمين والصلاحيات من الكمبيوتر المحلي إلى السحابة
-  const localUsers = db.prepare("SELECT * FROM users WHERE orgId=?").all(org.id);
-  if (localUsers.length > 0) {
-    await httpJsonRequest(CLOUD_URL + '/api/relay/push-users', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + cloudToken,
-        'X-Org-Code': org.orgCode
-      }
-    }, { users: localUsers }).catch(() => {});
-  }
+  try {
+    const localUsers = db.prepare("SELECT * FROM users WHERE orgId=?").all(org.id);
+    if (localUsers.length > 0) {
+      await httpJsonRequest(CLOUD_URL + '/api/relay/push-users', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + cloudToken,
+          'X-Org-Code': org.orgCode
+        }
+      }, { users: localUsers }).catch(() => {});
+    }
+  } catch(e){}
 
   // 4.5 رفع الوحدات والأقسام من الكمبيوتر المحلي إلى السحابة
   try {
@@ -3444,27 +3907,45 @@ async function performCloudRelaySync(targetOrgId) {
   } catch(e){}
 
   // 5. رفع الإعدادات من الكمبيوتر المحلي إلى السحابة
-  const enforceAuth = getSetting(org.id, 'enforceDeviceAuth', '1');
-  const consumeAdd = getSetting(org.id, 'consumeAddAfterSync', '0');
-  await httpJsonRequest(CLOUD_URL + '/api/relay/push-settings', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + cloudToken,
-      'X-Org-Code': org.orgCode
-    }
-  }, { settings: { enforceDeviceAuth: enforceAuth, consumeAddAfterSync: consumeAdd } }).catch(() => {});
-
-  // 6. رفع المهام والتكليفات من الكمبيوتر المحلي إلى السحابة
-  const localEvents = db.prepare("SELECT * FROM events WHERE orgId=? AND isArchived=0").all(org.id);
-  if (localEvents.length > 0) {
-    await httpJsonRequest(CLOUD_URL + '/api/relay/push-events', {
+  try {
+    const enforceAuth = getSetting(org.id, 'enforceDeviceAuth', '1');
+    const consumeAdd = getSetting(org.id, 'consumeAddAfterSync', '0');
+    await httpJsonRequest(CLOUD_URL + '/api/relay/push-settings', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + cloudToken,
         'X-Org-Code': org.orgCode
       }
-    }, { events: localEvents }).catch(() => {});
-  }
+    }, { settings: { enforceDeviceAuth: enforceAuth, consumeAddAfterSync: consumeAdd } }).catch(() => {});
+  } catch(e){}
+
+  // 6. رفع المهام والتكليفات من الكمبيوتر المحلي إلى السحابة
+  try {
+    const localEvents = db.prepare("SELECT * FROM events WHERE orgId=? AND isArchived=0").all(org.id);
+    if (localEvents.length > 0) {
+      await httpJsonRequest(CLOUD_URL + '/api/relay/push-events', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + cloudToken,
+          'X-Org-Code': org.orgCode
+        }
+      }, { events: localEvents }).catch(() => {});
+    }
+  } catch(e){}
+
+  // 6.5 رفع التقارير المحلية إلى السحابة
+  try {
+    const localReports = db.prepare("SELECT * FROM reports WHERE orgId=?").all(org.id);
+    if (localReports.length > 0) {
+      await httpJsonRequest(CLOUD_URL + '/api/relay/push-reports', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + cloudToken,
+          'X-Org-Code': org.orgCode
+        }
+      }, { reports: localReports }).catch(() => {});
+    }
+  } catch(e){}
 
   return { pulledReports, pulledDevices, pushedDevices };
 }

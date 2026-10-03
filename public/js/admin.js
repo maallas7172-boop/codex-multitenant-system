@@ -1777,13 +1777,14 @@
           </td>
           <td>
             <div style="display:flex;gap:6px;align-items:center">
-              <span class="badge blue" title="عدد الموظفين بالوحدة">👥 ${uUsersCount} موظف</span>
+              <span class="badge blue" style="cursor:pointer" data-un-users="${un.id}" title="عرض موظفي هذه الوحدة بالكامل">👥 ${uUsersCount} موظف</span>
               <span class="badge green" title="عدد التقارير المنجزة">📄 ${uReportsCount} تقرير</span>
             </div>
           </td>
           <td>${badgeStatus(un.status === 'active' ? 'نشط' : 'غير نشط')}</td>
           <td>
             <div class="btn-row" style="gap:4px">
+              <button class="btn btn-outline btn-xs" data-un-users="${un.id}" title="عرض وإدارة موظفي هذه الوحدة">👥 الموظفون</button>
               <button class="btn btn-secondary btn-xs" data-un-qr="${un.id}" title="عرض وطباعة بطاقة وباركود ربط هذه الوحدة">📱 بطاقة الوحدة</button>
               <button class="btn btn-outline btn-xs" data-un-reports="${un.id}" title="عرض تقارير هذه الوحدة">📄 التقارير</button>
               <button class="btn btn-primary btn-xs" data-un-edit="${un.id}" title="تعديل بيانات الوحدة">✏️ تعديل</button>
@@ -1792,6 +1793,16 @@
           </td>
         </tr>
       `}).join('');
+
+      tbody.querySelectorAll('[data-un-users]').forEach(b => {
+        b.onclick = () => {
+          const unId = b.dataset.unUsers;
+          if ($('uFilterUnit')) $('uFilterUnit').value = unId;
+          const navUsers = document.querySelector('.nav-btn[data-page="users"]');
+          if (navUsers) navUsers.click();
+          if (typeof renderUsers === 'function') renderUsers();
+        };
+      });
 
       tbody.querySelectorAll('[data-un-qr]').forEach(b => {
         b.onclick = () => {
@@ -1986,6 +1997,10 @@
               </div>
             </td>
             <td>${badgeStatus(usr.isActive ? 'نشط' : 'غير نشط')}</td>
+            <td>
+              <div style="font-weight:800;font-size:12.5px;color:var(--text)">👑 ${esc(usr.createdBy || 'مدير النظام الرئيسي')}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px"><span class="badge blue" style="font-size:10px;padding:1px 6px">إدارة النظام</span></div>
+            </td>
             <td><span class="badge blue">👑 مدير النظام (كافة الصلاحيات)</span></td>
             <td>${fmtDate(usr.createdAt)}</td>
             <td>
@@ -2012,6 +2027,10 @@
             </div>
           </td>
           <td>${badgeStatus(usr.isActive ? 'نشط' : 'غير نشط')}</td>
+          <td>
+            <div style="font-weight:800;font-size:12.5px;color:var(--text)">👤 ${esc(usr.createdBy || 'مدير الفرع (الإدارة)')}</div>
+            ${usr.createdRole ? `<div style="font-size:11px;color:var(--muted);margin-top:2px"><span class="badge blue" style="font-size:10px;padding:1px 6px">🏷️ ${esc(usr.createdRole)}</span></div>` : ''}
+          </td>
           <td><div class="chips" style="gap:4px;max-width:240px">${permBadges(usr)}</div></td>
           <td>${fmtDate(usr.createdAt)}</td>
           <td>
@@ -2022,7 +2041,7 @@
             </div>
           </td>
         </tr>`;
-      }).join('') || '<tr><td colspan="5" class="empty">لا يوجد مستخدمون</td></tr>';
+      }).join('') || '<tr><td colspan="6" class="empty">لا يوجد مستخدمون</td></tr>';
 
       document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openUserEditor(list.find(u => u.id === b.dataset.edit)));
       document.querySelectorAll('[data-pwd]').forEach(b => b.onclick = () => openPwdEditor(list.find(u => u.id === b.dataset.pwd)));
@@ -2214,6 +2233,20 @@
     $('ufUserName').value = targetUser ? targetUser.userName : '';
     $('ufUserName').readOnly = false;
     $('ufFullName').value = targetUser ? targetUser.fullName : '';
+
+    const creatorBanner = $('ufCreatorBanner');
+    const creatorText = $('ufCreatorText');
+    if (creatorBanner && creatorText) {
+      if (targetUser) {
+        const creator = targetUser.createdBy || (targetUser.role === 'Admin' ? 'مدير النظام الرئيسي' : 'مدير الفرع (الإدارة)');
+        const role = targetUser.createdRole ? ` [${targetUser.createdRole}]` : '';
+        const createdDate = targetUser.createdAt ? ` • تم الإنشاء بتاريخ: ${fmtDateTime(targetUser.createdAt)}` : '';
+        creatorText.textContent = `تم إضافة هذا الحساب بواسطة: ${creator}${role}${createdDate}`;
+        creatorBanner.style.display = 'block';
+      } else {
+        creatorBanner.style.display = 'none';
+      }
+    }
 
     const errBox = $('ufUserNameError');
     if (errBox) {
@@ -3000,6 +3033,146 @@
     }
   }
 
+  /* =========================================================================
+     نظام التحديث السحابي التلقائي للمنظومة (Cloud System Updates)
+     ========================================================================= */
+  async function checkAndShowUpdateBanner() {
+    try {
+      const res = await api('/system/check-cloud-update');
+      if (res && res.ok) {
+        if ($('settingsCurrentVersionText')) $('settingsCurrentVersionText').textContent = 'v' + res.currentVersion;
+        if (res.updateAvailable) {
+          const banner = $('dashUpdateAvailableBanner');
+          if (banner) {
+            banner.style.display = 'block';
+            if ($('dashBannerNewVersion')) $('dashBannerNewVersion').textContent = 'v' + res.cloudVersion;
+            if ($('dashBannerUpdateNotes') && res.changelog) $('dashBannerUpdateNotes').textContent = res.changelog;
+          }
+        }
+      }
+    } catch(e){}
+  }
+
+  async function openSystemUpdateModal() {
+    openModal('modalSystemUpdate');
+    const loading = $('updateCheckLoading');
+    const content = $('updateStatusContent');
+    if (loading) loading.style.display = 'block';
+    if (content) { content.style.display = 'none'; content.innerHTML = ''; }
+
+    try {
+      const res = await api('/system/check-cloud-update');
+      if (loading) loading.style.display = 'none';
+      if (!content) return;
+      content.style.display = 'block';
+
+      if (!res || !res.ok) {
+        content.innerHTML = `
+          <div style="background:#fef2f2;border:1px solid #fecaca;padding:16px;border-radius:12px;text-align:center;color:#991b1b">
+            <span style="font-size:32px">⚠️</span>
+            <h4 style="margin:8px 0 4px;font-weight:900">تعذر الاتصال بخادم التحديثات السحابي</h4>
+            <p style="margin:0;font-size:13px;color:#b91c1c">${res?.message || 'يرجى التحقق من اتصال الإنترنت بالخادم السحابي والمحاولة مرة أخرى.'}</p>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:16px">
+            <button class="btn btn-outline" onclick="closeModal('modalSystemUpdate')">إغلاق</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (res.updateAvailable) {
+        content.innerHTML = `
+          <div style="background:#eef2ff;border:1px solid #c7d2fe;padding:16px;border-radius:12px;margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:13px;color:#4338ca;font-weight:700">الإصدار الحالي مثبت: <b>v${res.currentVersion}</b></span>
+              <span class="badge" style="background:#16a34a;color:#fff;font-size:12px;padding:4px 10px;border-radius:20px">✨ إصدار جديد متاح: v${res.cloudVersion}</span>
+            </div>
+            <div style="font-weight:900;color:#1e1b4b;font-size:14.5px;margin-bottom:6px">🚀 تفاصيل وتحديثات هذا الإصدار:</div>
+            <div style="background:#ffffff;border:1px solid #e0e7ff;border-radius:8px;padding:12px;font-size:13px;line-height:1.7;color:#334155;max-height:160px;overflow-y:auto">
+              ${res.changelog || 'تحديثات هامة تشمل مزامنة تقارير مدير الوحدة وظهور اسم الوحدة التلقائي والتحديث السحابي المباشر.'}
+            </div>
+          </div>
+
+          <div id="updateProgressBox" style="display:none;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:6px;color:#4338ca">
+              <span id="updateProgressText">جاري تحميل وتثبيت حزمة التحديث...</span>
+              <span id="updateProgressPercent">0%</span>
+            </div>
+            <div style="height:10px;background:#e2e8f0;border-radius:6px;overflow:hidden">
+              <div id="updateProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg, #4f46e5, #06b6d4);transition:width 0.3s ease"></div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px">
+            <button class="btn btn-outline" onclick="closeModal('modalSystemUpdate')">إلغاء</button>
+            <button class="btn btn-primary" id="btnStartApplyUpdate" onclick="applySystemUpdate()" style="background:#4338ca;border-color:#4338ca;font-weight:800;padding:10px 22px">
+              🚀 تثبيت التحديث السحابي الآن
+            </button>
+          </div>
+        `;
+      } else {
+        content.innerHTML = `
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:24px;border-radius:12px;text-align:center;color:#166534">
+            <span style="font-size:42px">✅</span>
+            <h4 style="margin:10px 0 6px;font-weight:900;font-size:16px">نظامك محدث بالكامل لأحدث إصدار!</h4>
+            <p style="margin:0;font-size:13px;color:#15803d">الإصدار الحالي: <b>v${res.currentVersion}</b> — لا توجد تحديثات جديدة حالياً.</p>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:18px">
+            <button class="btn btn-outline" onclick="closeModal('modalSystemUpdate')">إغلاق</button>
+          </div>
+        `;
+      }
+    } catch(err) {
+      if (loading) loading.style.display = 'none';
+      if (content) {
+        content.style.display = 'block';
+        content.innerHTML = `<div style="color:red;text-align:center">خطأ أثناء فحص التحديثات: ${err.message}</div>`;
+      }
+    }
+  }
+
+  async function applySystemUpdate() {
+    const btn = $('btnStartApplyUpdate');
+    const pBox = $('updateProgressBox');
+    const pBar = $('updateProgressBar');
+    const pPercent = $('updateProgressPercent');
+    const pText = $('updateProgressText');
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري التحديث...'; }
+    if (pBox) pBox.style.display = 'block';
+
+    let progress = 10;
+    const interval = setInterval(() => {
+      if (progress < 85) {
+        progress += Math.floor(Math.random() * 15) + 5;
+        if (progress > 85) progress = 85;
+        if (pBar) pBar.style.width = progress + '%';
+        if (pPercent) pPercent.textContent = progress + '%';
+      }
+    }, 200);
+
+    try {
+      const res = await api('/system/apply-cloud-update', { method: 'POST' });
+      clearInterval(interval);
+      if (pBar) { pBar.style.width = '100%'; pBar.style.background = '#16a34a'; }
+      if (pPercent) pPercent.textContent = '100%';
+      if (pText) pText.textContent = '✔ تم تثبيت التحديث بنجاح! جاري إعادة تشغيل المحرك...';
+
+      toast('🎉 تم تثبيت التحديث بنجاح! جاري إعادة تشغيل المنظومة وتحديث الصفحة تلقائياً...', 'ok');
+
+      // Wait 2.5 seconds and reload
+      setTimeout(() => {
+        window.location.reload();
+      }, 2500);
+    } catch(err) {
+      clearInterval(interval);
+      if (pBar) pBar.style.background = '#dc2626';
+      if (pText) pText.textContent = '❌ فشل التحديث: ' + err.message;
+      if (btn) { btn.disabled = false; btn.textContent = 'إعادة المحاولة'; }
+      toast('فشل تطبيق التحديث: ' + err.message, 'err');
+    }
+  }
+
   /* ================= التشغيل الأولي ================= */
   window.renderDash = renderDash;
   window.renderAdminEntry = renderAdminEntry;
@@ -3007,6 +3180,10 @@
   window.renderUnits = renderUnits;
   window.renderUsers = renderUsers;
   window.renderSettings = renderSettings;
+  window.openSystemUpdateModal = openSystemUpdateModal;
+  window.applySystemUpdate = applySystemUpdate;
+  window.checkAndShowUpdateBanner = checkAndShowUpdateBanner;
   loadUserSelects();
   renderDash();
+  checkAndShowUpdateBanner();
 })();

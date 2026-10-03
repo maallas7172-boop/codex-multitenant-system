@@ -1191,6 +1191,7 @@ function renderSuperUsersTable(users) {
         <td style="padding:12px"><b style="color:#0f172a">${esc(u.userName)}</b></td>
         <td style="padding:12px">${esc(u.fullName)}</td>
         <td style="padding:12px"><span style="background:#f1f5f9;color:#334155;padding:3px 8px;border-radius:6px;font-weight:700;font-size:12px">${isMainAdmin ? 'مدير عام المركز' : 'مشرف إدارة مركزية'}</span></td>
+        <td style="padding:12px"><span style="font-weight:700;font-size:12px;color:var(--text)">👤 ${esc(u.createdBy || (isMainAdmin ? 'النظام الأساسي' : 'مدير عام النظام'))}</span></td>
         <td style="padding:12px;font-size:12.5px;color:#2563eb;font-weight:700">${permsText}</td>
         <td style="padding:12px">${statusBadge}</td>
         <td style="padding:12px;text-align:center">${actions}</td>

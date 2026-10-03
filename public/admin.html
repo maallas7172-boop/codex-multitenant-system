@@ -66,6 +66,23 @@
       </div>
     </div>
 
+    <!-- بانر التحديث السحابي التلقائي (يظهر عند توفر تحديث جديد) -->
+    <div id="dashUpdateAvailableBanner" style="display:none;background:linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);border:2px solid #6366f1;border-radius:12px;padding:12px 18px;margin-bottom:16px;box-shadow:0 4px 14px rgba(99,102,241,0.18)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:26px">🚀</span>
+          <div>
+            <b style="color:#3730a3;font-size:14.5px">يتوفر تحديث جديد للمنظومة (<span id="dashBannerNewVersion">v2026.2.1</span>) جاهز للتثبيت بنقرة واحدة!</b>
+            <div style="font-size:12px;color:#4f46e5;margin-top:2px" id="dashBannerUpdateNotes">تحسينات شاملة في مزامنة تقارير مدير الوحدة والتحديث المباشر بدون فلاشة.</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="openSystemUpdateModal()" style="background:#4f46e5;border-color:#4f46e5;font-weight:700">⚡ تحديث المنظومة الآن</button>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('dashUpdateAvailableBanner').style.display='none'">لاحقاً</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ==================== لوحة التحكم ==================== -->
     <section class="page active" id="dashPage">
       <div class="page-head">
@@ -74,6 +91,7 @@
           <p>إحصائيات حية عن التقارير والمستخدمين في النظام.</p>
         </div>
         <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" id="btnSystemUpdateTop" onclick="openSystemUpdateModal()" style="background:#4338ca;color:#fff;border-color:#4338ca;font-weight:700" title="فحص وتثبيت التحديثات السحابية بنقرة واحدة">🚀 تحديث النظام</button>
           <button class="btn btn-primary btn-sm" id="btnCloudSyncTop" onclick="triggerCloudSync()" style="background:#0284c7;border-color:#0284c7">☁️ مزامنة السحابة</button>
           <button class="btn btn-outline btn-sm" onclick="renderDash()">🔄 تحديث</button>
         </div>
@@ -558,6 +576,16 @@
           <h3 id="userFormTitle">إضافة مستخدم جديد</h3>
           <button class="btn btn-outline btn-sm" id="userCancelBtn">إغلاق</button>
         </div>
+        <!-- بطاقة توضيح منشئ الحساب / مدخل البيانات -->
+        <div id="ufCreatorBanner" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px 16px;margin-bottom:16px;color:#166534">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:22px">🛡️</span>
+            <div>
+              <div style="font-weight:800;font-size:13.5px">بيانات الإضافة ومنشئ الحساب:</div>
+              <div id="ufCreatorText" style="font-size:12.5px;margin-top:2px;color:#15803d;font-weight:600"></div>
+            </div>
+          </div>
+        </div>
         <div class="form-grid">
           <div class="field">
             <span>اسم المستخدم (للدخول) *</span>
@@ -635,7 +663,7 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>المستخدم</th><th>الحالة</th><th>الصلاحيات الممنوحة</th><th>تاريخ الإنشاء</th><th>إجراءات</th>
+            <th>المستخدم</th><th>الحالة</th><th>أضيف بواسطة (مدخل البيانات)</th><th>الصلاحيات الممنوحة</th><th>تاريخ الإنشاء</th><th>إجراءات</th>
           </tr></thead>
           <tbody id="userTableBody"></tbody>
         </table>
@@ -737,6 +765,22 @@
           <p style="color:var(--muted);font-size:13px;line-height:1.9;margin:0 0 12px" id="netInfo"></p>
           <div class="note-box" style="background:var(--secondary-soft);border:1px solid #bfe9df;border-radius:var(--r-md);padding:12px 14px;font-size:12.5px;color:var(--secondary);line-height:1.9">
             <b>طريقة تشغيل الأجهزة الأخرى:</b> على كل جهاز إدخال، افتح المتصفح واكتب العنوان أعلاه، ثم سجّل الدخول بحسابه.
+          </div>
+        </div>
+      <!-- بطاقة التحديث السحابي التلقائي -->
+      <div class="card" style="margin-top:18px;border-left:4px solid #4f46e5;background:linear-gradient(135deg, #f5f3ff 0%, #ffffff 100%)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:32px">🚀</span>
+            <div>
+              <h3 style="margin:0;font-size:16px;font-weight:900;color:#3730a3">التحديث السحابي المباشر للمنظومة (Cloud System Updates)</h3>
+              <p style="margin:4px 0 0;font-size:13px;color:#4338ca">
+                إصدار النظام الحالي: <b id="settingsCurrentVersionText">v2026.2.1</b> — تحديث كافة ملفات ومحرك المنظومة محلياً من السحابة بنقرة واحدة بدون الحاجة لنقل ملفات بالفلاشة.
+              </p>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn btn-primary" onclick="openSystemUpdateModal()" style="background:#4f46e5;border-color:#4f46e5;font-weight:700">🔄 فحص وتثبيت التحديثات الآن</button>
           </div>
         </div>
       </div>
@@ -1045,6 +1089,25 @@
     
     <div class="modal-foot" style="margin-top:16px;display:flex;justify-content:flex-end">
       <button type="button" class="btn btn-outline" onclick="closeReportsTemplateModal()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- مودال التحديث السحابي للمنظومة -->
+<div class="modal" id="modalSystemUpdate" style="display:none">
+  <div class="modal-card" style="max-width:580px;border-radius:16px;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.25)">
+    <div class="modal-head" style="background:linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);color:#fff;padding:16px 20px">
+      <h3 style="display:flex;align-items:center;gap:10px;margin:0;color:#fff;font-size:16px;font-weight:900">
+        <span style="font-size:22px">☁️</span> التحديث السحابي المباشر للمنظومة
+      </h3>
+      <button class="close-btn" onclick="closeModal('modalSystemUpdate')" style="color:#fff;background:rgba(255,255,255,0.15)">✕</button>
+    </div>
+    <div class="modal-body" style="padding:22px">
+      <div id="updateCheckLoading" style="text-align:center;padding:30px 0">
+        <div class="spinner" style="margin:0 auto 14px;width:40px;height:40px;border:3px solid #e0e7ff;border-top-color:#4f46e5;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+        <p style="color:#4f46e5;font-weight:700;margin:0;font-size:14px">جاري الاتصال بالسحابة وفحص وجود تحديثات جديدة...</p>
+      </div>
+      <div id="updateStatusContent" style="display:none"></div>
     </div>
   </div>
 </div>
